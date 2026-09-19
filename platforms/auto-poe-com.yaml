@@ -1,0 +1,11 @@
+id: poe-com
+name: Poe Com
+kind: browser
+category: auto
+url: https://poe.com
+new_chat_url: https://poe.com
+submit:
+  key: Enter
+settle_ms: 3000
+max_wait_s: 120
+_nota: Adapter criado automaticamente pelo Orbe. Edite os seletores para ficar preciso.

@@ -1,0 +1,17 @@
+id: gemini
+name: Gemini
+kind: browser
+category: chat
+url: "https://gemini.google.com/app"
+new_chat_url: "https://gemini.google.com/app"
+prompt_selector: 'rich-textarea div[contenteditable="true"], div.ql-editor[contenteditable="true"], textarea'
+submit:
+  key: Enter
+answer_selector: 'message-content, .model-response-text, .response-container'
+answer_index: -1
+settle_ms: 3500
+max_wait_s: 120
+logged_in_selector: 'rich-textarea div[contenteditable="true"], .ql-editor'
+logged_out_selector: 'a[href*="accounts.google.com"], button:has-text("Fazer login")'
+extra:
+  dica: "Use uma conta Google no perfil. Gemini às vezes exibe aviso de cookies na primeira abertura."

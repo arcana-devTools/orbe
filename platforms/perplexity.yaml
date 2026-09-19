@@ -1,0 +1,17 @@
+id: perplexity
+name: Perplexity
+kind: browser
+category: busca
+url: "https://www.perplexity.ai/"
+new_chat_url: "https://www.perplexity.ai/"
+prompt_selector: 'textarea[placeholder], div[contenteditable="true"], textarea'
+submit:
+  key: Enter
+answer_selector: '.prose, [class*="answer"], main article'
+answer_index: -1
+settle_ms: 3000
+max_wait_s: 120
+logged_in_selector: 'textarea, div[contenteditable="true"]'
+logged_out_selector: 'button:has-text("Log in")'
+extra:
+  dica: "Melhor opção para pesquisa com fontes citadas."

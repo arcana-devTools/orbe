@@ -1,0 +1,17 @@
+id: chatgpt
+name: ChatGPT
+kind: browser
+category: chat
+url: "https://chatgpt.com/"
+new_chat_url: "https://chatgpt.com/"
+prompt_selector: 'div#prompt-textarea, div[contenteditable="true"][data-placeholder], div[contenteditable="true"]'
+submit:
+  key: Enter
+answer_selector: 'div[data-message-author-role="assistant"]'
+answer_index: -1
+settle_ms: 3000
+max_wait_s: 120
+logged_in_selector: 'div#prompt-textarea, div[contenteditable="true"]'
+logged_out_selector: 'a[href*="/auth/login"], button[data-testid="login-button"]'
+extra:
+  dica: "Se abrir a tela de onboarding, feche na mão uma vez no botão LOGIN."

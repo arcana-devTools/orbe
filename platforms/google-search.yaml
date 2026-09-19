@@ -1,0 +1,19 @@
+id: google-search
+name: Google Search
+kind: browser
+category: busca
+# Adapter de BUSCA (não é chat): lê a página de resultados.
+# O "prompt" vira a query. O Orbe devolve o texto agregado dos resultados.
+url: "https://www.google.com/search?q=orbe"
+new_chat_url: "https://www.google.com/search?q=orbe"
+prompt_selector: 'textarea[name="q"], input[name="q"]'
+submit:
+  key: Enter
+answer_selector: '#search, #rso, #main'
+answer_index: 0
+settle_ms: 1500
+max_wait_s: 30
+logged_in_selector: 'textarea[name="q"], input[name="q"]'
+logged_out_selector: ''
+extra:
+  atencao: "Google detecta automação com frequência. Use com moderação ou prefira Perplexity para pesquisa."

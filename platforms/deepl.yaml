@@ -1,0 +1,17 @@
+id: deepl
+name: DeepL
+kind: browser
+category: produtividade
+url: "https://www.deepl.com/translator#pt/en/"
+new_chat_url: "https://www.deepl.com/translator#pt/en/"
+prompt_selector: 'textarea[dl-test="translator-source-input"], div[contenteditable="true"], textarea'
+submit:
+  key: Enter
+answer_selector: '[dl-test="translator-target-input"], div[dl-test="translator-target-input"]'
+answer_index: -1
+settle_ms: 2500
+max_wait_s: 45
+logged_in_selector: 'textarea, div[contenteditable="true"]'
+logged_out_selector: ''
+extra:
+  dica: "Troque o fragmento da URL para o par de idiomas: #pt/en, #en/pt, #pt/es..."

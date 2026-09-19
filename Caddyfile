@@ -1,0 +1,5 @@
+# Troque pelo seu domínio (qualquer subdominio serve: orbe.seusite.com).
+# O Caddy emite e renova o HTTPS sozinho.
+orbe.seudominio.com {
+	reverse_proxy orbe:8000
+}

@@ -1,0 +1,16 @@
+id: gdrive
+name: Google Drive
+kind: browser
+category: armazenamento
+url: "https://drive.google.com/drive/my-drive"
+new_chat_url: "https://drive.google.com/drive/my-drive"
+prompt_selector: ""
+submit:
+  key: Enter
+answer_selector: ""
+settle_ms: 2000
+max_wait_s: 30
+logged_in_selector: '[data-target="navigation"] , [role="main"]'
+logged_out_selector: 'a[href*="accounts.google"], input[type="email"]'
+extra:
+  dica: "Conta usada como destino de arquivamento do Orbe (Resultados → destino)."

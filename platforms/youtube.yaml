@@ -1,0 +1,19 @@
+id: youtube
+name: YouTube
+kind: browser
+category: video
+# Adapter de busca de vídeos: devolve títulos/descrições dos resultados.
+# (Extrair transcrição completa é roadmap — veja ROADMAP.md)
+url: "https://www.youtube.com/results?search_query=orbe"
+new_chat_url: "https://www.youtube.com/results?search_query=orbe"
+prompt_selector: 'input#search, input[name="search_query"]'
+submit:
+  key: Enter
+answer_selector: '#contents.ytd-item-section-renderer, ytd-watch-flexy #description-inner, #contents'
+answer_index: 0
+settle_ms: 2000
+max_wait_s: 40
+logged_in_selector: 'input#search, ytd-app'
+logged_out_selector: ''
+extra:
+  dica: "Logado na sua conta, ele enxerga sua biblioteca, playlists e históricos."

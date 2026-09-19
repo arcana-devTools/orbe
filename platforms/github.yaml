@@ -1,0 +1,17 @@
+id: github
+name: GitHub
+kind: browser
+category: codigo
+url: "https://github.com/search?q=orbe&type=repositories"
+new_chat_url: "https://github.com/search?q=orbe&type=repositories"
+prompt_selector: 'input[name="q"], input[type="search"]'
+submit:
+  key: Enter
+answer_selector: '[data-testid="results-list"], .search-results, main'
+answer_index: 0
+settle_ms: 2000
+max_wait_s: 40
+logged_in_selector: 'input[name="q"], [data-testid="results-list"]'
+logged_out_selector: 'a[href="/login"]'
+extra:
+  dica: "Com GitHub Copilot Chat logado, troque a url para https://github.com/copilot e o Orbe passa a conversar com o Copilot."

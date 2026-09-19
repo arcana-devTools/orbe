@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orbe — agente que pilota outras IAs</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#12151d; --panel2:#171b25; --line:#232838;
+    --txt:#e6e9f0; --muted:#8b93a7; --accent:#7c5cff; --accent2:#22d3ee;
+    --ok:#34d399; --warn:#fbbf24; --err:#f87171;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);
+         background:linear-gradient(180deg,#12151d,#0b0d12);flex-wrap:wrap}
+  .logo{width:30px;height:30px;border-radius:9px;background:radial-gradient(circle at 30% 30%,#a78bfa,#4c1d95);
+        box-shadow:0 0 18px #7c5cff66;flex:none}
+  h1{font-size:16px;margin:0;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:12px;width:100%}
+  .pill{font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);text-decoration:none}
+  .pill.on{color:var(--ok);border-color:#1f5c46}
+  .pill.off{color:var(--err);border-color:#6b2626}
+  main{display:grid;grid-template-columns:1.05fr .95fr;gap:14px;padding:14px 16px;max-width:1200px;margin:0 auto}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:0 0 10px}
+  textarea,input,select,button{font:inherit}
+  textarea{width:100%;min-height:76px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+           border-radius:10px;padding:10px;resize:vertical}
+  input,select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:10px 14px;cursor:pointer;font-weight:600}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--txt);font-weight:500}
+  button.small{padding:7px 10px;font-size:12.5px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  pre{white-space:pre-wrap;word-break:break-word;background:#0d1017;border:1px solid var(--line);
+      border-radius:10px;padding:10px;max-height:340px;overflow:auto;font-size:12.5px}
+  .log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;max-height:260px;overflow:auto;
+       background:#0d1017;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .log div{padding:1px 0;border-bottom:1px dotted #1b2030}
+  .log .t{color:#4d5670;margin-right:6px}
+  .lv-ok{color:var(--ok)} .lv-error{color:var(--err)} .lv-warn{color:var(--warn)} .lv-step{color:var(--accent2)}
+  .muted{color:var(--muted)}
+  .acc{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;background:var(--panel2)}
+  .acc .top{display:flex;gap:8px;align-items:center}
+  .acc .top input[type=checkbox]{width:18px;height:18px;accent-color:#7c5cff;flex:none}
+  .st{font-size:11px;padding:2px 8px;border-radius:999px}
+  .st.ok{background:#12352a;color:var(--ok)} .st.logged_out{background:#3a2a12;color:var(--warn)}
+  .st.unknown,.st.checking{background:#1f2433;color:var(--muted)}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:#1f2433;color:var(--muted)}
+  .badge.done{background:#12352a;color:var(--ok)} .badge.failed{background:#3a1d1d;color:var(--err)}
+  .badge.running,.badge.planning,.badge.synthesizing,.badge.queued{background:#2a2450;color:#b9a9ff}
+  a{color:var(--accent2)}
+  .foot{color:var(--muted);font-size:12px;padding:0 16px 24px;max-width:1200px;margin:0 auto}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+  img.shot{max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+  @media (max-width:640px){
+    header{padding:10px 12px;gap:8px}
+    main{padding:10px;gap:10px}
+    .card{padding:12px}
+    textarea,input,select{font-size:16px}
+    button{padding:12px 16px;font-size:14px}
+    button.small{padding:10px 12px;font-size:13px}
+    .acc .btns button{flex:1}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"></div>
+  <div>
+    <h1>ORBE</h1>
+  </div>
+  <span class="pill on" id="hpBrowser">navegador: …</span>
+  <a class="pill on" href="/desktop">DESKTOP p/ login</a>
+  <div class="sub">agente que pilota o <b>arena.ai</b> com as <b>suas contas</b> — cada conta recebe a própria ordem</div>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>Suas contas na Arena</h2>
+      <div class="row" style="margin-bottom:10px">
+        <input id="newLabel" placeholder="rótulo da conta (ex.: pessoal, trabalho)" style="flex:1;min-width:140px"/>
+        <button id="btnAddAccount">+ conta</button>
+      </div>
+      <div id="accounts" class="muted">carregando…</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">
+        1) crie a conta · 2) <b>🪄 login fácil</b>: digite e-mail/senha no painel e o Orbe entra por você
+        (se pedir 2FA, o painel pede o código) · 3) marque a caixinha e escreva a ordem da conta.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Tarefa</h2>
+      <textarea id="goal" placeholder="Opcional: contexto geral.&#10;As ordens específicas vão nos campos embaixo de cada conta marcada."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button id="btnRun">Executar nas contas marcadas</button>
+        <span class="pill" id="selInfo">nenhuma conta marcada</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Resultado</h2>
+      <div id="result" class="muted">Nada executado ainda.</div>
+      <div id="resArchive" class="muted" style="margin-top:6px"></div>
+      <details id="resDetails" style="display:none">
+        <summary>respostas brutas por conta</summary>
+        <pre id="resRaw"></pre>
+      </details>
+      <div class="row" style="margin-top:10px">
+        <span class="muted">📁 pasta:</span>
+        <input id="archiveDir" style="flex:1;min-width:120px" placeholder="pasta de arquivamento">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="muted">📤 também mandar para:</span>
+        <select id="destKind">
+          <option value="local">só a pasta</option>
+          <option value="github">GitHub</option>
+          <option value="drive">Google Drive</option>
+        </select>
+        <select id="destAcc" style="display:none;flex:1"></select>
+        <button id="btnSaveDir" class="small ghost">salvar</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>☁️ Backup dos logins</h2>
+      <div class="muted" style="font-size:12px">
+        Se o Render reiniciar (limite de memória do plano grátis), os logins voltam
+        sozinhos. O zip do perfil sobe <b>criptografado</b> pro seu repo — sem o token,
+        é ilegível. Serve o token fine-grained com Contents read/write no repo <b>orbe</b>.
+      </div>
+      <div class="row" style="margin-top:8px">
+        <input id="backupTok" type="password" style="flex:1;min-width:120px" placeholder="github_pat_… (só pro backup)">
+        <button id="btnBackupSave" class="small">salvar</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnBackupNow" class="small ghost">subir logins agora</button>
+        <button id="btnBackupRestore" class="small ghost">restaurar logins</button>
+      </div>
+      <div id="backupStatus" class="muted" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Histórico</h2>
+      <div id="history" class="muted">—</div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Log ao vivo</h2>
+      <div class="log" id="log"><div class="muted">conectando…</div></div>
+    </div>
+  </section>
+</main>
+
+<div class="foot">
+  Orbe v0.2 — uso pessoal. Automação de contas pode violar Termos de Uso de alguns serviços;
+  use contas que você controla.
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+let picked = new Set();
+let cmds = {};
+let lastAccounts = [];
+let currentTask = null;
+let pollTimer = null;
+
+async function api(path, opts={}) {
+  const url = TOKEN ? path + (path.includes("?")?"&":"?") + "token=" + encodeURIComponent(TOKEN) : path;
+  for (let tent=0; ; tent++) {
+    let r;
+    try { r = await fetch(url, opts); }
+    catch (e) {
+      if (tent < 3) { await new Promise(s => setTimeout(s, 2000)); continue; }
+      throw new Error("sem conexão — tente de novo");
+    }
+    if ((r.status===502 || r.status===503 || r.status===504) && tent < 3) {
+      await new Promise(s => setTimeout(s, 2000)); continue;
+    }
+    if (!r.ok) throw new Error((await r.text()).slice(0,200));
+    return r.json();
+  }
+}
+function escapeHtml(s){ return (s||"").replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// ---------------------------------------------------------------- health --
+async function refreshHealth() {
+  try {
+    const h = await api("/health");
+    const el = $("#hpBrowser");
+    el.textContent = "navegador: " + (h.browser ? "ok" : "off");
+    el.className = "pill " + (h.browser ? "on" : "off");
+  } catch (e) {}
+}
+
+// -------------------------------------------------------------- accounts --
+async function refreshAccounts() {
+  const d = await api("/api/accounts");
+  renderAccounts(d.accounts);
+}
+function renderAccounts(accounts) {
+  lastAccounts = accounts;
+  const box = $("#accounts");
+  if (!accounts.length) { box.innerHTML = '<div class="muted">Nenhuma conta ainda — crie a primeira aí em cima.</div>'; return; }
+  box.innerHTML = "";
+  accounts.forEach(a => {
+    const el = document.createElement("div");
+    el.className = "acc";
+    el.innerHTML = `
+      <div class="top">
+        <input type="checkbox" data-pick="${a.id}" ${picked.has(a.id) ? "checked" : ""}/>
+        <div style="flex:1">
+          <b>${escapeHtml(a.label)}</b> <span class="st ${a.status}">${a.status}</span>
+          <div class="muted" style="font-size:11px">${escapeHtml(a.platform)} · perfil ${escapeHtml(a.profile)}</div>
+        </div>
+      </div>
+      <div class="row btns" style="margin-top:8px">
+        <button class="small" data-assist="${a.id}">🪄 login fácil</button>
+        <button class="small ghost" data-login="${a.id}">LOGIN (manual)</button>
+        <button class="small ghost" data-del="${a.id}">✕</button>
+      </div>
+      ${picked.has(a.id) ? `<textarea data-cmd="${a.id}" rows="2" style="margin-top:8px"
+        placeholder="O que esta conta deve fazer na Arena (ex.: entre no Agent Mode e pesquise o clima de hoje)">${escapeHtml(cmds[a.id] || "")}</textarea>` : ""}`;
+    box.appendChild(el);
+  });
+  box.querySelectorAll("[data-pick]").forEach(c => c.onchange = () => {
+    c.checked ? picked.add(c.dataset.pick) : picked.delete(c.dataset.pick);
+    updateSelInfo();
+    renderAccounts(lastAccounts);
+  });
+  box.querySelectorAll("[data-cmd]").forEach(t => t.oninput = () => { cmds[t.dataset.cmd] = t.value; });
+  box.querySelectorAll("[data-login]").forEach(b => b.onclick = () => doLogin(b.dataset.login));
+  box.querySelectorAll("[data-assist]").forEach(b => b.onclick = () => openAssist(b.dataset.assist));
+  box.querySelectorAll("[data-cal]").forEach(b => b.onclick = async () => {
+    const r = await api(`/api/accounts/${b.dataset.cal}/calibrate`, {method:"POST"});
+    alert((r.elements||[]).map(e => `${e.tag}: ${(e.text||"").slice(0,40)}`).join("\n") || "nada visível");
+  });
+  box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remover esta conta? (o perfil no disco é mantido)")) return;
+    await api(`/api/accounts/${b.dataset.del}`, {method:"DELETE"});
+    picked.delete(b.dataset.del); updateSelInfo(); refreshAccounts(); refreshHealth();
+  });
+}
+function updateSelInfo() {
+  const el = $("#selInfo");
+  el.textContent = picked.size ? `${picked.size} conta(s) marcada(s)` : "nenhuma conta marcada";
+  el.className = "pill" + (picked.size ? " on" : "");
+}
+async function doLogin(id) {
+  const r = await api(`/api/accounts/${id}/login`, {method:"POST"});
+  if (!r.ok) { alert(r.error || "falha no login"); return; }
+  window.open("/desktop", "_blank");
+}
+function shotImg(r) {
+  if (!r || !r.shot) return "";
+  const src = r.shot.startsWith("data:") ? r.shot : `${r.shot}?t=${Date.now()}`;
+  return `<img src="${src}" style="width:100%;margin-top:8px;border-radius:10px;border:1px solid #333" alt="print do navegador">`;
+}
+function openAssist(id) {
+  const acc = (lastAccounts || []).find(a => a.id === id);
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:99;padding:16px";
+  ov.innerHTML = `
+    <div class="card" style="width:100%;max-width:430px">
+      <h2>🪄 login fácil — ${escapeHtml(acc ? acc.label : "")}</h2>
+      <div class="muted" style="font-size:12px">
+        Você digita só aqui no painel; o Orbe preenche o Chrome sozinho.
+        Serve pra <b>Google</b> (Gmail/Gemini/Drive) e pra <b>Arena</b> (que entra com Google).
+        Sua senha vai direto pro Chrome, não fica salva.
+      </div>
+      <input id="asEmail" type="email" placeholder="e-mail da conta Google" style="width:100%;margin-top:10px">
+      <input id="asPass" type="password" placeholder="senha" style="width:100%;margin-top:8px">
+      <input id="asCode" inputmode="numeric" placeholder="código 2FA — só se o Google pedir" style="width:100%;margin-top:8px">
+      <div id="asStatus" class="muted" style="margin-top:10px"></div>
+      <div class="row btns" style="margin-top:12px">
+        <button id="asGo" class="small">entrar</button>
+        <button id="asClose" class="small ghost">fechar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector("#asClose").onclick = () => ov.remove();
+  ov.querySelector("#asGo").onclick = async () => {
+    const st = ov.querySelector("#asStatus");
+    st.textContent = "⌨️ digitando no Chrome… (~20 s, não feche)";
+    try {
+      const r = await api(`/api/accounts/${id}/assisted`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          email: ov.querySelector("#asEmail").value.trim(),
+          password: ov.querySelector("#asPass").value,
+          code: ov.querySelector("#asCode").value.trim(),
+        })});
+      if (r.need_code) {
+        st.innerHTML = `🔢 o Google mandou um código (app/SMS): digite no campo “código 2FA” e toque em entrar de novo.${shotImg(r)}`;
+        return;
+      }
+      if (r.ok) {
+        st.innerHTML = `✅ pronto! login salvo no perfil.${shotImg(r)}`;
+        refreshAccounts(); refreshHealth();
+        setTimeout(() => ov.remove(), 2500);
+      } else {
+        st.innerHTML = `❌ ${escapeHtml(r.error || "não logou")}${shotImg(r)}<div class="muted" style="font-size:11px;margin-top:6px">Se o Google travar em verificação extra, use LOGIN (manual) + a barrinha do desktop.</div>`;
+      }
+    } catch (e) { st.textContent = e.message; }
+  };
+}
+$("#btnAddAccount").onclick = async () => {
+  const label = $("#newLabel").value.trim() || "conta";
+  await api("/api/accounts", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({platform:"arena", label})});
+  $("#newLabel").value = "";
+  refreshAccounts(); refreshHealth();
+};
+
+// ------------------------------------------------------------------ task --
+$("#btnRun").onclick = () => runTask();
+$("#goal").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey||e.ctrlKey)) runTask(); });
+async function runTask() {
+  let goal = $("#goal").value.trim();
+  const ids = [...picked];
+  if (!ids.length) { alert("Marque a caixinha de pelo menos uma conta."); return; }
+  const per_account = {};
+  ids.forEach(id => { if ((cmds[id] || "").trim()) per_account[id] = cmds[id].trim(); });
+  if (!goal && !Object.keys(per_account).length) { alert("Escreva a ordem da conta (campo embaixo dela) ou um objetivo geral."); return; }
+  $("#btnRun").disabled = true;
+  $("#result").innerHTML = '<span class="muted">executando…</span>';
+  try {
+    const r = await api("/api/tasks", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({goal, account_ids: ids, per_account})});
+    currentTask = r.id;
+    poll();
+  } catch (e) { $("#result").innerHTML = `<span class="lv-error">${escapeHtml(e.message)}</span>`; $("#btnRun").disabled = false; }
+}
+async function poll() {
+  if (!currentTask) return;
+  let t;
+  try { t = await api(`/api/tasks/${currentTask}`); } catch (e) { return; }
+  $("#result").innerHTML =
+    `<span class="badge ${t.state}">${t.state}</span> <span class="muted">${escapeHtml(t.goal)}</span>` +
+    (t.synthesis ? `<pre>${escapeHtml(t.synthesis)}</pre>` : "") +
+    (t.error ? `<pre class="lv-error">${escapeHtml(t.error)}</pre>` : "");
+  $("#resArchive").innerHTML = t.archive ? `📁 ${escapeHtml(t.archive)}` : "";
+  if (t.results && t.results.length) {
+    $("#resDetails").style.display = "block";
+    $("#resRaw").textContent = t.results.map(r =>
+      `### ${r.platform} [${r.ok ? "ok" : "FALHOU"}]\nprompt: ${r.prompt}\n${r.ok ? r.answer : r.error}`).join("\n\n");
+  }
+  if (["done","failed","canceled"].includes(t.state)) {
+    $("#btnRun").disabled = false; refreshHistory();
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    return;
+  }
+  pollTimer = setTimeout(poll, 1500);
+}
+async function refreshHistory() {
+  const d = await api("/api/tasks");
+  if (!d.tasks.length) { $("#history").textContent = "—"; return; }
+  $("#history").innerHTML = d.tasks.slice(0,10).map(t =>
+    `<div class="acc"><div style="display:flex;justify-content:space-between;gap:8px">
+      <b style="flex:1">${escapeHtml(t.goal.slice(0,80))}</b>
+      <span class="badge ${t.state}">${t.state}</span></div>
+      <div class="muted" style="font-size:11px">${new Date(t.created_at*1000).toLocaleString()} · ${t.n_ok||0}/${t.n_results||0} ok</div>
+    </div>`).join("");
+}
+
+// ------------------------------------------------------------- settings --
+async function fillDestAccs(kind) {
+  const plat = kind === "drive" ? "gdrive" : kind;
+  const sel = $("#destAcc");
+  if (kind === "local") { sel.style.display = "none"; return; }
+  try {
+    const d = await api("/api/accounts");
+    const accs = d.accounts.filter(a => a.platform === plat);
+    sel.innerHTML = accs.length
+      ? accs.map(a => `<option value="${a.id}">${escapeHtml(a.label)}</option>`).join("")
+      : `<option value="">sem conta ${escapeHtml(plat)} — crie uma e faça LOGIN</option>`;
+  } catch (e) { sel.innerHTML = `<option value="">erro</option>`; }
+  sel.style.display = "block";
+}
+function applyDest(dest) {
+  const kind = dest.startsWith("github") ? "github" : dest.startsWith("drive") ? "drive" : "local";
+  $("#destKind").value = kind;
+  fillDestAccs(kind).then(() => { const acc = (dest.split(":")[1] || ""); if (acc) $("#destAcc").value = acc; });
+}
+(async () => {
+  try {
+    const s = await api("/api/settings");
+    $("#archiveDir").value = s.results_dir || "";
+    applyDest(s.archive_dest || "local");
+  } catch (e) {}
+})();
+$("#destKind").addEventListener("change", () => fillDestAccs($("#destKind").value));
+$("#btnSaveDir").addEventListener("click", async () => {
+  try {
+    const kind = $("#destKind").value;
+    const dest = kind === "local" ? "local" : kind + ":" + $("#destAcc").value;
+    const s = await api("/api/settings", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({results_dir: $("#archiveDir").value, archive_dest: dest})});
+    $("#archiveDir").value = s.results_dir;
+    $("#btnSaveDir").textContent = "✓";
+    setTimeout(() => $("#btnSaveDir").textContent = "salvar", 1200);
+  } catch (e) { alert(e.message); }
+});
+
+// ------------------------------------------------- backup dos logins (GitHub) --
+function backupSummary(r) {
+  if (!r || !r.results) return r && r.error ? r.error : "ok";
+  return r.results.map(x => `${x.ok ? "✓" : "✗"} ${x.label}${x.kb ? ` (${x.kb} KB)` : x.error ? ` ${x.error}` : ""}`).join(" · ");
+}
+(async () => {
+  try {
+    const s = await api("/api/settings");
+    const savedTok = localStorage.getItem("orbe_backup_token") || "";
+    if (!s.backup_set && savedTok) {
+      // Render reiniciou e esqueceu o token: reconfigura e restaura sozinho
+      await api("/api/settings", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({backup_token: savedTok})});
+      const r = await api("/api/backup/restore", {method: "POST"});
+      $("#backupStatus").textContent = "🔄 restaurado após reinício: " + backupSummary(r);
+      refreshAccounts(); refreshHealth();
+    } else if (s.backup_set) {
+      $("#backupStatus").textContent = "🔐 token configurado — cada LOGIN faz backup automático";
+    }
+  } catch (e) {}
+})();
+$("#btnBackupSave").addEventListener("click", async () => {
+  const t = $("#backupTok").value.trim();
+  if (!t) return alert("cole o token do GitHub");
+  try {
+    localStorage.setItem("orbe_backup_token", t);
+    await api("/api/settings", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({backup_token: t})});
+    $("#backupTok").value = "";
+    $("#backupStatus").textContent = "🔐 salvo — subindo logins agora…";
+    const r = await api("/api/backup/now", {method: "POST"});
+    $("#backupStatus").textContent = "🔐 " + backupSummary(r);
+  } catch (e) { alert(e.message); }
+});
+$("#btnBackupNow").addEventListener("click", async () => {
+  $("#backupStatus").textContent = "subindo…";
+  try {
+    const r = await api("/api/backup/now", {method: "POST"});
+    $("#backupStatus").textContent = backupSummary(r);
+  } catch (e) { $("#backupStatus").textContent = e.message; }
+});
+$("#btnBackupRestore").addEventListener("click", async () => {
+  $("#backupStatus").textContent = "restaurando…";
+  try {
+    const r = await api("/api/backup/restore", {method: "POST"});
+    $("#backupStatus").textContent = backupSummary(r);
+  } catch (e) { $("#backupStatus").textContent = e.message; }
+});
+
+// ------------------------------------------------------------ log ao vivo --
+function pushLog(ev) {
+  const box = $("#log");
+  if (box.firstChild && box.firstChild.classList && box.firstChild.classList.contains("muted")) box.innerHTML = "";
+  const line = document.createElement("div");
+  const cls = ev.level === "ok" ? "lv-ok" : ev.level === "error" ? "lv-error" : ev.level === "warn" ? "lv-warn" : ev.level === "step" ? "lv-step" : "";
+  line.innerHTML = `<span class="t">${new Date(ev.ts*1000).toLocaleTimeString()}</span><span class="${cls}">${escapeHtml(ev.src)} ${escapeHtml(ev.msg)}</span>`;
+  box.prepend(line);
+  while (box.children.length > 120) box.removeChild(box.lastChild);
+}
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.type !== "log") return;
+    pushLog(d.event);
+  };
+  ws.onclose = () => setTimeout(connectWS, 2000);
+}
+
+refreshHealth(); refreshAccounts(); refreshHistory(); connectWS(); updateSelInfo();
+</script>
+</body>
+</html>

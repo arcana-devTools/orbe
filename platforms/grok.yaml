@@ -1,0 +1,17 @@
+id: grok
+name: Grok
+kind: browser
+category: busca
+url: "https://grok.com/"
+new_chat_url: "https://grok.com/"
+prompt_selector: 'textarea[placeholder], div[contenteditable="true"], textarea'
+submit:
+  key: Enter
+answer_selector: '.prose, [class*="message"], article'
+answer_index: -1
+settle_ms: 3000
+max_wait_s: 120
+logged_in_selector: 'textarea, div[contenteditable="true"]'
+logged_out_selector: 'button:has-text("Sign in"), a[href*="login"]'
+extra:
+  dica: "Útil para tendências do X/Twitter em tempo quase real."

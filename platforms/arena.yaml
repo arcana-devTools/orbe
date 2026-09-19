@@ -1,0 +1,46 @@
+# Arena.ai — a IA do próprio Arena (Agent Mode, Chat, etc.)
+#
+# COMO USAR: no seu PC (HEADLESS=0), crie a conta desta plataforma e clique em
+# LOGIN uma vez — a sessão fica salva no perfil. A partir daí o Orbe abre a
+# Arena, escolhe o modo (pre_actions) e manda o prompt.
+#
+# Os seletores abaixo são ESTIMADOS a partir do layout público. Se a Arena
+# mudar o layout: F12 -> inspecionar -> ajustar os seletores. O mecanismo
+# (pre_actions + prompt + resposta) é testado e estável.
+id: arena
+name: Arena.ai
+kind: browser
+category: chat
+url: "https://arena.ai/"
+new_chat_url: "https://arena.ai/"
+
+# Escolhe o Agent Mode antes de digitar, imitando o caminho que você faz
+# na mão: New Chat -> abrir o seletor de modo -> clicar em Agent.
+# Tudo opcional: se um seletor não existir (layout mudou), pula e continua.
+# Trajetória REAL verificada por screenshot/calibração (2026-09-18):
+#   home = "Ask anything…" + botões Battle/Auto; o seletor "Auto" abre
+#   Video/Image/Web Search/Code/Text/Auto — o item "Agent" só aparece LOGADO.
+#   Tudo optional: se o layout mudar ou faltar opção, pula e continua.
+pre_actions:
+  - click: 'button:has-text("New Chat"), a:has-text("New Chat")'
+    wait_ms: 800
+    optional: true
+  - click: 'button:has-text("Auto")'
+    wait_ms: 700
+    optional: true
+  - click: 'text="Agent", [role="menuitem"]:has-text("Agent"), [role="option"]:has-text("Agent")'
+    wait_ms: 900
+    optional: true
+
+prompt_selector: 'textarea[placeholder*="Ask anything"], textarea'
+submit:
+  selector: 'button[aria-label*="Send" i], button:has-text("Send message")'
+  key: Enter
+answer_selector: '[data-message-author-role="assistant"], article, .markdown, [class*="message"]'
+answer_index: -1
+settle_ms: 3500
+max_wait_s: 240          # agent mode pensa longo
+logged_in_selector: 'textarea[placeholder], div[contenteditable="true"]'
+logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign in")'
+extra:
+  dica: "Se quiser outro modo/modelo, troque os textos 'Agent' nos pre_actions."

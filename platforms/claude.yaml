@@ -1,0 +1,17 @@
+id: claude
+name: Claude
+kind: browser
+category: chat
+url: "https://claude.ai/new"
+new_chat_url: "https://claude.ai/new"
+prompt_selector: 'div.ProseMirror[contenteditable="true"], div[contenteditable="true"], textarea'
+submit:
+  key: Enter
+answer_selector: '[data-is-streaming], .font-claude-response, div[class*="response"]'
+answer_index: -1
+settle_ms: 3000
+max_wait_s: 120
+logged_in_selector: 'div.ProseMirror, div[contenteditable="true"]'
+logged_out_selector: 'a[href*="/login"], button:has-text("Continue with Google")'
+extra:
+  dica: "Bom para documentos longos e análises; peça upload de arquivo numa versão futura."

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Fake AI com modos</title></head>
+<body>
+  <div id="modes">
+    <button id="mode-chat" class="mode on">Chat</button>
+    <button id="mode-agent" class="mode">Agent</button>
+    <span id="current">modo: chat</span>
+  </div>
+  <textarea id="prompt" aria-label="Prompt"></textarea>
+  <button id="send" aria-label="Enviar">Enviar</button>
+  <div class="conversation"></div>
+  <script>
+    let mode = "chat";
+    function setMode(m) {
+      mode = m;
+      document.getElementById("current").textContent = "modo: " + m;
+      document.querySelectorAll(".mode").forEach(b => b.classList.remove("on"));
+      document.getElementById("mode-" + m).classList.add("on");
+    }
+    document.getElementById("mode-chat").onclick = () => setMode("chat");
+    document.getElementById("mode-agent").onclick = () => setMode("agent");
+    function send() {
+      const ta = document.getElementById("prompt");
+      const text = ta.value.trim();
+      if (!text) return;
+      const a = document.createElement("div");
+      a.className = "answer";
+      a.id = "answer";
+      a.textContent = "RESPONDI-NO-MODO-" + mode + ": " + text.slice(0, 60);
+      document.querySelector(".conversation").appendChild(a);
+      ta.value = "";
+    }
+    document.getElementById("send").addEventListener("click", send);
+    document.getElementById("prompt").addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

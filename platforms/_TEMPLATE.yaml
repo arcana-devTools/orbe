@@ -1,0 +1,55 @@
+# ============================================================
+# TEMPLATE DE ADAPTER — copie este arquivo para platforms/minha-ia.yaml
+# e edite. É assim que o Orbe aprende QUALQUER site novo, sem código.
+#
+# Depois de salvar: botão "recarregar" no painel (ou POST /api/platforms/reload).
+# Para descobrir os seletores: abra o site > F12 > botão de inspecionar.
+# ============================================================
+
+id: minha-ia            # obrigatório, único, minúsculo (vira o nome interno)
+name: Minha IA          # nome exibido no painel
+kind: browser           # browser | api   (api = tem chave, sem navegador)
+category: chat          # chat | busca | video | imagem | codigo | produtividade
+
+url: "https://exemplo.com"          # página inicial
+new_chat_url: "https://exemplo.com/new"   # opcional: conversa nova a cada tarefa
+
+# Onde digitar. Aceita vários seletores separados por vírgula (tenta em ordem).
+# Se ficar VAZIO, o Orbe usa heurística automática (acha qualquer caixa visível).
+prompt_selector: 'textarea[aria-label="Pergunte algo"], div[contenteditable="true"]'
+
+# Como enviar. `key` = tecla; `selector` = botão (se não achar o botão, usa a tecla).
+submit:
+  key: Enter
+  selector: 'button[aria-label="Enviar"]'
+
+# De onde ler a resposta. Vazio = heurística (último bloco de texto da conversa).
+answer_selector: '[data-message-author-role="assistant"]'
+answer_index: -1        # -1 = último elemento da lista (quase sempre é o que você quer)
+
+# Espera: quantos ms a resposta precisa ficar "parada" para considerar pronta
+settle_ms: 2500
+max_wait_s: 90          # tempo máximo esperando a resposta
+
+# Detecção de sessão (opcional, mas evita perder tempo quando desloga)
+logged_in_selector: 'textarea, div[contenteditable="true"]'
+logged_out_selector: 'a[href*="login"], button:has-text("Entrar")'
+
+# ---------------------------------------------------------------
+# LOGIN AUTOMÁTICO (opcional)
+# Só use em sites SEM 2FA e SEM captcha (site interno, painel simples).
+# A senha NUNCA fica aqui: fica criptografada no cofre (data/secrets/vault.json)
+# e você grava com:  python cli.py --set-login ACC_ID
+# Se os seletores abaixo estiverem vazios, o Orbe nem tenta: ele pede para você
+# logar na mão pelo botão LOGIN do painel (caminho certo para ChatGPT/Gemini/Claude).
+# ---------------------------------------------------------------
+login_url: ""                      # ex.: https://site.com/login
+login_user_selector: ""            # ex.: 'input[name="email"]'
+login_pass_selector: ""            # ex.: 'input[type="password"]'
+login_submit_selector: ""          # ex.: 'button[type="submit"]'
+login_key: "Enter"                 # tecla de fallback se não achar o botão
+login_wait_ms: 4000                # espera pós-login antes de conferir a sessão
+
+# Campos livres para uso futuro / anotações suas
+extra:
+  nota: "meu adapter"

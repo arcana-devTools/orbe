@@ -1,0 +1,17 @@
+id: canva
+name: Canva
+kind: browser
+category: design
+url: "https://www.canva.com/"
+new_chat_url: "https://www.canva.com/"
+prompt_selector: 'textarea, div[contenteditable="true"], input[aria-label*="Search"]'
+submit:
+  key: Enter
+answer_selector: 'main, [role="main"]'
+answer_index: -1
+settle_ms: 3000
+max_wait_s: 60
+logged_in_selector: 'a[href*="/home"], button:has-text("Criar um design")'
+logged_out_selector: 'a[href*="login"], button:has-text("Entrar")'
+extra:
+  atencao: "Editor visual é difícil de automatizar de forma confiável. Bom para abrir/buscar templates; geração automática de design fica melhor via API do Canva."

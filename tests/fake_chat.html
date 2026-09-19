@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Fake AI — página de teste</title></head>
+<body>
+  <h1>Fake AI</h1>
+  <textarea id="prompt" aria-label="Prompt" placeholder="Pergunte algo"></textarea>
+  <button id="send" aria-label="Enviar">Enviar</button>
+  <div class="conversation">
+    <div class="msg user" data-role="user">mensagem antiga do usuário</div>
+  </div>
+  <script>
+    const btn = document.getElementById('send');
+    const ta = document.getElementById('prompt');
+    function send() {
+      const text = ta.value.trim();
+      if (!text) return;
+      const u = document.createElement('div');
+      u.className = 'msg user';
+      u.dataset.role = 'user';
+      u.textContent = text;
+      document.querySelector('.conversation').appendChild(u);
+      ta.value = '';
+      const a = document.createElement('div');
+      a.className = 'answer';
+      a.id = 'answer';
+      a.textContent = 'pensando';
+      document.querySelector('.conversation').appendChild(a);
+      // responde em etapas para simular streaming
+      setTimeout(() => { a.textContent = 'OK-FROM-FAKE-AI: ' + text.slice(0, 60); }, 900);
+    }
+    btn.addEventListener('click', send);
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

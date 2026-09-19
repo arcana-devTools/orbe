@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Fake AI com login</title></head>
+<body>
+  <div id="gate">
+    <h1>Entrar</h1>
+    <input id="email" name="email" placeholder="e-mail" />
+    <input id="senha" name="senha" type="password" placeholder="senha" />
+    <button id="entrar">Entrar</button>
+    <div id="erro"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <h1>Fake AI</h1>
+    <textarea id="prompt" aria-label="Prompt"></textarea>
+    <button id="send" aria-label="Enviar">Enviar</button>
+    <div class="conversation"></div>
+  </div>
+
+  <script>
+    // sessão persiste em localStorage: imita cookie de login
+    const USER_OK = 'demo@exemplo.com', PASS_OK = 'senha123';
+
+    function showApp() {
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+    }
+
+    if (localStorage.getItem('sessao') === 'ativa') showApp();
+
+    document.getElementById('entrar').addEventListener('click', () => {
+      const u = document.getElementById('email').value.trim();
+      const p = document.getElementById('senha').value;
+      if (u === USER_OK && p === PASS_OK) {
+        localStorage.setItem('sessao', 'ativa');
+        showApp();
+      } else {
+        document.getElementById('erro').textContent = 'credenciais inválidas';
+      }
+    });
+
+    function send() {
+      const ta = document.getElementById('prompt');
+      const text = ta.value.trim();
+      if (!text) return;
+      const conv = document.querySelector('.conversation');
+      const a = document.createElement('div');
+      a.className = 'answer';
+      a.id = 'answer';
+      conv.appendChild(a);
+      ta.value = '';
+      setTimeout(() => { a.textContent = 'LOGADO-E-RESPONDENDO: ' + text.slice(0, 60); }, 800);
+    }
+    document.getElementById('send').addEventListener('click', send);
+    document.getElementById('prompt').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>
