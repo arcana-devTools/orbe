@@ -419,7 +419,18 @@ async def run_browser_step(
                     result["error"] = f"pre_action {i + 1} falhou ({sel}): {exc}"
                     return result
 
-    inp, used_sel = await _find_input(page, spec)
+    # páginas lentas (onboarding, animação de entrada, máquina sobrecarregada)
+    # podem não ter a caixa visível de cara: tenta por até ~15 s
+    inp = used_sel = None
+    for tent in range(5):
+        inp, used_sel = await _find_input(page, spec)
+        if inp is not None:
+            break
+        try:
+            await page.keyboard.press("Escape")  # fecha dialog/modal que cubra
+        except Exception:
+            pass
+        await page.wait_for_timeout(3000)
     if inp is None:
         result["error"] = "não achei a caixa de prompt (a página pode ter mudado de layout)"
         if screenshot_path:

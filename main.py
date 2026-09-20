@@ -76,6 +76,28 @@ async def _memory_watchdog() -> None:
             pass
 
 
+def _fail_stale_running_tasks() -> None:
+    """Tarefas que estavam 'running/queued' quando o servidor morreu (sandbox
+    reinicia, Render redeploya) nunca mais vão terminar — marca como failed
+    com explicação, senão o painel fica em 'running' eterno."""
+    import time as _time
+
+    from models import TaskState
+
+    n = 0
+    for t in STORE.tasks.values():
+        if t.state in (TaskState.RUNNING, TaskState.QUEUED):
+            t.state = TaskState.FAILED
+            t.error = (
+                "o servidor reiniciou no meio da tarefa (sandbox/Render "
+                "reiniciam sozinhos) — o login continua salvo; execute de novo"
+            )
+            t.finished_at = _time.time()
+            n += 1
+    if n:
+        STORE.save_tasks()
+
+
 async def _restore_logins_on_boot() -> None:
     """Se o container reiniciou (Render), baixa de volta os logins do GitHub."""
     tok = STORE.prefs.get("backup_token", "")
@@ -113,6 +135,7 @@ async def lifespan(app: FastAPI):
     await BUS.info(
         f"{len(eng.registry.specs)} plataformas instaladas, {len(STORE.accounts)} contas configuradas"
     )
+    _fail_stale_running_tasks()
     asyncio.create_task(_memory_watchdog())
     asyncio.create_task(_restore_logins_on_boot())
     yield
@@ -162,7 +185,7 @@ class PlatformIn(BaseModel):
 async def index(token: str = ""):
     if _s.auth_token and not _ok_token(token):
         return RedirectResponse(url="/?denied=1")
-    return FileResponse(WEB_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/health")
@@ -603,7 +626,7 @@ fetch("/api/ping");
 async def desktop_page(token: str = ""):
     if _s.auth_token and not _ok_token(token):
         raise HTTPException(401, "token inválido")
-    return HTMLResponse(DESKTOP_HTML)
+    return HTMLResponse(DESKTOP_HTML, headers={"Cache-Control": "no-store"})
 
 
 class DesktopTypeIn(BaseModel):

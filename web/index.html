@@ -440,10 +440,25 @@ function answerCards(t) {
     all };
 }
 let lastAnswerAll = "";
+let pollFails = 0;
 async function poll() {
   if (!currentTask) return;
   let t;
-  try { t = await api(`/api/tasks/${currentTask}`); } catch (e) { return; }
+  try {
+    t = await api(`/api/tasks/${currentTask}`);
+    pollFails = 0;
+  } catch (e) {
+    // servidor não responde (reinício da sandbox/Render): avisa em vez de
+    // deixar "running" eterno
+    if (++pollFails >= 3) {
+      $("#result").innerHTML = `<span class="badge failed">servidor reiniciou</span> <span class="muted">a tarefa parou porque o servidor caiu. Toque em ↻ no preview (ou recarregue a página) e execute de novo — o login continua salvo.</span>`;
+      $("#btnRun").disabled = false;
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      return;
+    }
+    pollTimer = setTimeout(poll, 3000);
+    return;
+  }
   $("#result").innerHTML =
     `<span class="badge ${t.state}">${t.state}</span> <span class="muted">${escapeHtml(t.goal)}</span>` +
     (t.synthesis ? `<pre>${escapeHtml(t.synthesis)}</pre>` : "") +
