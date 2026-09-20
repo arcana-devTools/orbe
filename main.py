@@ -424,6 +424,26 @@ async def delete_account(account_id: str, token: str = "") -> dict[str, Any]:
     return {"deleted": account_id}
 
 
+class RenameIn(BaseModel):
+    label: str = ""
+
+
+@app.post("/api/accounts/{account_id}/rename")
+async def rename_account(account_id: str, payload: RenameIn, token: str = "") -> dict[str, Any]:
+    """Renomeia o rótulo da conta (o perfil/login NÃO muda — só o nome exibido)."""
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    acc = STORE.accounts.get(account_id)
+    if not acc:
+        raise HTTPException(404, "conta não encontrada")
+    label = payload.label.strip()
+    if not label:
+        raise HTTPException(400, "label vazio")
+    acc.label = label[:40]
+    STORE.save_accounts()
+    return {"ok": True, "id": account_id, "label": acc.label}
+
+
 class AssistedIn(BaseModel):
     email: str = ""
     password: str = ""

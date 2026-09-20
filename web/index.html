@@ -227,6 +227,7 @@ function renderAccounts(accounts) {
       <div class="row btns" style="margin-top:8px">
         <button class="small" data-assist="${a.id}">🪄 login fácil</button>
         <button class="small ghost" data-login="${a.id}">LOGIN (manual)</button>
+        <button class="small ghost" data-ren="${a.id}" title="renomear">✏️</button>
         <button class="small ghost" data-del="${a.id}">✕</button>
       </div>
       ${picked.has(a.id) ? `<textarea data-cmd="${a.id}" rows="2" style="margin-top:8px"
@@ -241,6 +242,15 @@ function renderAccounts(accounts) {
   box.querySelectorAll("[data-cmd]").forEach(t => t.oninput = () => { cmds[t.dataset.cmd] = t.value; });
   box.querySelectorAll("[data-login]").forEach(b => b.onclick = () => doLogin(b.dataset.login));
   box.querySelectorAll("[data-assist]").forEach(b => b.onclick = () => openAssist(b.dataset.assist));
+  box.querySelectorAll("[data-ren]").forEach(b => b.onclick = async () => {
+    const acc = (lastAccounts || []).find(x => x.id === b.dataset.ren);
+    const novo = prompt("Novo nome da conta (o login/perfil continua o mesmo):", acc ? acc.label : "");
+    if (!novo || !novo.trim()) return;
+    try {
+      await api(`/api/accounts/${b.dataset.ren}/rename`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({label: novo.trim()})});
+      refreshAccounts();
+    } catch (e) { alert(e.message); }
+  });
   box.querySelectorAll("[data-cal]").forEach(b => b.onclick = async () => {
     const r = await api(`/api/accounts/${b.dataset.cal}/calibrate`, {method:"POST"});
     alert((r.elements||[]).map(e => `${e.tag}: ${(e.text||"").slice(0,40)}`).join("\n") || "nada visível");
