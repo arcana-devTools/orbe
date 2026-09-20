@@ -135,3 +135,36 @@ usuário) → Render redeploya sozinho (~3-5 min). Validar: `curl /health` (brow
 
 ## PAT ativo p/ push (user autorizou; recomendar revogar depois)
 <peça um PAT novo ao user — fine-grained, Contents RW no repo orbe>
+
+## v0.12 (2026-09-20) — 2FA navegável, probe de login, split inline
+- **2FA do Google navegável** (engine.assisted_login): máquina de estados p/ telas de
+  desafio — clica "Tentar outro jeito", escolhe método (SMS > Autenticador > prompt
+  no celular), até 4 rodadas; `need_code` + `hint` claros no painel (código 2FA vai
+  por SMS/app, NUNCA por e-mail). Clique PRECISO no tile (data-challengetype/role),
+  não em contêiner (bug v0.10: get_by_text clicava o body e não selecionava).
+- **Tela "número de telefone"**: detectada → `need_manual` + dica p/ LOGIN manual.
+- **check_probe** (adapters.py + YAML): home pública com textarea (Arena "Ask
+  anything") dava falso "ok" — probe ativo clica no seletor de modos e procura item
+  que SÓ existe logado (Arena: "Agent"). Conclusivo; cai no passivo se falhar.
+  Verificado na Arena REAL: perfil vazio agora = logged_out.
+- **Split inline por conta** (orchestrator._split_per_account): aceita
+  "conta 1: X / conta 2: Y" (e ";") numa linha só; multilinha continua igual.
+- **Painel**: zoom nos prints (toque p/ ampliar), hints need_code/need_manual.
+- Testes: 43 (novos: challenge 8, probe+split 6; fixture tests/fake_probe.html —
+  cuidado: "deslogado".contains("logado") é true, fixture checa "probe_logado").
+- Sandbox: example.com dá ERR_TIMED_OUT (bloqueio) — e2e real use servidor local
+  (tests/ no :8899, fake_chat.html responde OK-FROM-FAKE-AI; validado fim-a-fim).
+
+## v0.13 (2026-09-20) — tooltip Radix não bloqueia mais o envio
+- **Caso real (Arena logada)**: popover do seletor de modos ("Auto-routes you to
+  the right modality", div[data-radix-popper-content-wrapper]) ficava SOBRE a
+  textarea e o `inp.click()` estourava timeout 5000ms → "Nenhuma IA respondeu".
+- **Fix em camadas** (run_browser_step): Escape antes de digitar → click normal
+  (2.5 s) → click force → **fill()** (foca via DOM; overlay não bloqueia).
+- **Descoberta dura**: click(force=True) com overlay NÃO lança erro mas o evento
+  vai pro overlay (sem efeito) — por isso fallback de submit é TECLADO
+  (`inp.press(key)`), não force no botão (_submit: clique simples → press).
+- pre_actions agora aceita `{"key": "Escape", wait_ms}` (arena.yaml fecha o
+  popover depois de escolher o modo).
+- Teste: tests/fake_tooltip.html (overlay z-index que ignora Escape) +
+  test_tooltip_overlay.py — réplica do erro; 44 testes verdes.

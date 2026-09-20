@@ -31,6 +31,11 @@ pre_actions:
   - click: 'text="Agent", [role="menuitem"]:has-text("Agent"), [role="option"]:has-text("Agent")'
     wait_ms: 900
     optional: true
+  # o clique no modo deixa o popover/tooltip Radix aberto SOBRE a textarea
+  # ("Auto-routes you to the right modality"), bloqueando cliques — feche
+  - key: "Escape"
+    wait_ms: 400
+    optional: true
 
 prompt_selector: 'textarea[placeholder*="Ask anything"], textarea'
 submit:
@@ -42,5 +47,12 @@ settle_ms: 3500
 max_wait_s: 240          # agent mode pensa longo
 logged_in_selector: 'textarea[placeholder], div[contenteditable="true"]'
 logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign in")'
+# Probe ativo (v0.12): a home PÚBLICA da Arena tem textarea ("Ask anything..."),
+# então o logged_in_selector genérico dava falso "ok" pra conta vazia.
+# O item "Agent" do seletor de modos só existe LOGADO (trajetória real
+# 2026-09-18): clicamos no seletor e procuramos "Agent" como item de menu.
+check_probe:
+  click: 'button:has-text("Auto"), button:has-text("Battle")'
+  expect: '[role="menuitem"]:text-matches("^\\s*Agent\\s*$"), [role="option"]:text-matches("^\\s*Agent\\s*$"), [role="button"]:text-matches("^\\s*Agent\\s*$"), li:text-matches("^\\s*Agent\\s*$")'
 extra:
   dica: "Se quiser outro modo/modelo, troque os textos 'Agent' nos pre_actions."

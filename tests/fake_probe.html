@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>probe fake</title></head><body>
+<textarea id="prompt" placeholder="Ask anything…"></textarea>
+<button id="modes" onclick="openMenu()">Auto</button>
+<div id="menu" style="display:none"></div>
+<script>
+const LOGGED = location.pathname.indexOf("probe_logado") !== -1;
+function openMenu(){
+  const m = document.getElementById("menu");
+  m.innerHTML = LOGGED
+    ? '<div role="menuitem">Agent</div><div role="menuitem">Text</div><div role="menuitem">Auto</div>'
+    : '<div role="menuitem">Text</div><div role="menuitem">Code</div><div role="menuitem">Auto</div>';
+  m.style.display = "block";
+}
+</script>
+</body></html>

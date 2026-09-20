@@ -124,7 +124,12 @@ class Orchestrator:
               conta 2: pesquise sobre a chuva
         Contas sem linha própria recebem o texto global (linhas fora das
         diretivas). Sem a sintaxe, todas recebem o objetivo inteiro.
+        Também aceita a forma INLINE numa linha só: "conta 1: X / conta 2: Y"
+        (e separando por ";") — v0.12.
         """
+        # inline -> uma diretiva por linha (só separa quando "/" ou ";" vem
+        # ANTES de "conta N:", para não quebrar "/" legítimo dentro do texto)
+        goal = re.sub(r"\s*[/;]\s*(conta\s+\d+\s*[:\-])", r"\n\1", goal, flags=re.I)
         prompts = [""] * n
         global_lines: list[str] = []
         cur = -1

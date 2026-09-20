@@ -16,6 +16,66 @@ from adapters import Registry, check_login, run_browser_step
 # Google (set/2026): o campo de e-mail é type=text name=identifier
 EMAIL_SEL = '#identifierId, input[name="identifier"]'
 PASS_SEL = 'input[type="password"][name="Passwd"], input[type="password"]'
+
+# 2FA (set/2026): o Google pode mostrar o campo do código direto OU uma tela de
+# escolha do método ("Receber um código para fazer login" / "Tentar outro jeito").
+# O código NUNCA vai por e-mail: chega por SMS no celular ou no app Autenticador.
+# Prioridade do assistente: SMS > app Autenticador > prompt ("confirme no celular").
+CHALLENGE_TXT = (
+    "verificação em duas etapas",
+    "2-step verification",
+    "confirme que é você",
+    "confirm it's you",
+    "escolha como quer receber",
+    "choose how to get",
+    "receber um código",
+    "get a code",
+    "tentar outro jeito",
+    "try another way",
+)
+METHOD_PREFS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("sms", ("sms", "mensagem de texto", "text message", "text you a code")),
+    ("totp", ("autenticador", "authenticator")),
+    (
+        "prompt",
+        (
+            "confirme que é você",
+            "confirm it's you",
+            "verifique o seu telefone",
+            "google prompt",
+            "your phone",
+        ),
+    ),
+)
+TRY_OTHER_SEL = (
+    'button:has-text("Tentar outro jeito"), button:has-text("Try another way"), '
+    '[role="link"]:has-text("Tentar outro jeito"), '
+    '[role="link"]:has-text("Try another way")'
+)
+_CONTINUE_BTNS = (
+    "Continuar",
+    "Avançar",
+    "Próxima",
+    "Enviar",
+    "Continue",
+    "Next",
+    "Send",
+)
+
+
+def is_challenge_text(t: str) -> bool:
+    """O texto parece tela de desafio 2FA do Google?"""
+    tl = (t or "").lower()
+    return any(k in tl for k in CHALLENGE_TXT)
+
+
+def method_for_text(t: str) -> str:
+    """Dado o texto da tela/lista de métodos, qual escolher (sms > totp > prompt)."""
+    tl = (t or "").lower()
+    for name, words in METHOD_PREFS:
+        if any(w in tl for w in words):
+            return name
+    return ""
 from archive import archive_task
 from browser import MANAGER
 from config import get_settings
@@ -364,6 +424,75 @@ class Engine:
         return {"ok": True, "url": url, "elements": elements}
 
     # --------------------------------------------------- login assistido
+    async def _challenge_screen(self, page: Any) -> bool:
+        """Estamos numa tela de desafio 2FA do Google? (URL de challenge ou
+        texto de verificação em 2 etapas — só dentro do fluxo de login)."""
+        try:
+            url = (page.url or "").lower()
+        except Exception:
+            return False
+        if "challenge" in url:
+            return True
+        if "accounts.google.com" not in url or "signin" not in url:
+            return False  # já saiu do fluxo de login (ex.: myaccount)
+        return is_challenge_text(await self._page_txt(page, 600))
+
+    async def _pick_challenge(self, page: Any) -> str:
+        """Na tela de desafio do Google: expande 'Tentar outro jeito' (se
+        houver) e escolhe o método mais prático (SMS > Autenticador >
+        prompt no celular). Devolve o método escolhido ('' = nenhum)."""
+        try:
+            other = page.locator(TRY_OTHER_SEL)
+            if await other.count():
+                await other.first.click(timeout=4000)
+                await page.wait_for_timeout(1800)
+        except Exception:
+            pass
+            txt = await self._page_txt(page, 2000)
+            method = method_for_text(txt)
+            if not method:
+                return ""
+            word = next(
+                (w for w in dict(METHOD_PREFS)[method] if w in txt.lower()), ""
+            )
+            if not word:
+                return ""
+            # clique PRECISO: pega o tile/opção do método (role certo), não um
+            # contêiner gigante (get_by_text pode "clicar" o body e não fazer nada)
+            clicked = False
+            for sel in (
+                f'div[data-challengetype]:has-text("{word}")',
+                f'[role="link"]:has-text("{word}")',
+                f'[role="button"]:has-text("{word}")',
+                f'[role="radio"]:has-text("{word}")',
+                f'label:has-text("{word}")',
+                f'li:has-text("{word}")',
+            ):
+                try:
+                    loc = page.locator(sel).first
+                    if await loc.count() and await loc.is_visible():
+                        await loc.click(timeout=4000)
+                        clicked = True
+                        break
+                except Exception:
+                    continue
+            if not clicked:
+                try:
+                    await page.get_by_text(word, exact=False).last.click(timeout=4000)
+                except Exception:
+                    return ""
+            await page.wait_for_timeout(1200)
+        for b in _CONTINUE_BTNS:
+            try:
+                await page.locator(f'button:has-text("{b}")').first.click(
+                    timeout=1500
+                )
+                break
+            except Exception:
+                continue
+        await page.wait_for_timeout(2500)
+        return method
+
     async def _assist_shot(self, page: Any, account: Account) -> str:
         """Print embutido em base64 (o disco do Render é efêmero: /shots some
         no próximo restart — data URI chega sempre no painel)."""
@@ -402,8 +531,11 @@ class Engine:
             ctx = await MANAGER.context_for(account.profile)
             st = self._ASSIST.get(account_id)
             page: Any = None
-            if st and code and not st["page"].is_closed():
+            resume = bool(st) and not st["page"].is_closed()
+            picked = (st or {}).get("picked", "")
+            if resume:
                 page = st["page"]
+                await page.wait_for_timeout(1500)
             else:
                 page = await ctx.new_page()
                 await page.goto(
@@ -430,21 +562,97 @@ class Engine:
                     await page.fill(PASS_SEL, password)
                     await page.click("#passwordNext")
                     await page.wait_for_timeout(3500)
-                # 2) 2FA?
-                if page.locator('input[type="tel"]').count():
-                    if not code:
-                        self._ASSIST[account_id] = {"page": page}
-                        return {
-                            "ok": False,
-                            "need_code": True,
-                            "shot": await self._assist_shot(page, account),
-                        }
-                    await page.fill('input[type="tel"]', code)
-                    try:
-                        await page.click("#totpNext", timeout=5000)
-                    except Exception:
-                        await page.keyboard.press("Enter")
-                    await page.wait_for_timeout(3500)
+                # 2) desafio 2FA — o campo do código pode aparecer direto ou
+                #    depois de escolher o método ("Tentar outro jeito" → SMS /
+                #    Autenticador / prompt no celular). Até 4 rodadas.
+                tries = 0
+                for _ in range(4):
+                    tel = page.locator('input[type="tel"]')
+                    if await tel.count():
+                        if not code:
+                            # pode ser a tela do CÓDIGO (6 dígitos) ou a tela
+                            # que pede o NÚMERO de telefone inteiro p/ enviar SMS
+                            ttxt = (await self._page_txt(page, 600)).lower()
+                            asks_phone = (
+                                "número de telefone" in ttxt or "phone number" in ttxt
+                            ) and "código" not in ttxt and "code" not in ttxt
+                            self._ASSIST[account_id] = {
+                                "page": page,
+                                "picked": picked,
+                            }
+                            return {
+                                "ok": False,
+                                "need_code": not asks_phone,
+                                "need_manual": asks_phone,
+                                "hint": (
+                                    (
+                                        "📱 o Google quer o SEU NÚMERO de celular "
+                                        "pra enviar o SMS — essa tela o assistente "
+                                        "não preenche. Toque em “fechar” e use o "
+                                        "botão LOGIN (manual): você clica na tela "
+                                        "pelo Desktop virtual e digita o número."
+                                    )
+                                    if asks_phone
+                                    else (
+                                        "o código 2FA vai por SMS no seu CELULAR "
+                                        "(ou do app Autenticador) — NÃO chega por "
+                                        "e-mail. Digite os 6 dígitos e toque em "
+                                        "entrar de novo."
+                                    )
+                                ),
+                                "shot": await self._assist_shot(page, account),
+                            }
+                        await tel.first.fill(code)
+                        try:
+                            await page.click("#totpNext", timeout=5000)
+                        except Exception:
+                            await page.keyboard.press("Enter")
+                        await page.wait_for_timeout(3500)
+                        code = ""
+                        picked = "code"
+                        continue
+                    if await self._challenge_screen(page):
+                        if picked == "prompt":
+                            # esperando o dono tocar "Sim, sou eu" no celular
+                            await page.wait_for_timeout(3000)
+                            if await self._challenge_screen(page):
+                                self._ASSIST[account_id] = {
+                                    "page": page,
+                                    "picked": picked,
+                                }
+                                return {
+                                    "ok": False,
+                                    "need_code": True,
+                                    "hint": (
+                                        "toque “Sim, sou eu” no seu CELULAR "
+                                        "pra confirmar; depois toque em entrar "
+                                        "aqui de novo (sem código)."
+                                    ),
+                                    "shot": await self._assist_shot(page, account),
+                                }
+                            break
+                        if tries >= 2:
+                            self._ASSIST[account_id] = {
+                                "page": page,
+                                "picked": picked,
+                            }
+                            return {
+                                "ok": False,
+                                "need_code": True,
+                                "hint": (
+                                    "o Google pediu um método que o "
+                                    "assistente não sabe preencher (chave "
+                                    "física etc.). Faça login manual pelo "
+                                    "/desktop (botão LOGIN)."
+                                ),
+                                "shot": await self._assist_shot(page, account),
+                            }
+                        tries += 1
+                        m = await self._pick_challenge(page)
+                        if m:
+                            picked = m
+                        continue
+                    break
             except Exception as exc:
                 self._ASSIST.pop(account_id, None)
                 return {

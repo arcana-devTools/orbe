@@ -59,6 +59,12 @@ class AdapterSpec:
     max_wait_s: int = 90
     logged_in_selector: str = ""
     logged_out_selector: str = ""
+    # Probe ativo de login (opcional): {click: "...", expect: "..."} — alguns
+    # sites mostram o campo de texto PÚBLICO na home (ex.: Arena "Ask anything"),
+    # então logged_in_selector genérico dá falso "ok". Com probe, o Orbe clica
+    # no seletor e procura o "expect" (algo que SÓ existe logado); achou = ok,
+    # não achou = logged_out. Tem prioridade sobre logged_in_selector.
+    check_probe: dict[str, str] = field(default_factory=dict)
     # login automático (opcional): só vale quando o site NÃO tem 2FA/captcha.
     # A senha vem do cofre (data/secrets/vault.json), nunca do YAML.
     login_url: str = ""
@@ -110,6 +116,7 @@ class Registry:
                     max_wait_s=int(data.get("max_wait_s", 90)),
                     logged_in_selector=str(data.get("logged_in_selector", "")),
                     logged_out_selector=str(data.get("logged_out_selector", "")),
+                    check_probe=dict(data.get("check_probe", {}) or {}),
                     login_url=str(data.get("login_url", "")),
                     login_user_selector=str(data.get("login_user_selector", "")),
                     login_pass_selector=str(data.get("login_pass_selector", "")),
@@ -163,7 +170,10 @@ async def _submit(page: Page, submit: dict[str, Any], inp, prompt_text: str) -> 
             btn = page.locator(btn_sel).first
             if await btn.count():
                 await btn.scroll_into_view_if_needed(timeout=3000)
-                await btn.click(timeout=5000)
+                # clique SIMPLES apenas: com tooltip/overlay por cima o force
+                # "funciona" (não lança) mas o evento vai pro overlay — sem
+                # efeito. Fallback confiável é o TECLADO no input.
+                await btn.click(timeout=4000)
                 return
         except Exception:
             pass
@@ -256,6 +266,21 @@ async def check_login(page: Page, spec: AdapterSpec) -> str:
     try:
         if spec.logged_out_selector and await _any_visible(page, spec.logged_out_selector):
             return "logged_out"
+        probe_c = (spec.check_probe or {}).get("click", "")
+        probe_e = (spec.check_probe or {}).get("expect", "")
+        if probe_c and probe_e:
+            try:
+                await page.locator(probe_c).first.click(timeout=4000)
+                await page.wait_for_timeout(900)
+                ok = await _any_visible(page, probe_e)
+                try:
+                    await page.keyboard.press("Escape")
+                except Exception:
+                    pass
+                # probe é conclusivo POR DESIGN: o "expect" só existe logado
+                return "ok" if ok else "logged_out"
+            except Exception:
+                pass  # probe falhou (layout mudou) -> cai na checagem passiva
         if spec.logged_in_selector and await _any_visible(page, spec.logged_in_selector):
             return "ok"
         inp, _ = await _find_input(page, spec)
@@ -367,11 +392,16 @@ async def run_browser_step(
     if spec.pre_actions:
         for i, act in enumerate(spec.pre_actions):
             sel = str(act.get("click", "")).strip()
+            key = str(act.get("key", "")).strip()
             optional = bool(act.get("optional", True))
             wait_ms = int(act.get("wait_ms", 500))
-            if not sel:
+            if not sel and not key:
                 continue
             try:
+                if key:
+                    await page.keyboard.press(key)
+                    await page.wait_for_timeout(wait_ms)
+                    continue
                 loc = page.locator(sel).first
                 if await loc.count() and await loc.is_visible():
                     await loc.click(timeout=4000)
@@ -402,7 +432,20 @@ async def run_browser_step(
     before = await extract_answer(page, spec)
     full_prompt = f"{prompt}\n\n{instruction}".strip() if instruction else prompt
 
-    await inp.click(timeout=5000)
+    # tooltips/popovers (ex.: Radix da Arena: "Auto-routes you to the right
+    # modality") ficam SOBRE a textarea e bloqueiam o clique — Escape fecha
+    try:
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(250)
+    except Exception:
+        pass
+    try:
+        await inp.click(timeout=2500)
+    except Exception:
+        try:
+            await inp.click(timeout=2500, force=True)
+        except Exception:
+            pass  # fill() foca via DOM — overlay não bloqueia fill/type
     await inp.fill("")
     await inp.type(full_prompt, delay=8)
     await _submit(page, spec.submit, inp, full_prompt)

@@ -263,8 +263,23 @@ async function doLogin(id) {
 function shotImg(r) {
   if (!r || !r.shot) return "";
   const src = r.shot.startsWith("data:") ? r.shot : `${r.shot}?t=${Date.now()}`;
-  return `<img src="${src}" style="width:100%;margin-top:8px;border-radius:10px;border:1px solid #333" alt="print do navegador">`;
+  return `<img class="orbeshot" src="${src}" style="width:100%;margin-top:8px;border-radius:10px;border:1px solid #333;cursor:zoom-in" alt="print do navegador"><div class="muted" style="font-size:10px;margin-top:2px">🔍 toque no print para ampliar</div>`;
 }
+document.addEventListener("click", (e) => {
+  const im = e.target;
+  if (!im || !im.classList || !im.classList.contains("orbeshot")) return;
+  const z = document.createElement("div");
+  z.style.cssText = "position:fixed;inset:0;background:#000d;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out;padding:12px";
+  const big = new Image();
+  big.src = im.src;
+  big.style.cssText = "max-width:100%;max-height:92%;border-radius:10px";
+  const cap = document.createElement("div");
+  cap.textContent = "toque em qualquer lugar para fechar";
+  cap.style.cssText = "color:#fff;opacity:.7;font-size:12px;margin-top:8px";
+  z.appendChild(big); z.appendChild(cap);
+  z.onclick = () => z.remove();
+  document.body.appendChild(z);
+});
 function openAssist(id) {
   const acc = (lastAccounts || []).find(a => a.id === id);
   const ov = document.createElement("div");
@@ -299,8 +314,8 @@ function openAssist(id) {
           password: ov.querySelector("#asPass").value,
           code: ov.querySelector("#asCode").value.trim(),
         })});
-      if (r.need_code) {
-        st.innerHTML = `🔢 o Google mandou um código (app/SMS): digite no campo “código 2FA” e toque em entrar de novo.${shotImg(r)}`;
+      if (r.need_code || r.need_manual) {
+        st.innerHTML = `🔢 ${escapeHtml(r.hint || "o Google pediu verificação: leia a tela no print.")}${shotImg(r)}`;
         return;
       }
       if (r.ok) {
