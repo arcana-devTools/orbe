@@ -75,7 +75,7 @@
     <h1>ORBE</h1>
   </div>
   <span class="pill on" id="hpBrowser">navegador: …</span>
-  <a class="pill on" href="/desktop">DESKTOP p/ login</a>
+  <a class="pill on" href="/desktop" onclick="event.preventDefault();openLive('desktop virtual — o Chrome real está aqui');">DESKTOP p/ login</a>
   <div class="sub">agente que pilota o <b>arena.ai</b> com as <b>suas contas</b> — cada conta recebe a própria ordem</div>
 </header>
 
@@ -259,7 +259,24 @@ function updateSelInfo() {
 async function doLogin(id) {
   const r = await api(`/api/accounts/${id}/login`, {method:"POST"});
   if (!r.ok) { alert(r.error || "falha no login"); return; }
-  window.open("/desktop", "_blank");
+  openLive("faça o login na mão na tela ao vivo (a sessão fica salva) 🖥️");
+}
+// —— tela ao vivo embutida (noVNC): funciona até dentro do preview da Arena,
+// onde window.open/_blank é bloqueado pela sandbox do iframe.
+function openLive(hint) {
+  document.getElementById("liveOverlay")?.remove();
+  const ov = document.createElement("div");
+  ov.id = "liveOverlay";
+  ov.style.cssText = "position:fixed;inset:0;background:#0b0d14;z-index:9998;display:flex;flex-direction:column";
+  ov.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#161a24;border-bottom:1px solid #2a3040">
+      <b style="flex:1;font-size:13px">🖥️ tela ao vivo do Chrome</b>
+      <span class="muted" style="font-size:11px;flex:2">${escapeHtml(hint || "")}</span>
+      <button class="small" id="liveClose">✕ fechar</button>
+    </div>
+    <iframe src="/desktop" style="flex:1;width:100%;border:0;background:#000"></iframe>`;
+  document.body.appendChild(ov);
+  ov.querySelector("#liveClose").onclick = () => ov.remove();
 }
 function shotImg(r) {
   if (!r || !r.shot) return "";
@@ -317,6 +334,11 @@ function openAssist(id) {
         })});
       if (r.need_code || r.need_manual) {
         st.innerHTML = `🔢 ${escapeHtml(r.hint || "o Google pediu verificação: leia a tela no print.")}${shotImg(r)}`;
+        const b = document.createElement("button");
+        b.className = "small"; b.style.marginTop = "8px";
+        b.textContent = "🖥️ assumir a tela ao vivo (clicar na mão)";
+        b.onclick = () => openLive("clique direto na tela do Google: escolha o método, digite o código SMS…");
+        st.appendChild(b);
         return;
       }
       if (r.ok) {
@@ -324,7 +346,12 @@ function openAssist(id) {
         refreshAccounts(); refreshHealth();
         setTimeout(() => ov.remove(), 2500);
       } else {
-        st.innerHTML = `❌ ${escapeHtml(r.error || "não logou")}${shotImg(r)}<div class="muted" style="font-size:11px;margin-top:6px">Se o Google travar em verificação extra, use LOGIN (manual) + a barrinha do desktop.</div>`;
+        st.innerHTML = `❌ ${escapeHtml(r.error || "não logou")}${shotImg(r)}<div class="muted" style="font-size:11px;margin-top:6px">Se o Google travar em verificação extra, assuma a tela ao vivo e clique na mão.</div>`;
+        const b = document.createElement("button");
+        b.className = "small"; b.style.marginTop = "8px";
+        b.textContent = "🖥️ assumir a tela ao vivo";
+        b.onclick = () => openLive("complete o login na mão na tela do Chrome real");
+        st.appendChild(b);
       }
     } catch (e) { st.textContent = e.message; }
   };
