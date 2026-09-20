@@ -107,6 +107,7 @@
       <h2>Resultado</h2>
       <div id="result" class="muted">Nada executado ainda.</div>
       <div id="resArchive" class="muted" style="margin-top:6px"></div>
+      <div id="resAnswers" style="display:none;margin-top:10px"></div>
       <details id="resDetails" style="display:none">
         <summary>respostas brutas por conta</summary>
         <pre id="resRaw"></pre>
@@ -355,6 +356,53 @@ async function runTask() {
     poll();
   } catch (e) { $("#result").innerHTML = `<span class="lv-error">${escapeHtml(e.message)}</span>`; $("#btnRun").disabled = false; }
 }
+function orbCopy(text, btn) {
+  const done = () => { if (btn) { const o = btn.textContent; btn.textContent = "✅ copiado"; setTimeout(() => btn.textContent = o, 1500); } };
+  const fb = () => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+      document.execCommand("copy"); ta.remove(); done();
+    } catch (e) { alert("não deu pra copiar automático — selecione o texto e copie na mão"); }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(done, fb);
+  else fb();
+}
+function answerCards(t) {
+  const order = {};
+  (t.routing || []).forEach((r, i) => { order[r.account_id] = i + 1; });
+  let n = Object.keys(order).length;
+  const rs = t.results || [];
+  rs.forEach(r => { if (!order[r.account_id]) order[r.account_id] = ++n; });
+  const cards = rs.map((r, i) => {
+    const idx = order[r.account_id] || "?";
+    const acc = (lastAccounts || []).find(a => a.id === r.account_id);
+    const titulo = `conta ${idx}${acc && acc.label ? " · " + acc.label : ""} (${r.platform})`;
+    const body = r.ok ? r.answer : `⚠️ ${r.error || "falhou"}`;
+    return `<div class="acc" style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <b style="font-size:12px">${r.ok ? "✅" : "❌"} ${escapeHtml(titulo)}</b>
+        <button class="mini" data-copy="${i}">📋 copiar</button>
+      </div>
+      <textarea readonly class="ans" data-i="${i}" style="width:100%;margin-top:6px;min-height:90px;font-size:12px;background:#141824;color:#e8ecf5;border:1px solid #2a3040;border-radius:8px;padding:8px;resize:vertical">${escapeHtml(body)}</textarea>
+    </div>`;
+  }).join("");
+  const all = rs.map((r, i) => {
+    const idx = order[r.account_id] || "?";
+    const acc = (lastAccounts || []).find(a => a.id === r.account_id);
+    const titulo = `conta ${idx}${acc && acc.label ? " · " + acc.label : ""} (${r.platform})`;
+    return `— ${titulo} —\n${r.ok ? r.answer : "[falhou] " + (r.error || "")}\n`;
+  }).join("\n");
+  return { html:
+    `<div style="display:flex;justify-content:space-between;align-items:center">
+      <b>💬 respostas por conta</b>
+      <button class="mini" id="btnCopyAll">📋 copiar tudo</button>
+    </div>${cards}`,
+    all };
+}
+let lastAnswerAll = "";
 async function poll() {
   if (!currentTask) return;
   let t;
@@ -365,6 +413,19 @@ async function poll() {
     (t.error ? `<pre class="lv-error">${escapeHtml(t.error)}</pre>` : "");
   $("#resArchive").innerHTML = t.archive ? `📁 ${escapeHtml(t.archive)}` : "";
   if (t.results && t.results.length) {
+    const ac = answerCards(t);
+    lastAnswerAll = ac.all;
+    const box = $("#resAnswers");
+    box.style.display = "block";
+    box.innerHTML = ac.html;
+    box.querySelectorAll("button[data-copy]").forEach(b => {
+      b.onclick = () => orbCopy(box.querySelector(`textarea.ans[data-i="${b.dataset.copy}"]`).value, b);
+    });
+    const ba = $("#btnCopyAll");
+    if (ba) ba.onclick = () => orbCopy(lastAnswerAll, ba);
+    box.querySelectorAll("textarea.ans").forEach(ta => {
+      ta.onfocus = () => ta.select();
+    });
     $("#resDetails").style.display = "block";
     $("#resRaw").textContent = t.results.map(r =>
       `### ${r.platform} [${r.ok ? "ok" : "FALHOU"}]\nprompt: ${r.prompt}\n${r.ok ? r.answer : r.error}`).join("\n\n");
@@ -380,11 +441,15 @@ async function refreshHistory() {
   const d = await api("/api/tasks");
   if (!d.tasks.length) { $("#history").textContent = "—"; return; }
   $("#history").innerHTML = d.tasks.slice(0,10).map(t =>
-    `<div class="acc"><div style="display:flex;justify-content:space-between;gap:8px">
-      <b style="flex:1">${escapeHtml(t.goal.slice(0,80))}</b>
-      <span class="badge ${t.state}">${t.state}</span></div>
-      <div class="muted" style="font-size:11px">${new Date(t.created_at*1000).toLocaleString()} · ${t.n_ok||0}/${t.n_results||0} ok</div>
+    `<div class="acc" data-task="${t.id}" style="cursor:pointer">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <b style="flex:1">${escapeHtml(t.goal.slice(0,80))}</b>
+        <span class="badge ${t.state}">${t.state}</span></div>
+      <div class="muted" style="font-size:11px">${new Date(t.created_at*1000).toLocaleString()} · ${t.n_ok||0}/${t.n_results||0} ok${t.n_results ? " · toque p/ ver e copiar as respostas" : ""}</div>
     </div>`).join("");
+  document.querySelectorAll("#history .acc[data-task]").forEach(el => {
+    el.onclick = () => { currentTask = el.dataset.task; poll(); window.scrollTo({top:0, behavior:"smooth"}); };
+  });
 }
 
 // ------------------------------------------------------------- settings --
