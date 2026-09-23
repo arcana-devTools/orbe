@@ -25,6 +25,7 @@ from engine import get_engine
 from events import BUS, LogEvent
 from models import Account, AccountStatus, TaskState
 from secrets_vault import VAULT
+from autopilot import AUTOPILOT
 from autonomous import SWARM
 from store import STORE
 
@@ -137,6 +138,7 @@ async def lifespan(app: FastAPI):
         f"{len(eng.registry.specs)} plataformas instaladas, {len(STORE.accounts)} contas configuradas"
     )
     _fail_stale_running_tasks()
+    AUTOPILOT.start()
     asyncio.create_task(_memory_watchdog())
     asyncio.create_task(_restore_logins_on_boot())
     yield
@@ -369,6 +371,57 @@ async def auto_reset(token: str = "") -> dict[str, Any]:
     if not _ok_token(token):
         raise HTTPException(401, "token inválido")
     return SWARM.reset()
+
+
+# ---------------------------------------------------- piloto automático ---
+class AutoPilotIn(BaseModel):
+    enabled: bool = False
+    hora: str = "09:00"
+    bot_token: str = ""
+    chat_id: str = ""
+    tema: str = ""
+    afiliado: str = ""
+
+
+@app.get("/api/autopilot")
+async def autopilot_get() -> dict[str, Any]:
+    return AUTOPILOT.public()
+
+
+@app.post("/api/autopilot")
+async def autopilot_set(payload: AutoPilotIn, token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    upd: dict[str, Any] = {"enabled": payload.enabled}
+    if payload.hora.strip():
+        upd["hora"] = payload.hora.strip()[:5]
+    if payload.bot_token.strip():          # só sobrescreve se vier um token novo
+        upd["bot_token"] = payload.bot_token.strip()
+    if payload.chat_id.strip():
+        upd["chat_id"] = payload.chat_id.strip()
+    if payload.tema.strip():
+        upd["tema"] = payload.tema.strip()
+    upd["afiliado"] = payload.afiliado.strip()
+    AUTOPILOT.save(**upd)
+    return AUTOPILOT.public()
+
+
+@app.post("/api/autopilot/test")
+async def autopilot_test(token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    ok = await AUTOPILOT.send_telegram(
+        "🤖 Orbe conectado! O digest diário vai chegar aqui sozinho. 📰"
+    )
+    return {"ok": ok}
+
+
+@app.post("/api/autopilot/run-now")
+async def autopilot_run_now(token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    asyncio.create_task(AUTOPILOT._rodar_dia())
+    return {"ok": True, "started": True}
 
 
 # ------------------------------------------------------------- contas ---

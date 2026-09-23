@@ -116,6 +116,27 @@
     </div>
 
     <div class="card" style="margin-top:14px">
+      <h2>📡 Piloto Automático <span class="muted" style="font-size:11px">— digest diário no Telegram, sozinho</span></h2>
+      <div id="apStatus" class="muted" style="font-size:12px">carregando…</div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+        <label class="muted" style="font-size:11px">hora <input id="apHora" type="time" value="09:00" style="width:112px"></label>
+        <label class="muted" style="font-size:11px">bot token <input id="apTok" type="password" placeholder="123456:ABC…" style="width:150px"></label>
+        <label class="muted" style="font-size:11px">canal <input id="apChat" placeholder="@meucanal" style="width:120px"></label>
+      </div>
+      <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:6px">
+        <label class="muted" style="font-size:11px">tema <input id="apTema" placeholder="notícias de IA" style="flex:1;min-width:140px"></label>
+        <label class="muted" style="font-size:11px">link afiliado <input id="apAf" placeholder="https://… (opcional)" style="flex:1;min-width:140px"></label>
+      </div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button id="bApSave" class="small">💾 salvar</button>
+        <button id="bApTest" class="small ghost">🔔 testar Telegram</button>
+        <button id="bApRun" class="small ghost">▶️ rodar agora</button>
+        <label class="muted" style="font-size:11px"><input id="apOn" type="checkbox"> ativo</label>
+      </div>
+      <div class="muted" style="font-size:10px;margin-top:6px">Setup único: @BotFather cria o bot → cole o token aqui · adicione o bot como ADMIN do canal · logue a conta arena · Render acordado (cron no /health).</div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
       <h2>Resultado</h2>
       <div id="result" class="muted">Nada executado ainda.</div>
       <div id="resArchive" class="muted" style="margin-top:6px"></div>
@@ -651,6 +672,43 @@ $("#bAutoReset").onclick = async () => {
   await api("/api/auto/reset", {method:"POST"}); refreshAuto();
 };
 refreshAuto(); setInterval(refreshAuto, 3000);
+
+// ------------------ piloto automático ------------------
+async function refreshAP() {
+  try {
+    const s = await api("/api/autopilot");
+    $("#apStatus").innerHTML = s.token_set
+      ? `bot ${s.token_hint} · canal <b>${escapeHtml(s.chat_id || "—")}</b> · ${s.enabled ? "🟢 ativo" : "⚪ inativo"}${s.last_run ? ` · último: ${escapeHtml(s.last_run)} ${s.last_ok ? "✅" : "⚠️"}` : ""}${s.last_msg ? ` — ${escapeHtml(s.last_msg)}` : ""}`
+      : "configure o bot (@BotFather) + canal — o Orbe publica o digest todo dia sozinho";
+    if (!$("#apChat").value && s.chat_id) $("#apChat").value = s.chat_id;
+    if (!$("#apTema").value && s.tema) $("#apTema").value = s.tema;
+    if (!$("#apAf").value && s.afiliado) $("#apAf").value = s.afiliado;
+    $("#apOn").checked = !!s.enabled;
+  } catch (e) {}
+}
+$("#bApSave").onclick = async () => {
+  try {
+    await api("/api/autopilot", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({
+      enabled: $("#apOn").checked, hora: $("#apHora").value, bot_token: $("#apTok").value.trim(),
+      chat_id: $("#apChat").value.trim(), tema: $("#apTema").value.trim() || "notícias de IA",
+      afiliado: $("#apAf").value.trim()})});
+    $("#apTok").value = "";
+    refreshAP();
+  } catch (e) { alert(e.message); }
+};
+$("#bApTest").onclick = async () => {
+  try {
+    const r = await api("/api/autopilot/test", {method:"POST"});
+    alert(r.ok ? "mensagem enviada! confere o canal 🎉" : "falhou — confere token e canal");
+  } catch (e) { alert(e.message); }
+};
+$("#bApRun").onclick = async () => {
+  try {
+    await api("/api/autopilot/run-now", {method:"POST"});
+    alert("rodando! em ~2-6 min o digest vai pro canal 🚀");
+  } catch (e) { alert(e.message); }
+};
+refreshAP();
 
 refreshHealth(); refreshAccounts(); refreshHistory(); connectWS(); updateSelInfo();
 </script>
