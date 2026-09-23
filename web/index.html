@@ -105,6 +105,17 @@
     </div>
 
     <div class="card" style="margin-top:14px">
+      <h2>🤖 Modo Autônomo <span class="muted" style="font-size:11px">— simulação "Jarvis do Orbe": paga as próprias contas, clona no lucro, morre na falência</span></h2>
+      <div id="autoBox" class="muted" style="font-size:12px">carregando…</div>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button id="bAutoOn" class="small">▶️ iniciar</button>
+        <button id="bAutoOff" class="small ghost">⏸️ parar</button>
+        <button id="bAutoReset" class="small ghost">♻️ resetar</button>
+        <label class="muted" style="font-size:11px">ciclo a cada <input id="autoInt" type="number" value="2" min="0.5" step="0.5" style="width:56px"> s</label>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
       <h2>Resultado</h2>
       <div id="result" class="muted">Nada executado ainda.</div>
       <div id="resArchive" class="muted" style="margin-top:6px"></div>
@@ -613,6 +624,33 @@ function connectWS() {
   };
   ws.onclose = () => setTimeout(connectWS, 2000);
 }
+
+// ------------------ modo autônomo ------------------
+async function refreshAuto() {
+  try {
+    const s = await api("/api/auto/state");
+    $("#autoBox").innerHTML =
+      `<div class="row" style="gap:10px;flex-wrap:wrap;font-size:12px;align-items:center">
+        <span class="badge ${s.running ? "running" : "queued"}">${s.running ? "▶️ rodando" : "⏸️ parado"}</span>
+        <b>🟢 ${s.vivos} vivos</b>
+        <span class="muted">💀 ${s.mortos} mortos</span>
+        <b>💰 $${s.saldo_total}</b>
+        <span class="muted">🧬 ${s.clones} clones · ciclo ${s.ciclos} · melhor: $${s.melhor}</span>
+      </div>
+      <pre style="margin-top:6px;font-size:11px;max-height:150px;overflow:auto">${escapeHtml((s.events || []).map(e => e.msg).join("\n")) || "—"}</pre>`;
+  } catch (e) {}
+}
+$("#bAutoOn").onclick = async () => {
+  await api("/api/auto/start", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({interval_s: parseFloat($("#autoInt").value) || 2})});
+  refreshAuto();
+};
+$("#bAutoOff").onclick = async () => { await api("/api/auto/stop", {method:"POST"}); refreshAuto(); };
+$("#bAutoReset").onclick = async () => {
+  if (!confirm("Zerar a simulação (todos os autômatos morrem)?")) return;
+  await api("/api/auto/reset", {method:"POST"}); refreshAuto();
+};
+refreshAuto(); setInterval(refreshAuto, 3000);
 
 refreshHealth(); refreshAccounts(); refreshHistory(); connectWS(); updateSelInfo();
 </script>

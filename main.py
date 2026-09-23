@@ -25,6 +25,7 @@ from engine import get_engine
 from events import BUS, LogEvent
 from models import Account, AccountStatus, TaskState
 from secrets_vault import VAULT
+from autonomous import SWARM
 from store import STORE
 
 _s = get_settings()
@@ -336,6 +337,38 @@ async def cancel_task(task_id: str, token: str = "") -> dict[str, Any]:
         raise HTTPException(401, "token inválido")
     canceled = await get_engine().cancel(task_id)
     return {"canceled": canceled}
+
+
+# ------------------------------------------------------- modo autônomo ---
+class AutoIn(BaseModel):
+    interval_s: float = 2.0
+
+
+@app.get("/api/auto/state")
+async def auto_state() -> dict[str, Any]:
+    return SWARM.state()
+
+
+@app.post("/api/auto/start")
+async def auto_start(payload: AutoIn | None = None, token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    p = payload or AutoIn()
+    return SWARM.start(p.interval_s)
+
+
+@app.post("/api/auto/stop")
+async def auto_stop(token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    return SWARM.stop()
+
+
+@app.post("/api/auto/reset")
+async def auto_reset(token: str = "") -> dict[str, Any]:
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    return SWARM.reset()
 
 
 # ------------------------------------------------------------- contas ---
