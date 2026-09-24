@@ -418,6 +418,7 @@ function openAssist(id) {
     const st = ov.querySelector("#asStatus");
     const go = ov.querySelector("#asGo");
     go.disabled = true;
+    ov.dataset.metodo = "";
     setTimeout(() => { if (go.disabled) go.disabled = false; }, 25000);
     st.innerHTML = "⌨️ <b style='color:#e6e9f5'>digitando no Chrome…</b> (~20 s, não feche)";
     try {
@@ -427,9 +428,31 @@ function openAssist(id) {
           email: ov.querySelector("#asEmail").value.trim(),
           password: ov.querySelector("#asPass").value,
           code: ov.querySelector("#asCode").value.trim(),
+          metodo: ov.dataset.metodo || "",
         })});
       const s2 = ov.querySelector("#asSt2"), s3 = ov.querySelector("#asSt3");
       if (r.need_code || r.need_manual && s2) { if (s2) s2.classList.add("on"); }
+      if (r.need_choice) {
+        if (s2) s2.classList.add("on");
+        const opcoes = r.opcoes || [];
+        let ops = `<div class="muted" style="margin-top:10px"><b>escolha como o Google vai verificar você:</b></div>`;
+        opcoes.forEach(op => {
+          const slug = op.toLowerCase();
+          const icone = /sms|mensagem|texto|text/.test(slug) ? "📱" : /autenticador|authenticator/.test(slug) ? "🔐" : /confirme|prompt|telefone|phone/.test(slug) ? "👍" : /chave|security|security key/.test(slug) ? "🔑" : "📧";
+          const sug = /sms|mensagem/.test(slug) ? " <span style='color:#4ade80'>← sugerido</span>" : "";
+          ops += `<button class="arena-tela" data-op="${escapeHtml(op).replace(/"/g, "&quot;")}" style="text-align:left">${icone} ${escapeHtml(op)}${sug}</button>`;
+        });
+        if (r.auto) ops += `<div class="muted" style="font-size:10px;margin-top:4px">sugestão do robô: ${escapeHtml(r.auto)}</div>`;
+        st.innerHTML = ops + shotImg(r);
+        st.querySelectorAll("[data-op]").forEach(b => {
+          b.onclick = async () => {
+            ov.dataset.metodo = b.dataset.op;
+            st.innerHTML = `<span class="lv-step">⌨️ escolhendo “${escapeHtml(b.dataset.op)}”…</span>`;
+            ov.querySelector("#asGo").click();
+          };
+        });
+        return;
+      }
       if (r.need_code || r.need_manual) {
         st.innerHTML = `🔢 ${escapeHtml(r.hint || "o Google pediu verificação: leia a tela no print.")}${shotImg(r)}`;
         const b = document.createElement("button");

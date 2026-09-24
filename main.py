@@ -584,7 +584,8 @@ async def assisted_login(account_id: str, payload: AssistedIn, token: str = "") 
     _touch()
     eng = get_engine()
     return await eng.assisted_login(
-        account_id, payload.email.strip(), payload.password, payload.code.strip()
+        account_id, payload.email.strip(), payload.password, payload.code.strip(),
+        payload.metodo.strip()
     )
 
 

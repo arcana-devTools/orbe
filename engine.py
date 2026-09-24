@@ -494,6 +494,23 @@ class Engine:
         await page.wait_for_timeout(2500)
         return method
 
+    async def _listar_opcoes(self, page: Any) -> list[str]:
+        """Extrai a lista de métodos do chooser do Google."""
+        try:
+            js = r"""() => {
+                const itens = new Set();
+                document.querySelectorAll('[role="link"], [role="button"], [role="option"], [role="menuitem"], li, div[data-challengetype]').forEach(e => {
+                    const r = e.getBoundingClientRect();
+                    if (r.width === 0) return;
+                    const t = (e.innerText || '').trim().replace(/\s+/g, ' ');
+                    if (t.length > 3 && t.length < 90 && !/google|privacidade|termos|ajuda/i.test(t)) itens.add(t);
+                });
+                return [...itens].slice(0, 8);
+            }"""
+            return [x for x in await page.evaluate(js) if x]
+        except Exception:
+            return []
+
     async def _assist_shot(self, page: Any, account: Account) -> str:
         """Print embutido em base64 (o disco do Render é efêmero: /shots some
         no próximo restart — data URI chega sempre no painel)."""
@@ -515,7 +532,7 @@ class Engine:
             return ""
 
     async def assisted_login(
-        self, account_id: str, email: str, password: str, code: str = ""
+        self, account_id: str, email: str, password: str, code: str = "", metodo: str = ""
     ) -> dict[str, Any]:
         """Login GUI do Google (vale p/ Arena, Gemini, Google): você só digita
         no PAINEL; o Orbe preenche o Chrome. Se pedir 2FA, devolve need_code e
@@ -534,6 +551,26 @@ class Engine:
             page: Any = None
             resume = bool(st) and not st["page"].is_closed()
             picked = (st or {}).get("picked", "")
+            opcoes = (st or {}).get("opcoes", [])
+            if resume and metodo and opcoes:
+                # dono escolheu o método no painel → clica na opção correspondente
+                alvo = _re_slug(metodo)
+                clicado = ""
+                for op in opcoes:
+                    if alvo in _re_slug(op) or _re_slug(op) in alvo:
+                        try:
+                            await page.get_by_text(op, exact=False).first.click(timeout=6000)
+                            clicado = op
+                        except Exception:
+                            pass
+                        break
+                if not clicado:
+                    self._ASSIST.pop(account_id, None)
+                    return {"ok": False, "error": f"não achei a opção escolhida na tela (ela sumiu?)",
+                            "shot": await self._assist_shot(page, account)}
+                await page.wait_for_timeout(3000)
+                opcoes = []
+                picked = alvo.split("_")[0]
             if resume:
                 page = st["page"]
                 await page.wait_for_timeout(1500)
@@ -613,6 +650,23 @@ class Engine:
                         picked = "code"
                         continue
                     if await self._challenge_screen(page):
+                        if not opcoes and not picked and not resume:
+                            m_auto = await self._pick_challenge(page)
+                            lista = await self._listar_opcoes(page)
+                            if lista:
+                                self._ASSIST[account_id] = {
+                                    "page": page,
+                                    "picked": picked,
+                                    "opcoes": lista,
+                                }
+                                return {
+                                    "ok": False,
+                                    "need_choice": True,
+                                    "opcoes": lista,
+                                    "auto": m_auto,
+                                    "hint": "escolha como o Google vai verificar você (sugestão: SMS — o código chega no seu celular)",
+                                    "shot": await self._assist_shot(page, account),
+                                }
                         if picked == "prompt":
                             # esperando o dono tocar "Sim, sou eu" no celular
                             await page.wait_for_timeout(3000)
@@ -914,3 +968,17 @@ def get_engine() -> Engine:
         registry = Registry(_s.platforms_path())
         ENGINE = Engine(registry, Orchestrator(registry))
     return ENGINE
+
+
+def _re_slug(s: str) -> str:
+    """normaliza texto pra casar método escolhido vs opções da tela"""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", (s or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    out = []
+    for ch in s:
+        if ch.isalnum():
+            out.append(ch)
+        elif ch in " -_.":
+            out.append("_")
+    return "".join(out)
