@@ -100,6 +100,12 @@
   .arena-ghost{width:100%;margin-top:8px;background:transparent;border:0;color:var(--muted);
                font-weight:500;padding:10px}
   .arena-status{margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .arena-steps{display:flex;gap:6px;margin:14px 0 2px}
+  .arena-steps span{height:4px;flex:1;border-radius:99px;background:#232a3d;transition:background .3s}
+  .arena-steps span.on{background:linear-gradient(90deg,#8b5cf6,#22d3ee)}
+  .arena-tela{width:100%;margin-top:8px;background:transparent;border:1px solid #2c3247;color:var(--muted);
+              border-radius:999px;padding:10px;font-weight:500;cursor:pointer;transition:all .15s}
+  .arena-tela:hover{color:#e6e9f5;border-color:#3d4560}
   .arena-status img{max-width:100%;border-radius:12px;border:1px solid var(--line);margin-top:8px}
 </style>
 </head>
@@ -290,7 +296,7 @@ function renderAccounts(accounts) {
       <div class="top">
         <input type="checkbox" data-pick="${a.id}" ${picked.has(a.id) ? "checked" : ""}/>
         <div style="flex:1">
-          <b>${escapeHtml(a.label)}</b> <span class="st ${a.status}">${a.status}</span>
+          <b>${escapeHtml(a.label)}</b> <span class="st ${a.status}">${a.status === "ok" ? "🟢 conectada" : a.status === "logged_out" ? "🔴 sessão expirada" : a.status === "unknown" ? "⚪ não verificada" : a.status}</span>
           <div class="muted" style="font-size:11px">${escapeHtml(a.platform)} · perfil ${escapeHtml(a.profile)}</div>
         </div>
       </div>
@@ -393,20 +399,26 @@ function openAssist(id) {
       <div class="arena-brand">${logoSrc ? `<img src="${logoSrc}" alt="Orbe"/>` : '<div class="orb" style="display:flex;align-items:center;justify-content:center">🪐</div>'}<span>Orbe</span></div>
       <h2 class="arena-title">Entrar na sua conta</h2>
       <p class="arena-sub">${escapeHtml(acc ? "conta “" + acc.label + "” · " : "")}você digita só aqui; o Orbe preenche o Chrome sozinho — vale pro Google (Gmail/Gemini/Drive) e pra Arena. Sua senha vai direto pro Chrome, não fica salva.</p>
+      <div class="arena-steps"><span class="on"></span><span id="asSt2"></span><span id="asSt3"></span></div>
       <label class="arena-field">${icoMail}<input id="asEmail" type="email" placeholder="e-mail da conta Google" autocomplete="username"></label>
       <label class="arena-field">${icoLock}<input id="asPass" type="password" placeholder="senha" autocomplete="current-password"></label>
       <label class="arena-field">${icoShield}<input id="asCode" inputmode="numeric" placeholder="código 2FA (só se o Google pedir)"></label>
       <div id="asStatus" class="arena-status"></div>
       <button id="asGo" class="arena-cta">Entrar</button>
+      <button class="arena-tela" id="asLive">🖥️ prefiro clicar na tela ao vivo</button>
       <button class="arena-ghost" id="asClose2">mais tarde</button>
     </div>`;
   document.body.appendChild(ov);
   ov.querySelector("#asClose").onclick = () => ov.remove();
   ov.querySelector("#asClose2").onclick = () => ov.remove();
+  ov.querySelector("#asLive").onclick = () => { ov.remove(); doLogin(id); };
   ov.querySelector("#asEmail").focus();
   ov.addEventListener("keydown", (e) => { if (e.key === "Escape") ov.remove(); });
   ov.querySelector("#asGo").onclick = async () => {
     const st = ov.querySelector("#asStatus");
+    const go = ov.querySelector("#asGo");
+    go.disabled = true;
+    setTimeout(() => { if (go.disabled) go.disabled = false; }, 25000);
     st.innerHTML = "⌨️ <b style='color:#e6e9f5'>digitando no Chrome…</b> (~20 s, não feche)";
     try {
       const r = await api(`/api/accounts/${id}/assisted`, {
@@ -416,6 +428,8 @@ function openAssist(id) {
           password: ov.querySelector("#asPass").value,
           code: ov.querySelector("#asCode").value.trim(),
         })});
+      const s2 = ov.querySelector("#asSt2"), s3 = ov.querySelector("#asSt3");
+      if (r.need_code || r.need_manual && s2) { if (s2) s2.classList.add("on"); }
       if (r.need_code || r.need_manual) {
         st.innerHTML = `🔢 ${escapeHtml(r.hint || "o Google pediu verificação: leia a tela no print.")}${shotImg(r)}`;
         const b = document.createElement("button");
@@ -426,6 +440,7 @@ function openAssist(id) {
         return;
       }
       if (r.ok) {
+        if (s3) s3.classList.add("on");
         st.innerHTML = `✅ <b style='color:#4ade80'>pronto!</b> login salvo no perfil.${shotImg(r)}`;
         refreshAccounts(); refreshHealth();
         setTimeout(() => ov.remove(), 2500);
