@@ -424,6 +424,23 @@ async def autopilot_run_now(token: str = "") -> dict[str, Any]:
     return {"ok": True, "started": True}
 
 
+class TgSetupIn(BaseModel):
+    nome_bot: str = "Digest Orbe"
+    usuario_bot: str = ""
+    nome_canal: str = ""
+
+
+@app.post("/api/accounts/{account_id}/telegram-setup")
+async def telegram_setup(account_id: str, payload: TgSetupIn | None = None, token: str = "") -> dict[str, Any]:
+    """O ROBÔ cria o bot (+canal) no Telegram Web sozinho e salva o token."""
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    pl = payload or TgSetupIn()
+    return await get_engine().telegram_autosetup(
+        account_id, pl.nome_bot, pl.usuario_bot, pl.nome_canal
+    )
+
+
 # ------------------------------------------------------------- contas ---
 @app.get("/api/platforms")
 async def list_platforms(token: str = "") -> dict[str, Any]:

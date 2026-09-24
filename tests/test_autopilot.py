@@ -107,3 +107,10 @@ def test_rodar_dia_sem_conta_pula_o_dia(tmp_path: Path, monkeypatch):
     assert not ok
     assert ap.cfg["last_run"] != "", "marca o dia como cumprido (não tenta em loop)"
     assert "sem conta" in ap.cfg["last_msg"]
+
+
+def test_telegram_setup_conta_inexistente():
+    import asyncio
+    from engine import get_engine
+    r = asyncio.run(get_engine().telegram_autosetup("nao-existe", "b", "u", "c"))
+    assert not r["ok"] and "não encontrada" in r["error"]

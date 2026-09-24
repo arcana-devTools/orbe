@@ -7,6 +7,7 @@ porque quase nenhuma IA aceita duas sessões simultâneas na mesma conta.
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -803,3 +804,114 @@ def get_engine() -> Engine:
         registry = Registry(_s.platforms_path())
         ENGINE = Engine(registry, Orchestrator(registry))
     return ENGINE
+
+    # ------------------------------------------------ auto-setup Telegram ---
+    async def telegram_autosetup(
+        self, account_id: str, nome_bot: str = "Digest Orbe",
+        usuario_bot: str = "", nome_canal: str = ""
+    ) -> dict[str, Any]:
+        """O ROBÔ cria o próprio bot no @BotFather (e tenta o canal) pilotando
+        o Telegram Web com o perfil logado. Token é extraído e salvo direto
+        no Piloto Automático. Se o perfil não está logado no Telegram,
+        devolve need_login (usuário loga 1x pela tela ao vivo)."""
+        import re as _re
+        from autopilot import AUTOPILOT
+
+        account = STORE.accounts.get(account_id)
+        if not account:
+            return {"ok": False, "error": "conta não encontrada"}
+        async with MANAGER.lock_for(account.profile):
+            ctx = await MANAGER.context_for(account.profile)
+            page = await ctx.new_page()
+            shot = ""
+
+            async def _shot() -> str:
+                try:
+                    import base64
+                    blob = await page.screenshot(type="png")
+                    return "data:image/png;base64," + base64.b64encode(blob).decode("ascii")
+                except Exception:
+                    return ""
+
+            try:
+                await page.goto("https://web.telegram.org/k/", wait_until="domcontentloaded", timeout=60000)
+                await page.wait_for_timeout(6000)
+                # logado? o app mostra a lista de chats; deslogado mostra formulário
+                if page.locator("input[type='tel'], input[name='phone']").count():
+                    return {"ok": False, "need_login": True,
+                            "hint": "logue o Telegram nesse perfil 1x (botão LOGIN → tela ao vivo) e toque aqui de novo",
+                            "shot": await _shot()}
+
+                async def _mandar(txt: str) -> None:
+                    inp = page.locator("div[contenteditable='true']").first
+                    await inp.click(timeout=8000)
+                    await inp.fill(txt)
+                    await page.keyboard.press("Enter")
+                    await page.wait_for_timeout(2500)
+
+                # 1) abre o BotFather
+                busca = page.locator("input[placeholder*='Search'], input[placeholder*='Pesquisar']").first
+                await busca.click(timeout=10000)
+                await busca.fill("BotFather")
+                await page.wait_for_timeout(2000)
+                await page.get_by_text("BotFather").first.click(timeout=8000)
+                await page.wait_for_timeout(2000)
+
+                # 2) /newbot → nome → @usuário (com sufixo aleatório se não veio)
+                await _mandar("/newbot")
+                await _mandar(nome_bot or "Digest Orbe")
+                usuario = (usuario_bot or "orbe_digest_bot").strip()
+                if not usuario.lower().endswith("bot"):
+                    usuario = usuario + str(random.randint(100, 9999)) + "_bot"
+                await _mandar(usuario)
+                await page.wait_for_timeout(3000)
+
+                # 3) extrai o token da resposta do BotFather
+                txt = (await page.locator(".messages-container, #messages, body").last.inner_text(timeout=8000))
+                m = _re.search(r"\b(\d{6,}:[A-Za-z0-9_-]{30,})\b", txt)
+                if not m:
+                    return {"ok": False,
+                            "error": "BotFather não devolveu token (nome/@ já existe?)",
+                            "shot": await _shot()}
+                token = m.group(1)
+
+                # 4) salva direto no Piloto Automático + testa
+                AUTOPILOT.save(bot_token=token)
+                chat_ok = await AUTOPILOT.send_telegram(
+                    f"🤖 bot criado PELO ORBE sozinho ({usuario}) — canal em configuração…")
+
+                # 5) canal (beta: a UI do Telegram varia; se falhar devolve o passo manual)
+                canal = nome_canal or f"{nome_bot} — canal"
+                canal_ok = False
+                try:
+                    await page.locator("button.btn-menu, .btn-new-channel, [title='Menu']").first.click(timeout=5000)
+                    await page.get_by_text("New Channel", exact=False).first.click(timeout=5000)
+                    inp = page.locator("div[contenteditable='true'], input[type='text']").first
+                    await inp.fill(canal)
+                    for lab in ("Next", "Avançar", "Continuar"):
+                        try:
+                            await page.get_by_text(lab, exact=True).first.click(timeout=2500)
+                            break
+                        except Exception:
+                            continue
+                    await page.wait_for_timeout(2000)
+                    canal_ok = True
+                except Exception:
+                    pass
+
+                AUTOPILOT.save(chat_id=usuario)
+                return {
+                    "ok": True, "bot_token": token, "usuario_bot": usuario,
+                    "telegram_enviou": chat_ok, "canal_criado": canal_ok,
+                    "hint": ("" if canal_ok else
+                             "bot ✅ e token salvo no Piloto Automático! O canal criou pela UI — "
+                             "se não apareceu, crie na mão na tela ao vivo (2 min) e cole o @canal no card 📡"),
+                    "shot": await _shot(),
+                }
+            except Exception as exc:
+                return {"ok": False, "error": f"Telegram mudou algo: {exc}", "shot": await _shot()}
+            finally:
+                try:
+                    await page.close()
+                except Exception:
+                    pass

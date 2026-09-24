@@ -128,6 +128,9 @@
         <label class="muted" style="font-size:11px">link afiliado <input id="apAf" placeholder="https://… (opcional)" style="flex:1;min-width:140px"></label>
       </div>
       <div class="row" style="margin-top:8px;align-items:center">
+        <button id="bApRobot" class="small">🤖 robot cria bot+canal sozinho</button>
+      </div>
+      <div class="row" style="margin-top:6px;align-items:center">
         <button id="bApSave" class="small">💾 salvar</button>
         <button id="bApTest" class="small ghost">🔔 testar Telegram</button>
         <button id="bApRun" class="small ghost">▶️ rodar agora</button>
@@ -696,6 +699,29 @@ $("#bApSave").onclick = async () => {
     refreshAP();
   } catch (e) { alert(e.message); }
 };
+$("#bApRobot").onclick = async () => {
+  const acc = (lastAccounts || []).find(a => a.platform === "arena");
+  if (!acc) { alert("crie uma conta arena e faça login primeiro"); return; }
+  if (!confirm("O Orbe vai abrir o Telegram Web do perfil '" + acc.label + "' e criar o bot + canal SOZINHO.\n\nSe o Telegram não estiver logado nesse perfil, ele vai pedir o login (1x). Continuar?")) return;
+  try {
+    const r = await api(`/api/accounts/${acc.id}/telegram-setup`, {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nome_bot: "Digest Orbe", nome_canal: "Digest Orbe — IA diária"})});
+    if (r.need_login) {
+      stMsg("🔐 Telegram não logado nesse perfil: toque em LOGIN (manual) → tela ao vivo → logue 1x → volte e toque no 🤖 de novo." + shotImg(r));
+      return;
+    }
+    if (r.ok) {
+      stMsg(`🤖 PRONTO! bot criado SOZINHO: @${r.usuario_bot} · token salvo no Piloto Automático ${r.telegram_enviou ? "· mensagem de teste enviada ✅" : ""}${r.canal_criado ? " · canal criado ✅" : ""} ${r.hint || ""}${shotImg(r)}`);
+      refreshAP();
+    } else {
+      stMsg(`❌ ${escapeHtml(r.error || "falhou")}${shotImg(r)}`);
+    }
+  } catch (e) { alert(e.message); }
+};
+function stMsg(html) {
+  const el = $("#apStatus");
+  if (el) el.innerHTML = html;
+}
 $("#bApTest").onclick = async () => {
   try {
     const r = await api("/api/autopilot/test", {method:"POST"});
