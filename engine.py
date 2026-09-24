@@ -794,17 +794,6 @@ class Engine:
             "screenshot": f"/shots/{shot.name}",
         }
 
-
-ENGINE: Optional[Engine] = None
-
-
-def get_engine() -> Engine:
-    global ENGINE
-    if ENGINE is None:
-        registry = Registry(_s.platforms_path())
-        ENGINE = Engine(registry, Orchestrator(registry))
-    return ENGINE
-
     # ------------------------------------------------ auto-setup Telegram ---
     async def telegram_autosetup(
         self, account_id: str, nome_bot: str = "Digest Orbe",
@@ -915,3 +904,13 @@ def get_engine() -> Engine:
                     await page.close()
                 except Exception:
                     pass
+
+
+ENGINE: Optional[Engine] = None
+
+def get_engine() -> Engine:
+    global ENGINE
+    if ENGINE is None:
+        registry = Registry(_s.platforms_path())
+        ENGINE = Engine(registry, Orchestrator(registry))
+    return ENGINE
