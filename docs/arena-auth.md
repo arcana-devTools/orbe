@@ -84,3 +84,13 @@
   (spec.id=="arena" → renova com a sessão quente).
 - PENDENTE: provar renovação com access JÁ EXPIRADO (04:28 UTC+). Se ok →
   sessão etária; dono cola cookie 1× e nunca mais.
+
+## PROVA FINAL (25/09/2026 13:05 UTC): SESSÃO ETÁRIA ✅
+
+- Access expirado há **8h30** (exp 04:28, teste às 13:05) → GET /api/me:
+  **HTTP 200 + email válido + Set-Cookie renovado** (access +1h exata,
+  refresh rotacionado gveel→zyh6z).
+- Conclusão: enquanto o refresh_token estiver vivo, 1 request com o cookie
+  renova TUDO sozinho. **Dono cola o cookie 1× e nunca mais.**
+- O hook pós-tarefa + botão /api/arena/renovar mantêm o cookie de data/
+  sempre fresco (rotação condicional: só renova quando precisa).
