@@ -196,7 +196,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.3",
+        "versao": "0.27.4",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -223,6 +223,34 @@ async def api_arena_renovar() -> dict[str, Any]:
 
     res = await renovar_e_injetar()
     return JSONResponse(res, status_code=200 if res.get("ok") else 502)
+
+
+# ------------------------------------------------------------ captcha -------
+@app.get("/api/captcha/atual")
+async def captcha_atual() -> dict[str, Any]:
+    """Estado do pop-up de captcha (o front faz polling e mostra o widget)."""
+    from captcha import ESTADO
+
+    return {k: ESTADO[k] for k in ("ativo", "plataforma", "desc", "imagem", "task_id", "atualizado_em")}
+
+
+@app.post("/api/captcha/clique")
+async def captcha_clique(payload: dict[str, Any]) -> dict[str, Any]:
+    """Toque do dono no pop-up (x,y normalizados 0–1) → clique humanizado."""
+    from captcha import clique_remoto
+
+    x = float(payload.get("x", 0.5))
+    y = float(payload.get("y", 0.5))
+    return JSONResponse(await clique_remoto(x, y))
+
+
+@app.post("/api/captcha/dispensar")
+async def captcha_dispensar() -> dict[str, Any]:
+    """Dono não pode agora → tarefa falha graciosamente."""
+    from captcha import pedir_abort
+
+    pedir_abort()
+    return {"ok": True}
 
 
 # ------------------------------------------------------------- settings --

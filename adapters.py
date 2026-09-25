@@ -505,6 +505,18 @@ async def run_browser_step(
 
     await _dismiss_consent(page)  # modal de ToU cobre a página e engole o Enter
 
+    # MURO HUMANO: captcha detectado → pop-up do widget no painel; o dono
+    # toca, o captcha some e a tarefa retoma (nunca clicamos sozinhos)
+    try:
+        from captcha import portao_humano
+
+        portao = await portao_humano(page, spec.id)
+        if portao.get("captcha") and not portao.get("resolvido"):
+            result["error"] = "captcha não resolvido pelo dono (pausa estourou)"
+            return result
+    except Exception:
+        pass  # detector nunca deve derrubar uma tarefa saudável
+
     # páginas lentas (onboarding, animação de entrada, máquina sobrecarregada)
     # podem não ter a caixa visível de cara: tenta por até ~15 s
     inp = used_sel = None

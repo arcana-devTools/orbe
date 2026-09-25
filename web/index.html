@@ -840,6 +840,64 @@ $("#bApRun").onclick = async () => {
 refreshAP();
 
 refreshHealth(); refreshAccounts(); refreshHistory(); connectWS(); updateSelInfo();
+
+// ============================================ 🧩 POP-UP DO CAPTCHA ========
+// Detectado captcha → painel mostra SÓ o widget recortado; dono toca;
+// o clique é repetido no ponto exato com mouse humanizado; some → retoma.
+let capAberto = false;
+function capFechar(msg) {
+  const ov = document.querySelector("#capOv");
+  if (ov) ov.remove();
+  capAberto = false;
+  if (msg) toastCap(msg);
+}
+function toastCap(txt) {
+  const t = document.createElement("div");
+  t.style.cssText = "position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#111;color:#4ade80;padding:9px 16px;border-radius:10px;font-size:13px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4)";
+  t.textContent = txt; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+async function capClique(ev, img) {
+  const r = img.getBoundingClientRect();
+  const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+  const y = (ev.touches ? ev.touches[0].clientY : ev.clientY) - r.top;
+  const barra = document.querySelector("#capBarra");
+  try {
+    await api("/api/captcha/clique", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({x: x/r.width, y: y/r.height})});
+    if (barra) barra.textContent = "🧩 clique enviado — resolvendo…";
+  } catch (e) { if (barra) barra.textContent = "falhou: " + e.message; }
+}
+async function pollCaptcha() {
+  let c;
+  try { c = await api("/api/captcha/atual"); } catch (e) { return; }
+  if (c.ativo && !capAberto && c.imagem) {
+    capAberto = true;
+    const ov = document.createElement("div");
+    ov.id = "capOv";
+    ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px";
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:14px;padding:14px;max-width:440px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">🧩 Captcha em ${escapeHtml(c.plataforma)} — toque abaixo</div>
+        <div id="capBarra" style="font-size:11px;color:#666;margin-bottom:8px">clique/resolve aqui — o Orbe retoma sozinho quando sumir</div>
+        <img id="capImg" src="${c.imagem}" style="width:100%;border:1px solid #ddd;border-radius:8px;cursor:pointer;touch-action:manipulation"/>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button id="capDisp" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:8px;background:#f6f6f6;font-size:12px">não posso agora</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const img = ov.querySelector("#capImg");
+    img.addEventListener("click", (ev) => capClique(ev, img));
+    img.addEventListener("touchstart", (ev) => { ev.preventDefault(); capClique(ev, img); }, {passive:false});
+    ov.querySelector("#capDisp").onclick = async () => { await api("/api/captcha/dispensar", {method:"POST"}); capFechar("pausado — tarefa vai falhar graciosamente"); };
+  }
+  if (c.ativo && capAberto) {
+    const img = document.querySelector("#capImg");
+    if (img && c.imagem && img.getAttribute("src") !== c.imagem) img.src = c.imagem;
+  }
+  if (!c.ativo && capAberto) capFechar("✅ captcha resolvido — tarefa retomada!");
+}
+setInterval(pollCaptcha, 2500);
+
 </script>
 </body>
 </html>
