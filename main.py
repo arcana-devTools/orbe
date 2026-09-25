@@ -688,8 +688,15 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
         raise HTTPException(404, "conta não encontrada")
     if not payload.value.strip():
         raise HTTPException(400, "valor do cookie vazio")
+    # PAT do GitHub colado junto (linha "PAT=github_pat_…") → vai pro COFRE
+    # e segue aplicável aos pushes; nunca ecoado nem tratado como cookie.
+    m_pat = re.search(r'(?im)^\s*PAT\s*=\s*(\S+)', payload.value)
+    if m_pat:
+        VAULT.put("github", extra={"pat": m_pat.group(1).strip()})
     pares = _extrair_cookies(payload.value)
     if not pares:
+        if m_pat:
+            return {"ok": True, "pat_salvo": True, "cookie": False}
         raise HTTPException(400, "não achei nenhum cookie arena-auth no texto colado")
     eng = get_engine()
     spec = eng.registry.get(acc.platform)
