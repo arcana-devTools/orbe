@@ -68,3 +68,19 @@
   refresh é server-side (middleware). Hipótese: estilo `@supabase/ssr`,
   qualquer request com cookie expirado dispara renovação + Set-Cookie.
   Teste definitivo: curl /api/me DEPOIS do exp com o mesmo cookie.
+
+## PROVADO (25/09/2026 03:28 UTC): renovação automática da sessão
+
+- GET /api/me com o cookie chunked → resposta traz **Set-Cookie novo** de
+  v1.0/v1.1 com **Max-Age=34560000 (400 dias)**, access **+1h exata** e
+  **refresh_token ROTACIONADO** (ae5ace…→gveel…).
+- Rotação é CONDICIONAL: cookie recém-rotacionado → resposta sem renovação
+  (renovou=False). Cookie "velho"/próximo do exp → renova. Hipótese:
+  renova quando access passou de metade da vida — inofensivo.
+- "base64-" tem **7 chars** (não 8!); v1.0+v1.1 são CHUNKS do mesmo JSON
+  (decodificar SEMPRE concatenando os dois).
+- Implementado: `arena_session.py` (`renovar`, `renovar_e_injetar`),
+  endpoint `POST /api/arena/renovar` no painel e hook pós-tarefa na engine
+  (spec.id=="arena" → renova com a sessão quente).
+- PENDENTE: provar renovação com access JÁ EXPIRADO (04:28 UTC+). Se ok →
+  sessão etária; dono cola cookie 1× e nunca mais.

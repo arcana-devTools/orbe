@@ -196,7 +196,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.2",
+        "versao": "0.27.3",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -208,6 +208,21 @@ async def health() -> dict[str, Any]:
         "llm_model": _s.llm_model if _s.llm_api_key else "",
         "uptime_s": round(time.time() - START_TS, 1),
     }
+
+
+# ------------------------------------------------------------ arena sessão --
+@app.post("/api/arena/renovar")
+async def api_arena_renovar() -> dict[str, Any]:
+    """Renova a sessão da Arena (GET /api/me com o perfil → Set-Cookie novo).
+
+    O servidor devolve access +1h e refresh rotacionado a cada request —
+    salvar de volta mantém a sessão viva sem colar cookie novo. Ver
+    arena_session.py (mecanismo provado em 25/09/2026).
+    """
+    from arena_session import renovar_e_injetar
+
+    res = await renovar_e_injetar()
+    return JSONResponse(res, status_code=200 if res.get("ok") else 502)
 
 
 # ------------------------------------------------------------- settings --

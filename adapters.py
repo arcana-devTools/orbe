@@ -573,6 +573,16 @@ async def run_browser_step(
             await page.screenshot(path=screenshot_path, full_page=False)
         except Exception:
             pass
+
+    # Arena: aproveita a sessão quente e renova o cookie (Set-Cookie vem
+    # sempre; salvar de volta = sessão perpetuada, ver arena_session.py)
+    if spec.id == "arena":
+        try:
+            from arena_session import renovar
+            ren = await renovar(page.context)
+            result["arena_session_renovada"] = ren.get("ok", False)
+        except Exception:
+            pass
     return result
 
 
