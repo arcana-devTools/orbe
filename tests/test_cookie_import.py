@@ -21,3 +21,25 @@ def test_cookie_modelo_default_arena():
     ci = main.CookieIn(value="x")
     assert ci.name == "arena-auth-prod-v1"
     assert ci.domain == ".arena.ai"
+
+
+def test_extrair_cookie_header_inteiro():
+    n, v = main._extrair_cookie(
+        "cookie: arena-auth-prod-v1=abc.def.ghi; _ga=GA1.1; outro=x"
+    )
+    assert (n, v) == ("arena-auth-prod-v1", "abc.def.ghi")
+
+
+def test_extrair_cookie_valor_puro():
+    assert main._extrair_cookie(" ValorPuro ") == ("arena-auth-prod-v1", "ValorPuro")
+
+
+def test_extrair_cookie_pares_sem_prefixo():
+    assert main._extrair_cookie("outro=x; arena-auth-prod-v1=AAAA") == (
+        "arena-auth-prod-v1", "AAAA",
+    )
+
+
+def test_extrair_cookie_com_prefixo_cookie_e_espaco():
+    n, v = main._extrair_cookie("cookie:  arena-auth-prod-v1=XYZ")
+    assert v == "XYZ" and n == "arena-auth-prod-v1"

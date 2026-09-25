@@ -571,6 +571,43 @@ async def rename_account(account_id: str, payload: RenameIn, token: str = "") ->
     return {"ok": True, "id": account_id, "label": acc.label}
 
 
+def _extrair_cookie(valor: str, nome: str = "arena-auth-prod-v1") -> tuple[str, str]:
+    """Aceita o valor puro do cookie OU o header 'Cookie:' inteiro.
+
+    O dono copia do DevTools às vezes só o valor, às vezes a linha inteira
+    'cookie: arena-auth-prod-v1=...; other=...' — os dois têm que funcionar.
+    Devolve (nome, valor); nunca devolve vazio sem nome válido.
+    """
+    valor = (valor or "").strip().strip('"').strip("'")
+    # header completo? (tem '=' e ';' com vários pares, ou prefixo 'cookie:')
+    if valor.lower().startswith("cookie:"):
+        valor = valor[7:].strip()
+    if "=" in valor and ";" in valor:
+        pares: list[tuple[str, str]] = []
+        for parte in valor.split(";"):
+            parte = parte.strip()
+            if "=" not in parte:
+                continue
+            n, _, v = parte.partition("=")
+            n, v = n.strip(), v.strip().strip('"')
+            if n and v:
+                pares.append((n, v))
+        for n, v in pares:  # 1º: nome exato pedido
+            if n == nome:
+                return n, v
+        for n, v in pares:  # 2º: qualquer arena-auth*
+            if "arena-auth" in n:
+                return n, v
+        if pares:
+            return pares[0]
+    if "=" in valor:  # usuário colou 'nome=valor' (sem ';')
+        n, _, v = valor.partition("=")
+        n, v = n.strip(), v.strip().strip('"')
+        if n and v and " " not in n and len(n) < 64 and ("arena-auth" in n or n == nome):
+            return (n, v)
+    return (nome, valor)
+
+
 class CookieIn(BaseModel):
     name: str = "arena-auth-prod-v1"
     value: str = ""
@@ -594,6 +631,9 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
         raise HTTPException(404, "conta não encontrada")
     if not payload.value.strip():
         raise HTTPException(400, "valor do cookie vazio")
+    c_nome, c_valor = _extrair_cookie(payload.value, payload.name.strip())
+    if not c_valor:
+        raise HTTPException(400, "não achei o valor do cookie no texto colado")
     eng = get_engine()
     spec = eng.registry.get(acc.platform)
     if spec is None:
@@ -601,8 +641,8 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
     async with MANAGER.lock_for(acc.profile):
         ctx = await MANAGER.context_for(acc.profile)
         await ctx.add_cookies([{
-            "name": payload.name.strip(),
-            "value": payload.value.strip(),
+            "name": c_nome,
+            "value": c_valor,
             "domain": payload.domain.strip() or ".arena.ai",
             "path": "/",
             "secure": True,
@@ -621,7 +661,7 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
     acc.status = AccountStatus.OK if state == "ok" else AccountStatus.LOGGED_OUT
     acc.last_check = time.time()
     STORE.save_accounts()
-    return {"ok": state == "ok", "state": state,
+    return {"ok": state == "ok", "state": state, "cookie": c_nome,
             "hint": "sessão importada e validada" if state == "ok"
             else "cookie aplicado mas a sessão NÃO validou (valor certo? cookie certo?)"}
 

@@ -407,9 +407,11 @@ function openAssist(id) {
       <button id="asGo" class="arena-cta">Entrar</button>
       <button class="arena-tela" id="asLive">🖥️ prefiro clicar na tela ao vivo</button>
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(128,128,128,.25)">
-        <div class="muted" style="font-size:10px;margin-bottom:6px">🍪 ou importe a sessão do SEU Chrome (sem login): F12 → Application → Cookies → arena.ai → copie <b>arena-auth-prod-v1</b> e cole abaixo</div>
+        <div class="muted" style="font-size:10px;margin-bottom:6px">🍪 ou importe a sessão do SEU Chrome (sem login):<br>
+        <b>jeito fácil</b>: F12 → <b>Network</b> → F5 → clica no 1º item → <b>Headers</b> → Request Headers → botão direito no valor da linha <b>cookie:</b> → Copy value → cole aqui (pode colar a linha INTEIRA)<br>
+        <b>alternativa</b>: F12 → Application → ▶ Cookies → clica em <b>https://arena.ai</b> → duplo clique no valor do <b>arena-auth-prod-v1</b> → Ctrl+A → Ctrl+C</div>
         <div style="display:flex;gap:6px">
-          <input id="asCookie" type="password" placeholder="valor do cookie…" style="flex:1" autocomplete="off">
+          <input id="asCookie" type="password" placeholder="cole o valor (ou a linha cookie: inteira)…" style="flex:1" autocomplete="off">
           <button class="arena-tela" id="asCookieGo">colar</button>
         </div>
       </div>
