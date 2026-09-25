@@ -880,6 +880,10 @@ async function pollCaptcha() {
         <div style="font-size:13px;font-weight:600;margin-bottom:4px">🧩 Captcha em ${escapeHtml(c.plataforma)} — toque abaixo</div>
         <div id="capBarra" style="font-size:11px;color:#666;margin-bottom:8px">clique/resolve aqui — o Orbe retoma sozinho quando sumir</div>
         <img id="capImg" src="${c.imagem}" style="width:100%;border:1px solid #ddd;border-radius:8px;cursor:pointer;touch-action:manipulation"/>
+        ${c.tem_campo ? `<div style="display:flex;gap:6px;margin-top:8px">
+          <input id="capTxt" type="text" placeholder="digite as letras da imagem…" autocomplete="off" style="flex:1;padding:9px;border:1px solid #ccc;border-radius:8px;font-size:16px;text-transform:uppercase"/>
+          <button id="capTxtGo" style="padding:9px 14px;border:0;border-radius:8px;background:#111;color:#fff;font-size:13px;font-weight:600">OK</button>
+        </div>` : ``}
         <div style="display:flex;gap:8px;margin-top:10px">
           <button id="capDisp" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:8px;background:#f6f6f6;font-size:12px">não posso agora</button>
         </div>
@@ -889,6 +893,17 @@ async function pollCaptcha() {
     img.addEventListener("click", (ev) => capClique(ev, img));
     img.addEventListener("touchstart", (ev) => { ev.preventDefault(); capClique(ev, img); }, {passive:false});
     ov.querySelector("#capDisp").onclick = async () => { await api("/api/captcha/dispensar", {method:"POST"}); capFechar("pausado — tarefa vai falhar graciosamente"); };
+    const txtBtn = ov.querySelector("#capTxtGo");
+    if (txtBtn) {
+      const envia = async () => {
+        const t = ov.querySelector("#capTxt").value.trim();
+        if (!t) return;
+        await api("/api/captcha/texto", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({texto: t})});
+        if (barra) barra.textContent = "🧩 texto enviado — digitando no site…";
+      };
+      txtBtn.onclick = envia;
+      ov.querySelector("#capTxt").addEventListener("keydown", (e) => { if (e.key === "Enter") envia(); });
+    }
   }
   if (c.ativo && capAberto) {
     const img = document.querySelector("#capImg");

@@ -28,8 +28,22 @@ SELETORES = [
     ".cf-turnstile",
     "#cf-chl-widget",
     "[class*='captcha' i]",
+    # captcha INFRA do eproc (TJ/TRF brasileiros): div/campo/img por ID
+    "[id*='captcha' i]",
+    "img[src*='captcha' i]",
 ]
 _TITULOS_CF = ("just a moment", "attention required", "checking your browser")
+
+
+async def _padrao_tj(page) -> bool:
+    """Verificação de segurança TJ/eproc: img-dataURI + input#ans + botão #jar."""
+    try:
+        if await page.locator("input#ans").count() and await page.locator("#jar").count():
+            txt = ((await page.evaluate("() => (document.body.innerText||'').toLowerCase()")) or "")
+            return "digite o c" in txt or "verificação de segurança" in txt
+    except Exception:
+        pass
+    return False
 
 # ---- estado compartilhado com o painel (pop-up) -------------------------
 ESTADO: dict[str, Any] = {
@@ -55,6 +69,8 @@ async def ha_captcha(page) -> str:
                 return f"interstitial Cloudflare (“{titulo[:48]}”)"
     except Exception:
         pass
+    if await _padrao_tj(page):
+        return "verificação de segurança TJ/eproc (#ans + #jar)"
     for sel in SELETORES:
         try:
             loc = page.locator(sel)
@@ -69,6 +85,22 @@ async def ha_captcha(page) -> str:
 
 async def _maior_bbox(page) -> Optional[dict]:
     """Maior widget de captcha visível (o challenge abre iframe maior que o box)."""
+    if await _padrao_tj(page):
+        try:
+            melhor = None
+            loc = page.locator("img")
+            n = await loc.count()
+            for i in range(min(n, 10)):
+                if await loc.nth(i).is_visible():
+                    bb = await loc.nth(i).bounding_box()
+                    if bb and 150 <= bb["width"] <= 700 and bb["height"] >= 40:
+                        area = bb["width"] * bb["height"]
+                        if not melhor or area > melhor[0]:
+                            melhor = (area, bb)
+            if melhor:
+                return melhor[1]
+        except Exception:
+            pass
     melhor = None
     for sel in SELETORES:
         try:
@@ -126,22 +158,39 @@ def pedir_abort() -> None:
     ESTADO["abortar"] = True
 
 
-async def portao_humano(page, plataforma: str, timeout_s: int = 900, task_id: str = "") -> dict:
+def texto_do_dono(texto: str) -> dict:
+    """Dono ditou o texto do captcha (ex.: letras da imagem do eproc)."""
+    global _TEXTO
+    _TEXTO = (texto or "").strip()
+    return {"ok": True, "texto": bool(_TEXTO)}
+
+
+async def portao_humano(
+    page,
+    plataforma: str,
+    timeout_s: int = 900,
+    task_id: str = "",
+    campo: str = "",
+    botao: str = "",
+) -> dict:
     """Se houver captcha: avisa, publica o pop-up e espera o dono resolver.
 
     {"captcha": False} = livre. {"captcha": True, "resolvido": bool} caso contrário;
     a tarefa fica em pausa (até timeout_s) em vez de falhar bobamente.
     """
-    global _PAGE, _BBOX
+    global _PAGE, _BBOX, _CAMPO, _BOTAO, _TEXTO
     achado = await ha_captcha(page)
     if not achado:
         return {"captcha": False}
 
     _PAGE = page
     _BBOX = None
+    _CAMPO, _BOTAO = campo, botao
+    _TEXTO = ""
     async with _LOCK:
         ESTADO.update(ativo=True, plataforma=plataforma, desc=achado,
                       imagem="", task_id=task_id, abortar=False,
+                      tem_campo=bool(campo),
                       atualizado_em=time.time())
     aviso = (
         f"🧩 Captcha em {plataforma} — tarefa PAUSADA ({achado}).\n"
@@ -161,6 +210,19 @@ async def portao_humano(page, plataforma: str, timeout_s: int = 900, task_id: st
         while time.time() - inicio < timeout_s:
             if ESTADO.get("abortar"):
                 break
+            # dono ditou o texto → preenche o campo e submete (conteúdo é
+            # 100% humano; o Orbe só digita sob ditado — igual 2FA)
+            if _TEXTO and _CAMPO:
+                try:
+                    alvo = page.locator(_CAMPO).first
+                    await alvo.click(timeout=4000)
+                    await alvo.fill(_TEXTO)
+                    if _BOTAO:
+                        await page.locator(_BOTAO).first.click(timeout=4000)
+                    _TEXTO = ""
+                    await page.wait_for_timeout(2500)
+                except Exception:
+                    _TEXTO = ""
             bb = await _maior_bbox(page)
             _BBOX = bb
             if bb is None:

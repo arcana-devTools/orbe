@@ -196,7 +196,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.4",
+        "versao": "0.27.5",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -231,7 +231,7 @@ async def captcha_atual() -> dict[str, Any]:
     """Estado do pop-up de captcha (o front faz polling e mostra o widget)."""
     from captcha import ESTADO
 
-    return {k: ESTADO[k] for k in ("ativo", "plataforma", "desc", "imagem", "task_id", "atualizado_em")}
+    return {k: ESTADO.get(k) for k in ("ativo", "plataforma", "desc", "imagem", "task_id", "tem_campo", "atualizado_em")}
 
 
 @app.post("/api/captcha/clique")
@@ -242,6 +242,48 @@ async def captcha_clique(payload: dict[str, Any]) -> dict[str, Any]:
     x = float(payload.get("x", 0.5))
     y = float(payload.get("y", 0.5))
     return JSONResponse(await clique_remoto(x, y))
+
+
+@app.post("/api/debug/gate/eproc")
+async def debug_gate_eproc() -> dict[str, Any]:
+    """TESTE: lança o portão do eproc DENTRO do processo do painel."""
+    import asyncio
+
+    from browser import MANAGER
+
+    async def _run():
+        from captcha import portao_humano
+
+        await MANAGER.start()
+        try:
+            ctx = await MANAGER.context_for("arena-teste")
+            pg = await ctx.new_page()
+            await pg.goto(
+                "https://eproc1g.tjsc.jus.br/eproc/externo_controlador.php?acao=processo_consulta_publica",
+                wait_until="domcontentloaded", timeout=60000)
+            await pg.wait_for_timeout(8000)
+            res = await portao_humano(pg, "eproc-tjsc-1g", timeout_s=900,
+                                      campo="#ans", botao="#jar")
+            await BUS.info(f"🧪 gate eproc terminou: {res}", "captcha")
+            try:
+                await pg.close()
+            except Exception:
+                pass
+        except Exception as exc:
+            await BUS.error(f"🧪 gate eproc erro: {type(exc).__name__}: {exc}", "captcha")
+        finally:
+            await MANAGER.stop()
+
+    asyncio.create_task(_run())
+    return {"ok": True, "msg": "gate lançado dentro do painel"}
+
+
+@app.post("/api/captcha/texto")
+async def captcha_texto(payload: dict[str, Any]) -> dict[str, Any]:
+    """Dono ditou o texto do captcha (eproc/TJ) → Orbe preenche e submete."""
+    from captcha import texto_do_dono
+
+    return JSONResponse(texto_do_dono(str(payload.get("texto", ""))))
 
 
 @app.post("/api/captcha/dispensar")
