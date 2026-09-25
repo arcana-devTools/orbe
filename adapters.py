@@ -65,8 +65,16 @@ class AdapterSpec:
     # no seletor e procura o "expect" (algo que SÓ existe logado); achou = ok,
     # não achou = logged_out. Tem prioridade sobre logged_in_selector.
     check_probe: dict[str, str] = field(default_factory=dict)
+    # Checagem de sessão via API do PRÓPRIO site — imune a drift de DOM.
+    # {"endpoint": "/api/me", "expect": "supabaseUserId"}: fetch com cookies na
+    # página aberta; 200 + expect no corpo = logado; 401/403 (ou expect ausente)
+    # = deslogado. Tem PRIORIDADE sobre check_probe/DOM. Descoberto em 24/09/2026:
+    # a Arena mudou o layout inteiro e o probe antigo dava logged_out falso.
+    check_api: dict[str, str] = field(default_factory=dict)
     # login automático (opcional): só vale quando o site NÃO tem 2FA/captcha.
     # A senha vem do cofre (data/secrets/vault.json), nunca do YAML.
+    # login_url = endereço do login DA MÃO quando difere da url de execução
+    # (ex.: Arena: app em /agent; login na landing "/" com "Get started").
     login_url: str = ""
     login_user_selector: str = ""
     login_pass_selector: str = ""
@@ -117,6 +125,7 @@ class Registry:
                     logged_in_selector=str(data.get("logged_in_selector", "")),
                     logged_out_selector=str(data.get("logged_out_selector", "")),
                     check_probe=dict(data.get("check_probe", {}) or {}),
+                    check_api=dict(data.get("check_api", {}) or {}),
                     login_url=str(data.get("login_url", "")),
                     login_user_selector=str(data.get("login_user_selector", "")),
                     login_pass_selector=str(data.get("login_pass_selector", "")),
@@ -179,6 +188,32 @@ async def _submit(page: Page, submit: dict[str, Any], inp, prompt_text: str) -> 
             pass
     # fallback: teclado no próprio input
     await inp.press(key or "Enter")
+
+
+CONSENT_OK = {"agree", "i agree", "aceito", "aceitar", "concordo", "accept", "aceptar", "concordar"}
+
+
+async def _dismiss_consent(page: Page) -> bool:
+    """Fecha modal de Termos de Uso/consentimento (ex.: Arena 'Agree').
+
+    Só clica em botão cujo TEXTO EXATO está na lista segura — nunca em
+    qualquer botão. Modal de ToU com foco engole o Enter e cobre o botão
+    de enviar: sem isso a tarefa morre em silêncio (bug real da Arena,
+    24/09/2026 — touConsentTimestamp null).
+    """
+    try:
+        for b in await page.locator("button").all():
+            try:
+                txt = ((await b.inner_text()) or "").strip().lower()
+                if txt in CONSENT_OK and await b.is_visible():
+                    await b.click(timeout=3000)
+                    await page.wait_for_timeout(900)
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
 
 
 async def _wait_for_answer(
@@ -264,6 +299,24 @@ async def _any_visible(page: Page, selectors: str, timeout_ms: int = 0) -> bool:
 async def check_login(page: Page, spec: AdapterSpec) -> str:
     """Retorna 'ok' | 'logged_out' | 'unknown' (só considera elemento visível)."""
     try:
+        api = spec.check_api or {}
+        if api.get("endpoint"):
+            try:
+                st, body = await page.evaluate(
+                    """async (ep) => {
+                        const r = await fetch(ep, {credentials: 'include'});
+                        return [r.status, await r.text()];
+                    }""",
+                    api["endpoint"],
+                )
+                expect = api.get("expect", "")
+                if st == 200 and (not expect or expect in body):
+                    return "ok"
+                if st in (401, 403) or (expect and expect not in body):
+                    return "logged_out"
+                # outro status (5xx etc.): não conclui, cai na checagem por DOM
+            except Exception:
+                pass  # endpoint sumiu/rede: cai na checagem por DOM
         if spec.logged_out_selector and await _any_visible(page, spec.logged_out_selector):
             return "logged_out"
         probe_c = (spec.check_probe or {}).get("click", "")
@@ -419,6 +472,8 @@ async def run_browser_step(
                     result["error"] = f"pre_action {i + 1} falhou ({sel}): {exc}"
                     return result
 
+    await _dismiss_consent(page)  # modal de ToU cobre a página e engole o Enter
+
     # páginas lentas (onboarding, animação de entrada, máquina sobrecarregada)
     # podem não ter a caixa visível de cara: tenta por até ~15 s
     inp = used_sel = None
@@ -459,6 +514,12 @@ async def run_browser_step(
             pass  # fill() foca via DOM — overlay não bloqueia fill/type
     await inp.fill("")
     await inp.type(full_prompt, delay=8)
+    if await _dismiss_consent(page):
+        # modal estava sobre nós: devolve o foco pro composer antes de enviar
+        try:
+            await inp.click(timeout=2500)
+        except Exception:
+            pass
     await _submit(page, spec.submit, inp, full_prompt)
 
     try:

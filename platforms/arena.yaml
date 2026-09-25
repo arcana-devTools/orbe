@@ -1,58 +1,47 @@
-# Arena.ai — a IA do próprio Arena (Agent Mode, Chat, etc.)
+# Arena.ai — a IA do próprio Arena (modo Agent)
 #
 # COMO USAR: no seu PC (HEADLESS=0), crie a conta desta plataforma e clique em
 # LOGIN uma vez — a sessão fica salva no perfil. A partir daí o Orbe abre a
-# Arena, escolhe o modo (pre_actions) e manda o prompt.
+# Arena e manda o prompt.
 #
-# Os seletores abaixo são ESTIMADOS a partir do layout público. Se a Arena
-# mudar o layout: F12 -> inspecionar -> ajustar os seletores. O mecanismo
-# (pre_actions + prompt + resposta) é testado e estável.
+# RECALIBRADO AO VIVO em 24/09/2026 (conta real, autorizada):
+#   - O app logado vive em https://arena.ai/agent — composer direto na tela,
+#     modo "Agent" já selecionado (botão com esse nome ao lado do composer).
+#     NÃO precisa clicar New Chat nem escolher modo antes de digitar.
+#   - A rota /login MORREU (404); a home pública virou landing de marketing
+#     ("Experience the frontier"), sem menu de modos — o probe antigo (clicar
+#     "Auto" e achar "Agent") deu logged_out FALSO com sessão viva.
+#   - Detector novo = API do próprio site: GET /api/me com cookies → 200 com
+#     corpo contendo "supabaseUserId" = logado; 403 = deslogado. Imune a drift.
 id: arena
 name: Arena.ai
 kind: browser
 category: chat
-url: "https://arena.ai/"
-new_chat_url: "https://arena.ai/"
+url: "https://arena.ai/agent"
+new_chat_url: "https://arena.ai/agent"
+# login DA MÃO: landing com "Get started" → modal "Log In or Create Account"
+login_url: "https://arena.ai/"
 
-# Escolhe o Agent Mode antes de digitar, imitando o caminho que você faz
-# na mão: New Chat -> abrir o seletor de modo -> clicar em Agent.
-# Tudo opcional: se um seletor não existir (layout mudou), pula e continua.
-# Trajetória REAL verificada por screenshot/calibração (2026-09-18):
-#   home = "Ask anything…" + botões Battle/Auto; o seletor "Auto" abre
-#   Video/Image/Web Search/Code/Text/Auto — o item "Agent" só aparece LOGADO.
-#   Tudo optional: se o layout mudar ou faltar opção, pula e continua.
-pre_actions:
-  - click: 'button:has-text("New Chat"), a:has-text("New Chat")'
-    wait_ms: 800
-    optional: true
-  - click: 'button:has-text("Auto")'
-    wait_ms: 700
-    optional: true
-  - click: 'text="Agent", [role="menuitem"]:has-text("Agent"), [role="option"]:has-text("Agent")'
-    wait_ms: 900
-    optional: true
-  # o clique no modo deixa o popover/tooltip Radix aberto SOBRE a textarea
-  # ("Auto-routes you to the right modality"), bloqueando cliques — feche
-  - key: "Escape"
-    wait_ms: 400
-    optional: true
+# O composer já está pronto em /agent (modo Agent default). Nada a fazer antes.
+pre_actions: []
 
-prompt_selector: 'textarea[placeholder*="Ask anything"], textarea'
+# ATENÇÃO (24/09/2026): a única <textarea> da página é a INVISÍVEL do
+# reCAPTCHA (g-recaptcha-response) — prompt nela some no buraco. O composer
+# real é o contenteditable (tiptap/ProseMirror) ao lado do botão "Send message".
+prompt_selector: 'div[contenteditable="true"].tiptap, div[contenteditable="true"].ProseMirror, div[contenteditable="true"], textarea:not([name="g-recaptcha-response"])'
 submit:
-  selector: 'button[aria-label*="Send" i], button:has-text("Send message")'
+  selector: 'button:has-text("Send message")'
   key: Enter
 answer_selector: '[data-message-author-role="assistant"], article, .markdown, [class*="message"]'
 answer_index: -1
 settle_ms: 3500
 max_wait_s: 240          # agent mode pensa longo
-logged_in_selector: 'textarea[placeholder], div[contenteditable="true"]'
-logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign in")'
-# Probe ativo (v0.12): a home PÚBLICA da Arena tem textarea ("Ask anything..."),
-# então o logged_in_selector genérico dava falso "ok" pra conta vazia.
-# O item "Agent" do seletor de modos só existe LOGADO (trajetória real
-# 2026-09-18): clicamos no seletor e procuramos "Agent" como item de menu.
-check_probe:
-  click: 'button:has-text("Auto"), button:has-text("Battle")'
-  expect: '[role="menuitem"]:text-matches("^\\s*Agent\\s*$"), [role="option"]:text-matches("^\\s*Agent\\s*$"), [role="button"]:text-matches("^\\s*Agent\\s*$"), li:text-matches("^\\s*Agent\\s*$")'
+logged_in_selector: 'textarea'
+logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign in"), button:has-text("Log in")'
+# Detector PRIMÁRIO: API com os cookies do perfil (200 + usuário = logado).
+# O DOM fica só como fallback caso o endpoint mude.
+check_api:
+  endpoint: "/api/me"
+  expect: "supabaseUserId"
 extra:
-  dica: "Se quiser outro modo/modelo, troque os textos 'Agent' nos pre_actions."
+  dica: "Se quiser outro modo/modelo, clique no seletor ao lado do composer antes de enviar."

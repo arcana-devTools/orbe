@@ -574,6 +574,7 @@ class AssistedIn(BaseModel):
     email: str = ""
     password: str = ""
     code: str = ""
+    metodo: str = ""   # escolha do dono na tela "Tentar outro jeito" (2FA)
 
 
 @app.post("/api/accounts/{account_id}/assisted")

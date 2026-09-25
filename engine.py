@@ -793,7 +793,9 @@ class Engine:
         if not account:
             return {"ok": False, "error": "conta não encontrada"}
         spec = self.registry.get(account.platform) or self.orch.ensure_adapter(account.platform)
-        url = spec.new_chat_url or spec.url
+        # login da mão merece a página de LOGIN (ex.: Arena landing "Get
+        # started" → modal), não necessariamente a url de execução do app
+        url = spec.login_url or spec.new_chat_url or spec.url
         async with MANAGER.lock_for(account.profile):
             ctx = await MANAGER.context_for(account.profile)
             page = ctx.pages[0] if ctx.pages else await ctx.new_page()
