@@ -52,3 +52,22 @@ def test_extrair_cookie_dentro_de_headers_completos():
     )
     n, v = main._extrair_cookie(blob)
     assert (n, v) == ("arena-auth-prod-v1", "eyJhbGciOi.xYz.123")
+
+
+def test_extrair_cookies_fatiados_sessao_real():
+    # sessão real da Arena vem fatiada (.0 + .1) — colada crua ou em headers
+    blob = (
+        "cookie: _ga=x; arena-auth-prod-v1=; "
+        "arena-auth-prod-v1.0=base64-AAAA; "
+        "arena-auth-prod-v1.1=BBBB; cf_clearance=y"
+    )
+    pares = main._extrair_cookies(blob)
+    nomes = [n for n, _ in pares]
+    assert "arena-auth-prod-v1.0" in nomes and "arena-auth-prod-v1.1" in nomes
+    valores = dict(pares)
+    assert valores["arena-auth-prod-v1.0"] == "base64-AAAA"
+    assert "arena-auth-prod-v1" not in nomes  # vazio é ignorado
+
+
+def test_extrair_cookies_valor_puro_compat():
+    assert main._extrair_cookies("ValorPuro") == [("arena-auth-prod-v1", "ValorPuro")]

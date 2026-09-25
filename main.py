@@ -572,6 +572,42 @@ async def rename_account(account_id: str, payload: RenameIn, token: str = "") ->
     return {"ok": True, "id": account_id, "label": acc.label}
 
 
+def _extrair_cookies(valor: str) -> list[tuple[str, str]]:
+    """Extrai TODOS os cookies arena-auth* de um texto colado pelo dono.
+
+    Cobre os formatos reais (24/09/2026): valor puro, 'nome=valor', header
+    'Cookie:' inteiro, Request Headers completos do DevTools e — importante —
+    a sessão FATIADA da Arena (arena-auth-prod-v1.0 + .1: o token é grande
+    demais pra um cookie só e o supabase-auth fatia em .0/.1/.2…).
+    """
+    valor = (valor or "").strip()
+    achados: list[tuple[str, str]] = []
+    vistos: set[str] = set()
+    for mc in re.finditer(r"(arena-auth[A-Za-z0-9._-]*)\s*=\s*([^;\n\r]+)", valor):
+        nome, val = mc.group(1).strip(), mc.group(2).strip().strip('"').strip("'")
+        if not val or nome in vistos:
+            continue
+        vistos.add(nome)
+        achados.append((nome, val))
+    if achados:
+        return achados
+    # sem 'arena-auth=' no texto: pode ser o VALOR PURO de um cookie só
+    puro = valor.strip().strip('"').strip("'")
+    if puro.lower().startswith("cookie:"):
+        puro = puro[7:].strip()
+    if "=" in puro and ";" in puro:
+        for parte in puro.split(";"):
+            n, _, v = parte.strip().partition("=")
+            if "arena-auth" in n:
+                return [(n.strip(), v.strip().strip('"'))]
+    if puro and "=" not in puro:
+        return [("arena-auth-prod-v1", puro)]
+    if puro:
+        n, _, v = puro.partition("=")
+        return [(n.strip(), v.strip().strip('"'))]
+    return []
+
+
 def _extrair_cookie(valor: str, nome: str = "arena-auth-prod-v1") -> tuple[str, str]:
     """Aceita o valor puro do cookie OU o header 'Cookie:' inteiro.
 
@@ -637,24 +673,29 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
         raise HTTPException(404, "conta não encontrada")
     if not payload.value.strip():
         raise HTTPException(400, "valor do cookie vazio")
-    c_nome, c_valor = _extrair_cookie(payload.value, payload.name.strip())
-    if not c_valor:
-        raise HTTPException(400, "não achei o valor do cookie no texto colado")
+    pares = _extrair_cookies(payload.value)
+    if not pares:
+        raise HTTPException(400, "não achei nenhum cookie arena-auth no texto colado")
     eng = get_engine()
     spec = eng.registry.get(acc.platform)
     if spec is None:
         raise HTTPException(400, "plataforma sem adapter")
+    dominio = payload.domain.strip() or ".arena.ai"
+    # CRÍTICO (25/09/2026): sem `expires`, o Chrome trata como cookie de SESSÃO
+    # e NUNCA grava no disco — o login sumia ao reiniciar o navegador/processo.
+    expira = int(time.time()) + 180 * 24 * 3600  # 180 dias
     async with MANAGER.lock_for(acc.profile):
         ctx = await MANAGER.context_for(acc.profile)
         await ctx.add_cookies([{
-            "name": c_nome,
-            "value": c_valor,
-            "domain": payload.domain.strip() or ".arena.ai",
+            "name": n,
+            "value": v,
+            "domain": dominio,
             "path": "/",
             "secure": True,
             "httpOnly": True,
             "sameSite": "Lax",
-        }])
+            "expires": expira,
+        } for n, v in pares])
         # conferência imediata de sessão
         from adapters import check_login
         page = await ctx.new_page()
@@ -667,7 +708,7 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
     acc.status = AccountStatus.OK if state == "ok" else AccountStatus.LOGGED_OUT
     acc.last_check = time.time()
     STORE.save_accounts()
-    return {"ok": state == "ok", "state": state, "cookie": c_nome,
+    return {"ok": state == "ok", "state": state, "cookies": [n for n, _ in pares],
             "hint": "sessão importada e validada" if state == "ok"
             else "cookie aplicado mas a sessão NÃO validou (valor certo? cookie certo?)"}
 

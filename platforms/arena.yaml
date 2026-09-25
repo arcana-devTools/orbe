@@ -42,6 +42,8 @@ logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign
 # O DOM fica só como fallback caso o endpoint mude.
 check_api:
   endpoint: "/api/me"
-  expect: "supabaseUserId"
+  # convidado TAMBÉM volta 200 com supabaseUserId, mas com email vazio —
+  # o marcador de login REAL é email não-vazio
+  expect_regex: '"email":"[^"]'  
 extra:
   dica: "Se quiser outro modo/modelo, clique no seletor ao lado do composer antes de enviar."

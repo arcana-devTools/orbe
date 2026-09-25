@@ -11,7 +11,9 @@ def _spec():
 def test_check_api_configurado():
     s = _spec()
     assert s.check_api.get("endpoint") == "/api/me"
-    assert s.check_api.get("expect") == "supabaseUserId"
+    # sessão CONVIDADO também tem supabaseUserId — o marcador de login real
+    # é email não-vazio (descoberto com a sessão real do dono, 25/09/2026)
+    assert s.check_api.get("expect_regex") == '"email":"[^"]' 
 
 
 def test_login_url_aponta_landing():

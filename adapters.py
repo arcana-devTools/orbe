@@ -309,11 +309,27 @@ async def check_login(page: Page, spec: AdapterSpec) -> str:
                     }""",
                     api["endpoint"],
                 )
+                # Cloudflare/bloqueio devolve 403 com HTML — NÃO é "deslogado"
+                parece_bloqueio = st in (401, 403) and "<html" in body[:400].lower()
                 expect = api.get("expect", "")
-                if st == 200 and (not expect or expect in body):
+                regex = api.get("expect_regex", "")
+                casou = False
+                if st == 200:
+                    if regex:
+                        import re as _re
+                        casou = bool(_re.search(regex, body))
+                    elif expect:
+                        casou = expect in body
+                    else:
+                        casou = True
+                if casou:
                     return "ok"
-                if st in (401, 403) or (expect and expect not in body):
+                if parece_bloqueio:
+                    return "unknown"  # inconclusivo: cai na checagem por DOM
+                if st in (401, 403):
                     return "logged_out"
+                if st == 200 and (expect or regex):
+                    return "logged_out"  # 200 mas sem o marcador = convidado/deslogado
                 # outro status (5xx etc.): não conclui, cai na checagem por DOM
             except Exception:
                 pass  # endpoint sumiu/rede: cai na checagem por DOM
