@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_PATH = Path("data/autonomous.json")
+DEFAULT_JOBS_PATH = Path("data/autonomo_jobs.json")
 
 SALDO_INICIAL = 25.0        # o "custo de nascimento" de um agente
 CUSTO_CICLO = 0.35          # servidor + LLM por ciclo (simulado)
@@ -68,7 +69,12 @@ class AutoAgent:
 class Swarm:
     """A colônia de autômatos: regras de vida, morte e clonagem."""
 
+    CICLOS_POR_EXPEDICAO = 5      # a cada N ciclos, 1 agente trabalha DE VERDADE
+
     def __init__(self, rng: random.Random | None = None, path: Path | None = None) -> None:
+        self.trabalho_real = True  # FASE 2a: renda = entrega produzida pelo Orbe
+        self.entregas: list[dict] = []   # ledger de trabalhos feitos
+        self._expedindo = False
         self.rng = rng or random.Random()
         self.path = Path(path) if path else DEFAULT_PATH
         self.agents: list[AutoAgent] = []
@@ -98,6 +104,7 @@ class Swarm:
                 "ciclos": self.ciclos,
                 "events": self.events[-200:],
                 "agents": [a.to_dict() for a in self.agents],
+                "entregas": getattr(self, "entregas", [])[-100:],
             }, ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass
@@ -107,11 +114,14 @@ class Swarm:
         self.ciclos = int(d.get("ciclos", 0))
         self.events = list(d.get("events", []))
         self.agents = [AutoAgent.from_dict(a) for a in d.get("agents", [])]
+        self.entregas = list(d.get("entregas", []))
 
     # ------------------------------------------------------------ núcleo
     def _receita_do_ciclo(self) -> float:
-        """FASE 2 substitui isto por renda real. Hoje: estocástica —
-        renda é RARA (1 em ~20 ciclos), mas às vezes vem um contratão."""
+        """FASE 2a: com trabalho_real, a renda estocástica DESLIGA — o
+        dinheiro só entra por entrega produzida (ver _expedicao_real)."""
+        if getattr(self, "trabalho_real", False):
+            return 0.0
         if self.rng.random() > P_RECEITA:
             return 0.0
         if self.rng.random() < 0.7:
@@ -156,9 +166,67 @@ class Swarm:
             self._save()
 
     # ------------------------------------------------------------ ciclo de vida da simulação
+    def _carregar_catalogo(self) -> tuple[list[dict], list[str]]:
+        try:
+            d = json.loads(DEFAULT_JOBS_PATH.read_text(encoding="utf-8"))
+            return d.get("entregas", []), d.get("temas", ["uso geral"])
+        except Exception:
+            return [], ["uso geral"]
+
+    async def _expedicao_real(self) -> None:
+        """O agente mais pobre vivo produz 1 entrega REAL via Orbe (Arena).
+
+        ok=True  → wallet += preco (trabalho pago), entrega no ledger/arquivo
+        falha    → nada entra e o custo do ciclo corrige (jogo segue honesto)
+        """
+        if self._expedindo or not getattr(self, "trabalho_real", False):
+            return
+        vivos = [a for a in self.agents if a.alive]
+        if not vivos:
+            return
+        try:
+            from engine import get_engine
+            eng = get_engine()
+        except Exception:
+            return
+        self._expedindo = True
+        try:
+            cat, temas = self._carregar_catalogo()
+            if not cat:
+                return
+            a = min(vivos, key=lambda x: x.wallet)
+            gig = self.rng.choice(cat)
+            tema = self.rng.choice(temas)
+            prompt = gig["prompt"].replace("{tema}", tema)
+            task = await eng.submit(prompt)
+            t0 = time.time()
+            while not task.finished_at and time.time() - t0 < 240:
+                await asyncio.sleep(3)
+            ok = any(r.ok for r in task.results)
+            if ok and getattr(task.results[0], "answer", ""):
+                preco = float(gig.get("preco", 3.0))
+                a.wallet = round(a.wallet + preco, 4)
+                a.ganho_total = round(a.ganho_total + preco, 2)
+                entrega = {
+                    "ts": time.time(), "agente": a.id, "gig": gig["nome"],
+                    "tema": tema, "preco": preco,
+                    "arquivo": task.archive or "",
+                }
+                self.entregas.append(entrega)
+                self.entregas = self.entregas[-100:]
+                self.log(f"💼 {a.id} entregou “{gig['nome']}” ({tema}) → +${preco:.2f}")
+            else:
+                self.log(f"🌫️ expedição de {a.id} não rendeu entrega (sem pagamento)")
+        except Exception as exc:
+            self.log(f"⚠️ expedição real falhou: {type(exc).__name__}: {str(exc)[:80]}")
+        finally:
+            self._expedindo = False
+
     async def _loop(self) -> None:
         while self.running:
             self.tick()
+            if self.ciclos % self.CICLOS_POR_EXPEDICAO == 0:
+                await self._expedicao_real()
             self._save()
             await asyncio.sleep(self.interval)
 
@@ -188,6 +256,7 @@ class Swarm:
         self.running = False
         self.agents = []
         self.events = []
+        self.entregas = []
         self.ciclos = 0
         fundador = self._novo_agente(gen=1, wallet=SALDO_INICIAL, pai="")
         self.log(f"🌱 mundo resetado — agente fundador {fundador.id} criado com ${SALDO_INICIAL:.2f}")
@@ -208,6 +277,9 @@ class Swarm:
             "saldo_total": round(sum(a.wallet for a in vivos), 2),
             "melhor": round(max((a.ganho_total for a in self.agents), default=0.0), 2),
             "events": self.events[-12:],
+            "trabalho_real": getattr(self, "trabalho_real", False),
+            "entregas_total": len(self.entregas),
+            "receita_total": round(sum(e.get("preco", 0) for e in self.entregas), 2),
         }
 
 
