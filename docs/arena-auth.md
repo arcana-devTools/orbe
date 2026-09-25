@@ -29,3 +29,11 @@
 - Modal de ToU ("Agree") congela o app inteiro se não for aceito
   (POST /api/me/update-tou-consent resolve; _dismiss_consent clica seguro).
 - Login modal: Enter sem sessão abre "Log In or Create Account".
+
+## NUNCA colar cookies no CHAT (25/09/2026, prova forense)
+- A formatação markdown do chat come underscores: `_ga`→`*ga*`,
+  `__cf_bm`→`*cf_bm*`, `_dd_s`→`*dd*s`. Dentro do JWT (base64url, cheio de
+  `_`) um trecho veio duplicado/alterado → assinatura inválida → /api/me 401.
+- Caminho certo: campo 🍪 do painel (vai direto pro servidor, sem markdown)
+  ou login ao vivo dentro do Chrome do Orbe.
+- Janela do access token: ~1h. Copy colado demorado = token morto na chegada.
