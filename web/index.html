@@ -406,12 +406,37 @@ function openAssist(id) {
       <div id="asStatus" class="arena-status"></div>
       <button id="asGo" class="arena-cta">Entrar</button>
       <button class="arena-tela" id="asLive">🖥️ prefiro clicar na tela ao vivo</button>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(128,128,128,.25)">
+        <div class="muted" style="font-size:10px;margin-bottom:6px">🍪 ou importe a sessão do SEU Chrome (sem login): F12 → Application → Cookies → arena.ai → copie <b>arena-auth-prod-v1</b> e cole abaixo</div>
+        <div style="display:flex;gap:6px">
+          <input id="asCookie" type="password" placeholder="valor do cookie…" style="flex:1" autocomplete="off">
+          <button class="arena-tela" id="asCookieGo">colar</button>
+        </div>
+      </div>
       <button class="arena-ghost" id="asClose2">mais tarde</button>
     </div>`;
   document.body.appendChild(ov);
   ov.querySelector("#asClose").onclick = () => ov.remove();
   ov.querySelector("#asClose2").onclick = () => ov.remove();
   ov.querySelector("#asLive").onclick = () => { ov.remove(); doLogin(id); };
+  ov.querySelector("#asCookieGo").onclick = async () => {
+    const val = ov.querySelector("#asCookie").value.trim();
+    if (!val) return;
+    const stC = ov.querySelector("#asStatus");
+    stC.innerHTML = `<span class="lv-step">🍪 injetando cookie…</span>`;
+    try {
+      const r = await api(`/api/accounts/${id}/cookie`, "POST", {value: val});
+      if (r.ok) {
+        stC.innerHTML = `<span class="lv-step" style="color:#4ade80">🍪✅ sessão importada! conta validada.</span>`;
+        refresh();
+        setTimeout(() => ov.remove(), 1200);
+      } else {
+        stC.innerHTML = `<span class="lv-step" style="color:#f87171">🍪 ${r.hint || r.error || "falhou"}</span>`;
+      }
+    } catch (e) {
+      stC.innerHTML = `<span class="lv-step" style="color:#f87171">erro: ${e.message || e}</span>`;
+    }
+  };
   ov.querySelector("#asEmail").focus();
   ov.addEventListener("keydown", (e) => { if (e.key === "Escape") ov.remove(); });
   ov.querySelector("#asGo").onclick = async () => {

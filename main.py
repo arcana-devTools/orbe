@@ -570,6 +570,61 @@ async def rename_account(account_id: str, payload: RenameIn, token: str = "") ->
     return {"ok": True, "id": account_id, "label": acc.label}
 
 
+class CookieIn(BaseModel):
+    name: str = "arena-auth-prod-v1"
+    value: str = ""
+    domain: str = ".arena.ai"
+
+
+@app.post("/api/accounts/{account_id}/cookie")
+async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> dict[str, Any]:
+    """Importa cookie de sessão do navegador do DONO (evita login por OAuth).
+
+    Fluxo pensado pra arena.ai: o dono copia o valor do cookie logado do PRÓPRIO
+    Chrome (F12 → Application → Cookies) e cola no painel; o Orbe injeta no
+    perfil persistente e confere a sessão na hora. O valor nunca é ecoado de
+    volta nem salvo em log — só no perfil do navegador.
+    """
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    _touch()
+    acc = STORE.accounts.get(account_id)
+    if not acc:
+        raise HTTPException(404, "conta não encontrada")
+    if not payload.value.strip():
+        raise HTTPException(400, "valor do cookie vazio")
+    eng = get_engine()
+    spec = eng.registry.get(acc.platform)
+    if spec is None:
+        raise HTTPException(400, "plataforma sem adapter")
+    async with MANAGER.lock_for(acc.profile):
+        ctx = await MANAGER.context_for(acc.profile)
+        await ctx.add_cookies([{
+            "name": payload.name.strip(),
+            "value": payload.value.strip(),
+            "domain": payload.domain.strip() or ".arena.ai",
+            "path": "/",
+            "secure": True,
+            "httpOnly": True,
+            "sameSite": "Lax",
+        }])
+        # conferência imediata de sessão
+        from adapters import check_login
+        page = await ctx.new_page()
+        try:
+            await page.goto(spec.url or "https://arena.ai/", wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(2500)
+            state = await check_login(page, spec)
+        finally:
+            await page.close()
+    acc.status = AccountStatus.OK if state == "ok" else AccountStatus.LOGGED_OUT
+    acc.last_check = time.time()
+    STORE.save_accounts()
+    return {"ok": state == "ok", "state": state,
+            "hint": "sessão importada e validada" if state == "ok"
+            else "cookie aplicado mas a sessão NÃO validou (valor certo? cookie certo?)"}
+
+
 class AssistedIn(BaseModel):
     email: str = ""
     password: str = ""
