@@ -429,7 +429,7 @@ function openAssist(id) {
     try {
       const r = await api(`/api/accounts/${id}/cookie`, "POST", {value: val});
       if (r.ok) {
-        stC.innerHTML = `<span class="lv-step" style="color:#4ade80">🍪✅ sessão importada! conta validada.</span>`;
+        stC.innerHTML = `<span class="lv-step" style="color:#4ade80">${r.pat_salvo && !r.cookie ? "🔑 PAT salvo no cofre!" : "🍪✅ sessão importada! conta validada."}</span>`;
         refresh();
         setTimeout(() => ov.remove(), 1200);
       } else {
