@@ -43,3 +43,12 @@ def test_extrair_cookie_pares_sem_prefixo():
 def test_extrair_cookie_com_prefixo_cookie_e_espaco():
     n, v = main._extrair_cookie("cookie:  arena-auth-prod-v1=XYZ")
     assert v == "XYZ" and n == "arena-auth-prod-v1"
+
+
+def test_extrair_cookie_dentro_de_headers_completos():
+    blob = (
+        ":method: POST\n:authority: arena.ai\n"
+        "cookie: arena-auth-prod-v1=eyJhbGciOi.xYz.123; sec-ch-ua: a=b"
+    )
+    n, v = main._extrair_cookie(blob)
+    assert (n, v) == ("arena-auth-prod-v1", "eyJhbGciOi.xYz.123")

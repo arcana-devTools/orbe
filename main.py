@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -579,6 +580,11 @@ def _extrair_cookie(valor: str, nome: str = "arena-auth-prod-v1") -> tuple[str, 
     Devolve (nome, valor); nunca devolve vazio sem nome válido.
     """
     valor = (valor or "").strip().strip('"').strip("'")
+    # 1º jeito: o cookie aparece em QUALQUER lugar do texto colado (ex.: os
+    # Request Headers inteiros copiados do DevTools, com várias linhas)
+    mc = re.search(r"arena-auth-prod-v[0-9]=([^;\"'\s]+)", valor)
+    if mc:
+        return ("arena-auth-prod-v1", mc.group(1))
     # header completo? (tem '=' e ';' com vários pares, ou prefixo 'cookie:')
     if valor.lower().startswith("cookie:"):
         valor = valor[7:].strip()
