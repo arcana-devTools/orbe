@@ -221,11 +221,13 @@ async def _wait_for_answer(
     spec: AdapterSpec,
     before: str,
     before_len: int,
+    prompt: str = "",
 ) -> tuple[str, bool]:
     """Espera a resposta parar de crescer. Devolve (texto, mudou?)."""
     deadline = time.time() + spec.max_wait_s
     last_text = ""
     stable_since = time.time()
+    eco = prompt.strip()[:120] if prompt and prompt.strip() else ""
 
     def grab_count() -> int:
         return 0
@@ -233,6 +235,10 @@ async def _wait_for_answer(
     while time.time() < deadline:
         await asyncio.sleep(1.0)
         text = await extract_answer(page, spec)
+        # anti-eco: o prompt refletido na bolha do usuário NÃO é resposta
+        # (sem isso a engine devolve a própria pergunta como "resposta")
+        if eco and text and (eco in text or (len(text) < 300 and text in eco)):
+            text = ""
         grew = text != last_text and len(text) >= before_len
         if grew:
             stable_since = time.time()
@@ -244,6 +250,15 @@ async def _wait_for_answer(
 
 
 async def extract_answer(page: Page, spec: AdapterSpec) -> str:
+    # modo "js:" — expressão JS arbitrária devolve o texto (plataformas cujo
+    # DOM não tem classe/atributo estável; ex.: Arena pinta a resposta numa
+    # DIV sem classe dentro de [class*="prose"], 25/09/2026)
+    if spec.answer_selector.startswith("js:"):
+        try:
+            out = await page.evaluate(spec.answer_selector[3:])
+            return (out or "").strip() if isinstance(out, str) else ""
+        except Exception:
+            return ""
     if spec.answer_selector:
         try:
             loc = page.locator(spec.answer_selector)
@@ -539,7 +554,7 @@ async def run_browser_step(
     await _submit(page, spec.submit, inp, full_prompt)
 
     try:
-        answer, changed = await _wait_for_answer(page, spec, before, len(before))
+        answer, changed = await _wait_for_answer(page, spec, before, len(before), full_prompt)
     except PWTimeout as exc:
         result["error"] = f"timeout esperando resposta: {exc}"
         return result

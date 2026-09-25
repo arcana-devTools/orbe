@@ -32,10 +32,15 @@ prompt_selector: 'div[contenteditable="true"].tiptap, div[contenteditable="true"
 submit:
   selector: 'button:has-text("Send message")'
   key: Enter
-answer_selector: '[data-message-author-role="assistant"], article, .markdown, [class*="message"]'
+# RESPOSTA (25/09/2026, thread real): a resposta do agent vem numa DIV SEM
+# classe dentro de um contêiner [class*="prose"] — data-message-author-role,
+# article, .markdown e [class*="message"] NÃO existem. Seletor "js:" pega o
+# último bloco prose com texto >25 chars (= a resposta; blocos curtos são
+# status tipo "asking Bradley"). Anti-eco do prompt é feito na engine.
+answer_selector: 'js:() => { const ps = [...document.querySelectorAll("[class*=\"prose\" i]")].map(e => (e.innerText || "").trim()).filter(t => t.length > 25); return ps.length ? ps[ps.length - 1] : ""; }'
 answer_index: -1
 settle_ms: 3500
-max_wait_s: 240          # agent mode pensa longo
+max_wait_s: 300          # agent mode pensa longo (e às vezes faz perguntas)
 logged_in_selector: 'textarea'
 logged_out_selector: 'a[href*="login"], a[href*="signin"], button:has-text("Sign in"), button:has-text("Log in")'
 # Detector PRIMÁRIO: API com os cookies do perfil (200 + usuário = logado).

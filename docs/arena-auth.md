@@ -37,3 +37,34 @@
 - Caminho certo: campo 🍪 do painel (vai direto pro servidor, sem markdown)
   ou login ao vivo dentro do Chrome do Orbe.
 - Janela do access token: ~1h. Copy colado demorado = token morto na chegada.
+
+## Thread logada — DOM real (25/09/2026, thread 01a0d685)
+
+- **Resposta do agent**: DIV **sem classe** dentro de `[class*="prose"]`; é o ÚLTIMO
+  bloco prose com texto >25 chars. `data-message-author-role`, `article`,
+  `.markdown`, `[class*="message"]` NÃO existem. Engine agora aceita
+  `answer_selector: "js:..."` (arena.yaml usa isso).
+- **Composer do thread**: `div[contenteditable="true"]` (sem `.tiptap`!).
+  Submit: botão "Send message" existe após digitar; Enter também funciona.
+- **Cards interativos no meio da resposta**: (a) clarifying question com
+  input[type=radio] + botão **Skip**; (b) feedback "Esta tarefa foi
+  bem-sucedida?" com **Sim / Não / Continuar trabalhando**. Responder pelo
+  composer dispensa o card ("Questions dismissed") e segue a thread.
+- **Status do agent**: linha "asking Bradley"/"Thought for N seconds" — some
+  só no fim; NÃO usar como sinal de conclusão.
+- **Anti-eco**: `_wait_for_answer` ignora texto que contém o próprio prompt
+  (a bolha do usuário casava como "resposta" em ~15s).
+- **E2E validado**: task_fd9f06756fee — 25s, ok=True, resposta correta
+  arquivada. task_8feeb24412d9 foi a 1ª tarefa real (sucesso manual com
+  follow-up de clarificação).
+
+## Renovação de sessão (a confirmar às 04:03 UTC de 25/09)
+
+- `/nextjs-api/{session,auth/session,auth/refresh,refresh,auth/token,auth/me,
+  auth/status,auth/logout}` → **404 todos**. Não há endpoint de refresh exposto.
+- `/api/me` não devolve Set-Cookie de renovação enquanto o access é válido
+  (só `__cf_bm` do Cloudflare).
+- Chave anon do Supabase NÃO aparece nos 84 scripts da página logada →
+  refresh é server-side (middleware). Hipótese: estilo `@supabase/ssr`,
+  qualquer request com cookie expirado dispara renovação + Set-Cookie.
+  Teste definitivo: curl /api/me DEPOIS do exp com o mesmo cookie.
