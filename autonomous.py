@@ -27,6 +27,7 @@ from typing import Any
 
 DEFAULT_PATH = Path("data/autonomous.json")
 DEFAULT_JOBS_PATH = Path("data/autonomo_jobs.json")
+RADAR_PATH = Path("data/renda_radar.json")
 
 SALDO_INICIAL = 25.0        # o "custo de nascimento" de um agente
 CUSTO_CICLO = 0.35          # servidor + LLM por ciclo (simulado)
@@ -198,7 +199,9 @@ class Swarm:
             gig = self.rng.choice(cat)
             tema = self.rng.choice(temas)
             prompt = gig["prompt"].replace("{tema}", tema)
-            task = await eng.submit(prompt)
+            # mira SÓ contas de chat da arena (Canva etc. não serve pra gig)
+            contas = [acc.id for acc in _contas_da_arena()]
+            task = await eng.submit(prompt, account_ids=contas or None)
             t0 = time.time()
             while not task.finished_at and time.time() - t0 < 240:
                 await asyncio.sleep(3)
@@ -222,11 +225,108 @@ class Swarm:
         finally:
             self._expedindo = False
 
+    def _radar_ler(self) -> list[dict]:
+        try:
+            return json.loads(RADAR_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+    def _radar_salvar(self, itens: list[dict]) -> None:
+        try:
+            RADAR_PATH.parent.mkdir(exist_ok=True)
+            RADAR_PATH.write_text(json.dumps(itens[-80:], ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            pass
+
+    async def _radar_renda(self) -> None:
+        """🛰️ BATEDOR: 1 agente pesquisa na web FORMAS DE GANHAR DINHEIRO que
+        uma máquina como o Orbe executa sozinha. Filtra pirâmide/spam/apostas,
+        pontua por R$ potencial ÷ esforço e guarda no RADAR (aviso no Telegram)."""
+        contas = [a.id for a in _contas_da_arena()]
+        if not contas:
+            return
+        try:
+            from engine import get_engine
+            eng = get_engine()
+        except Exception:
+            return
+        vivos = [a for a in self.agents if a.alive]
+        if not vivos:
+            return
+        self._expedindo = True  # trava expedição simultânea (mesmo perfil)
+        try:
+            scout = max(vivos, key=lambda x: x.gen)  # o mais "evoluído" pesquisa
+            prompt = (
+                "Pesquise rapidamente na web e liste 3 formas CONCRETAS de ganhar dinheiro "
+                "online que uma maquina autonoma consiga executar SOZINHA: ela so produz "
+                "texto, sites simples e imagens; nao aparece, nao tem capital inicial, nao "
+                "fala com ninguem por telefone. EXCLUA: apostas, piramides, spam, cripto de "
+                "alto risco, dropshipping com estoque. Responda SOMENTE com um array JSON "
+                "puro (sem markdown), itens assim: "
+                '{\"ideia\": \"...\", \"como_funciona\": \"...\", \"esforco_horas_semana\": 2, '
+                '\"potencial_brl_mes\": 300, \"risco\": \"baixo\", \"primeiro_passo\": \"...\"}'
+            )
+            task = await eng.submit(prompt, account_ids=contas)
+            t0 = time.time()
+            while not task.finished_at and time.time() - t0 < 180:
+                await asyncio.sleep(4)
+            r = task.results[0] if task.results else None
+            texto = (getattr(r, "answer", "") or "") if (r and r.ok) else ""
+            if not texto:
+                self.log("🛰️ batedor voltou sem nada (sessão/tarefa falhou)")
+                return
+            i, j = texto.find("["), texto.rfind("]")
+            if i < 0 or j <= i:
+                self.log("🛰️ batedor voltou sem JSON aproveitável")
+                return
+            import json as _json
+            ideias = _json.loads(texto[i:j + 1])
+            radar = self._radar_ler()
+            vistos = {str(x.get("ideia", "")).lower()[:40] for x in radar}
+            novos = []
+            for it in ideias if isinstance(ideias, list) else []:
+                if not isinstance(it, dict) or not it.get("ideia"):
+                    continue
+                chave = str(it["ideia"]).lower()[:40]
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
+                try:
+                    pot = float(it.get("potencial_brl_mes", 0) or 0)
+                    esf = float(it.get("esforco_horas_semana", 1) or 1)
+                except Exception:
+                    pot, esf = 0.0, 1.0
+                it["score"] = round(pot / max(esf, 0.5), 1)
+                it["ts"] = time.time()
+                it["batedor"] = scout.id
+                novos.append(it)
+            if not novos:
+                self.log("🛰️ batedor só trouxe ideias já conhecidas")
+                return
+            radar.extend(novos)
+            self._radar_salvar(radar)
+            top = max(novos, key=lambda x: x.get("score", 0))
+            msg = (f"💡 BATEDOR achou: {top.get('ideia')} — até R${top.get('potencial_brl_mes', '?')}/mês, "
+                   f"esforço {top.get('esforco_horas_semana')}h/sem, risco {top.get('risco')}. "
+                   f"1º passo: {top.get('primeiro_passo')}")
+            self.log(f"🛰️ {len(novos)} nova(s) ideia(s) no RADAR — top: {str(top.get('ideia'))[:60]}")
+            try:
+                from autopilot import AUTOPILOT
+                await AUTOPILOT.send_telegram(msg)
+            except Exception:
+                pass
+        except Exception as exc:
+            self.log(f"⚠️ radar falhou: {type(exc).__name__}: {str(exc)[:80]}")
+        finally:
+            self._expedindo = False
+
     async def _loop(self) -> None:
         while self.running:
             self.tick()
             if self.ciclos % self.CICLOS_POR_EXPEDICAO == 0:
                 await self._expedicao_real()
+            if self.ciclos % 15 == 10:
+                await self._radar_renda()
             self._save()
             await asyncio.sleep(self.interval)
 
@@ -284,3 +384,13 @@ class Swarm:
 
 
 SWARM = Swarm()  # singleton do servidor
+
+
+def _contas_da_arena() -> list:
+    """Contas vivas cujo platform é arena (ex.: lospro) — alvo das expedições."""
+    try:
+        from store import STORE
+
+        return [a for a in STORE.accounts.values() if getattr(a, "platform", "") == "arena"]
+    except Exception:
+        return []
