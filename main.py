@@ -140,6 +140,12 @@ async def lifespan(app: FastAPI):
     )
     _fail_stale_running_tasks()
     AUTOPILOT.start()
+    try:
+        import telegram_sim
+
+        telegram_sim.iniciar()
+    except Exception:
+        pass
     asyncio.create_task(_memory_watchdog())
     asyncio.create_task(_restore_logins_on_boot())
     yield
@@ -196,7 +202,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.7",
+        "versao": "0.27.10",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -276,6 +282,18 @@ async def debug_gate_eproc() -> dict[str, Any]:
 
     asyncio.create_task(_run())
     return {"ok": True, "msg": "gate lançado dentro do painel"}
+
+
+@app.get("/api/radar")
+async def radar_renda() -> dict[str, Any]:
+    """🛰️ RADAR: formas de ganhar dinheiro caçadas pelos autônomos."""
+    from autonomous import RADAR_PATH
+    import json as _json
+    try:
+        itens = _json.loads(RADAR_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        itens = []
+    return {"itens": sorted(itens, key=lambda x: x.get("score", 0), reverse=True)}
 
 
 @app.post("/api/captcha/texto")
