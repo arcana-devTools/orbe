@@ -198,7 +198,9 @@ class Swarm:
             gig = self.rng.choice(cat)
             tema = self.rng.choice(temas)
             prompt = gig["prompt"].replace("{tema}", tema)
-            task = await eng.submit(prompt)
+            # mira SÓ contas de chat da arena (Canva etc. não serve pra gig)
+            contas = [acc.id for acc in _contas_da_arena()]
+            task = await eng.submit(prompt, account_ids=contas or None)
             t0 = time.time()
             while not task.finished_at and time.time() - t0 < 240:
                 await asyncio.sleep(3)
@@ -284,3 +286,13 @@ class Swarm:
 
 
 SWARM = Swarm()  # singleton do servidor
+
+
+def _contas_da_arena() -> list:
+    """Contas vivas cujo platform é arena (ex.: lospro) — alvo das expedições."""
+    try:
+        from store import STORE
+
+        return [a for a in STORE.accounts.values() if getattr(a, "platform", "") == "arena"]
+    except Exception:
+        return []
