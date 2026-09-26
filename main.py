@@ -196,7 +196,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.6",
+        "versao": "0.27.7",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -768,41 +768,60 @@ async def import_cookie(account_id: str, payload: CookieIn, token: str = "") -> 
         if m_pat:
             return {"ok": True, "pat_salvo": True, "cookie": False}
         raise HTTPException(400, "não achei nenhum cookie arena-auth no texto colado")
-    eng = get_engine()
-    spec = eng.registry.get(acc.platform)
-    if spec is None:
-        raise HTTPException(400, "plataforma sem adapter")
-    dominio = payload.domain.strip() or ".arena.ai"
-    # CRÍTICO (25/09/2026): sem `expires`, o Chrome trata como cookie de SESSÃO
-    # e NUNCA grava no disco — o login sumia ao reiniciar o navegador/processo.
-    expira = int(time.time()) + 180 * 24 * 3600  # 180 dias
-    async with MANAGER.lock_for(acc.profile):
-        ctx = await MANAGER.context_for(acc.profile)
-        await ctx.add_cookies([{
-            "name": n,
-            "value": v,
-            "domain": dominio,
-            "path": "/",
-            "secure": True,
-            "httpOnly": True,
-            "sameSite": "Lax",
-            "expires": expira,
-        } for n, v in pares])
-        # conferência imediata de sessão
-        from adapters import check_login
-        page = await ctx.new_page()
+    # PERSISTE JÁ (durável, à prova de queda do navegador/proxy):
+    # data/owner_cookies.txt é a fonte que o Orbe injeta e renova depois.
+    dic = dict(pares)
+    if "arena-auth-prod-v1.0" in dic:
+        Path("data/owner_cookies.txt").write_text(
+            f"arena-auth-prod-v1.0={dic['arena-auth-prod-v1.0']}\n"
+            + (f"arena-auth-prod-v1.1={dic['arena-auth-prod-v1.1']}\n" if dic.get("arena-auth-prod-v1.1") else ""),
+            encoding="utf-8")
+
+    async def _injeta_e_valida() -> None:
+        """Injeção no perfil + validação em segundo plano (nunca trava o POST)."""
         try:
-            await page.goto(spec.url or "https://arena.ai/", wait_until="domcontentloaded", timeout=45000)
-            await page.wait_for_timeout(2500)
-            state = await check_login(page, spec)
-        finally:
-            await page.close()
-    acc.status = AccountStatus.OK if state == "ok" else AccountStatus.LOGGED_OUT
-    acc.last_check = time.time()
-    STORE.save_accounts()
-    return {"ok": state == "ok", "state": state, "cookies": [n for n, _ in pares],
-            "hint": "sessão importada e validada" if state == "ok"
-            else "cookie aplicado mas a sessão NÃO validou (valor certo? cookie certo?)"}
+            eng = get_engine()
+            spec = eng.registry.get(acc.platform)
+            if spec is None:
+                await BUS.error("cookie salvo, mas plataforma sem adapter", "cookie")
+                return
+            dominio = payload.domain.strip() or ".arena.ai"
+            # CRÍTICO (25/09/2026): sem `expires`, o Chrome trata como cookie de
+            # SESSÃO e NUNCA grava no disco — login sumia ao reiniciar.
+            expira = int(time.time()) + 180 * 24 * 3600  # 180 dias
+            async with MANAGER.lock_for(acc.profile):
+                ctx = await MANAGER.context_for(acc.profile)
+                await ctx.add_cookies([{
+                    "name": n,
+                    "value": v,
+                    "domain": dominio,
+                    "path": "/",
+                    "secure": True,
+                    "httpOnly": True,
+                    "sameSite": "Lax",
+                    "expires": expira,
+                } for n, v in pares])
+                from adapters import check_login
+                page = await ctx.new_page()
+                try:
+                    await page.goto(spec.url or "https://arena.ai/", wait_until="domcontentloaded", timeout=45000)
+                    await page.wait_for_timeout(2500)
+                    state = await check_login(page, spec)
+                finally:
+                    await page.close()
+            acc.status = AccountStatus.OK if state == "ok" else AccountStatus.LOGGED_OUT
+            acc.last_check = time.time()
+            STORE.save_accounts()
+            if state == "ok":
+                await BUS.ok("🍪✅ sessão importada e VALIDADA — pronta pra trabalho", "cookie")
+            else:
+                await BUS.warn("cookie aplicado mas NÃO validou (valor certo? cookie certo?)", "cookie")
+        except Exception as exc:
+            await BUS.error(f"🍪 cookie salvo em data/, mas injeção falhou: {type(exc).__name__}: {str(exc)[:120]}", "cookie")
+
+    asyncio.create_task(_injeta_e_valida())
+    return {"ok": True, "validando": True, "cookies": [n for n, _ in pares],
+            "hint": "cookie recebido e salvo — validando em segundo plano"}
 
 
 class AssistedIn(BaseModel):
