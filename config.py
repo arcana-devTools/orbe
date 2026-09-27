@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     # --- Cérebro (IA que planeja as tarefas) --------------------------------
     # Compatível com qualquer endpoint estilo OpenAI (OpenRouter, Groq, Ollama...).
-    llm_base_url: str = "https://api.openrouter.ai/v1"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_api_key: str = ""
     llm_model: str = "openai/gpt-4o-mini"
 

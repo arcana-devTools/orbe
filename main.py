@@ -210,7 +210,7 @@ async def health() -> dict[str, Any]:
         "open_profiles": MANAGER.open_profiles(),
         "platforms": len(get_engine().registry.specs),
         "accounts": len(STORE.accounts),
-        "llm_configured": bool(_s.llm_api_key),
+        "llm_configured": bool(_s.llm_api_key) or __import__("llm_pool").disponivel(),
         "llm_model": _s.llm_model if _s.llm_api_key else "",
         "uptime_s": round(time.time() - START_TS, 1),
     }
@@ -509,6 +509,32 @@ async def autopilot_set(payload: AutoPilotIn, token: str = "") -> dict[str, Any]
     upd["afiliado"] = payload.afiliado.strip()
     AUTOPILOT.save(**upd)
     return AUTOPILOT.public()
+
+
+class LLMKeysIn(BaseModel):
+    groq: str = ""
+    openrouter: str = ""
+
+
+@app.get("/api/llm")
+async def llm_get() -> dict[str, Any]:
+    import llm_pool
+
+    return llm_pool.status()
+
+
+@app.post("/api/llm")
+async def llm_set(payload: LLMKeysIn, token: str = "") -> dict[str, Any]:
+    """Chaves Groq/OpenRouter → cofre criptografado (nunca ecoadas)."""
+    if not _ok_token(token):
+        raise HTTPException(401, "token inválido")
+    import llm_pool
+
+    for nome in ("groq", "openrouter"):
+        v = getattr(payload, nome).strip()
+        if v:
+            llm_pool.salvar_chave(nome, v)
+    return llm_pool.status()
 
 
 @app.post("/api/autopilot/test")

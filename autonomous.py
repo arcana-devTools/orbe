@@ -190,13 +190,25 @@ class Swarm:
             eng = get_engine()
         except Exception:
             return
+        import llm_pool
+
+        if llm_pool.disponivel():
+            if time.time() - getattr(self, "_ultima_exp_api", 0.0) < self.GAP_EXPEDICAO_API_S:
+                return  # plano grátis: no máx. ~1 entrega a cada GAP (cabe no limite diário)
+            self._ultima_exp_api = time.time()
+            self._expedindo = True
+            try:
+                await self._expedicao_api(vivos)
+            finally:
+                self._expedindo = False
+            return
         self._expedindo = True
         try:
             cat, temas = self._carregar_catalogo()
             if not cat:
                 return
             a = min(vivos, key=lambda x: x.wallet)
-            gig = self.rng.choice(cat)
+            gig = self._escolher_gig(cat)
             tema = self.rng.choice(temas)
             prompt = gig["prompt"].replace("{tema}", tema)
             # mira SÓ contas de chat da arena (Canva etc. não serve pra gig)
@@ -225,6 +237,56 @@ class Swarm:
         finally:
             self._expedindo = False
 
+    GAP_EXPEDICAO_API_S = 300      # 1 entrega/5 min = 288/dia (Groq grátis: 1000 pedidos/dia)
+    GAP_RADAR_API_S = 6 * 3600     # batedor por API: 4×/dia
+
+    def _escolher_gig(self, cat: list[dict]) -> dict:
+        """Missões aprovadas pelo dono (✅ no Telegram) têm prioridade: 70%."""
+        missoes = [g for g in cat if str(g.get("id", "")).startswith("missao_")]
+        if missoes and self.rng.random() < 0.7:
+            return self.rng.choice(missoes)
+        return self.rng.choice(cat)
+
+    async def _expedicao_api(self, vivos: list) -> None:
+        """Entrega REAL produzida por API (Groq → OpenRouter), arquivada em .md."""
+        import llm_pool
+
+        cat, temas = self._carregar_catalogo()
+        if not cat:
+            return
+        a = min(vivos, key=lambda x: x.wallet)
+        gig = self._escolher_gig(cat)
+        tema = self.rng.choice(temas) if temas else "geral"
+        prompt = gig["prompt"].replace("{tema}", tema)
+        missao = str(gig.get("id", "")).startswith("missao_")
+        sistema = ("Você é um produtor de conteúdo profissional. Entregue SOMENTE o trabalho final, "
+                   "completo, original e pronto para uso, em Markdown, em português do Brasil. "
+                   "Nada de comentários sobre você ou sobre o pedido.")
+        try:
+            texto, motor = await llm_pool.chat(sistema, prompt, max_tokens=4000 if missao else 1500)
+        except Exception as exc:
+            self.log(f"🌫️ expedição de {a.id} sem entrega (IA: {str(exc)[:90]})")
+            return
+        try:
+            from config import get_settings
+
+            pasta = Path(get_settings().results_dir)
+        except Exception:
+            pasta = Path("data/resultados")
+        pasta.mkdir(parents=True, exist_ok=True)
+        arq = pasta / f"{time.strftime('%Y%m%d-%H%M%S')}-{str(gig.get('id', 'gig'))[:30]}.md"
+        arq.write_text(
+            f"# {gig['nome']}\n\n- tema: {tema}\n- agente: {a.id}\n- motor: {motor}\n"
+            f"- gerado: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n---\n\n{texto}\n",
+            encoding="utf-8")
+        preco = float(gig.get("preco", 3.0))
+        a.wallet = round(a.wallet + preco, 4)
+        a.ganho_total = round(a.ganho_total + preco, 2)
+        self.entregas.append({"ts": time.time(), "agente": a.id, "gig": gig["nome"], "tema": tema,
+                              "preco": preco, "arquivo": str(arq), "motor": motor})
+        self.entregas = self.entregas[-100:]
+        self.log(f"💼 {a.id} entregou “{gig['nome']}” ({tema}) via {motor} → +${preco:.2f} (crédito simulado)")
+
     def _radar_ler(self) -> list[dict]:
         try:
             return json.loads(RADAR_PATH.read_text(encoding="utf-8"))
@@ -243,13 +305,20 @@ class Swarm:
         uma máquina como o Orbe executa sozinha. Filtra pirâmide/spam/apostas,
         pontua por R$ potencial ÷ esforço e guarda no RADAR (aviso no Telegram)."""
         contas = [a.id for a in _contas_da_arena()]
-        if not contas:
+        import llm_pool
+
+        via_api = not contas and llm_pool.disponivel()
+        if not contas and not via_api:
             return
-        try:
-            from engine import get_engine
-            eng = get_engine()
-        except Exception:
+        if via_api and time.time() - getattr(self, "_ultimo_radar_api", 0.0) < self.GAP_RADAR_API_S:
             return
+        eng = None
+        if not via_api:
+            try:
+                from engine import get_engine
+                eng = get_engine()
+            except Exception:
+                return
         vivos = [a for a in self.agents if a.alive]
         if not vivos:
             return
@@ -266,12 +335,24 @@ class Swarm:
                 '{\"ideia\": \"...\", \"como_funciona\": \"...\", \"esforco_horas_semana\": 2, '
                 '\"potencial_brl_mes\": 300, \"risco\": \"baixo\", \"primeiro_passo\": \"...\"}'
             )
-            task = await eng.submit(prompt, account_ids=contas)
-            t0 = time.time()
-            while not task.finished_at and time.time() - t0 < 180:
-                await asyncio.sleep(4)
-            r = task.results[0] if task.results else None
-            texto = (getattr(r, "answer", "") or "") if (r and r.ok) else ""
+            if via_api:
+                self._ultimo_radar_api = time.time()
+                try:
+                    texto, _motor = await llm_pool.chat(
+                        "Você é um analista de renda online realista e honesto. Sem web ao vivo: "
+                        "use só conhecimento consolidado e diga risco com franqueza.",
+                        prompt.replace("Pesquise rapidamente na web e liste", "Liste"),
+                        max_tokens=1800, temperature=0.9)
+                except Exception as exc:
+                    self.log(f"🛰️ batedor (API) sem resposta: {str(exc)[:80]}")
+                    return
+            else:
+                task = await eng.submit(prompt, account_ids=contas)
+                t0 = time.time()
+                while not task.finished_at and time.time() - t0 < 180:
+                    await asyncio.sleep(4)
+                r = task.results[0] if task.results else None
+                texto = (getattr(r, "answer", "") or "") if (r and r.ok) else ""
             if not texto:
                 self.log("🛰️ batedor voltou sem nada (sessão/tarefa falhou)")
                 return
@@ -299,6 +380,7 @@ class Swarm:
                 it["score"] = round(pot / max(esf, 0.5), 1)
                 it["ts"] = time.time()
                 it["batedor"] = scout.id
+                it["fonte"] = "api (sem web ao vivo)" if via_api else "arena (web)"
                 novos.append(it)
             if not novos:
                 self.log("🛰️ batedor só trouxe ideias já conhecidas")
