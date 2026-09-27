@@ -170,7 +170,7 @@ async def _tratar(update: dict) -> None:
     alvo_chat = chat
     if cb:
         data = str(cb.get("data", ""))
-        _, alvo_chat = str(cb.get("message", {}).get("chat", {}).get("id", "")), chat
+        alvo_chat = chat
         if data.startswith("sim_"):
             texto = _aprovar(int(data[4:]))
         elif data.startswith("nao_"):
@@ -199,15 +199,44 @@ async def _tratar(update: dict) -> None:
         await _tg("sendMessage", chat_id=alvo_chat, text=texto, parse_mode="HTML")
 
 
+def _chat_de(update: dict) -> str:
+    m = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
+    return str((m.get("chat") or {}).get("id", ""))
+
+
+async def _capturar_dono() -> bool:
+    """Sem chat_id salvo: o 1º chat PRIVADO que falar com o bot vira o dono
+    (grava em data/autopilot.json e confirma no Telegram)."""
+    res = (await _tg("getUpdates", offset=_offset(), timeout=25)).get("result", [])
+    for u in res:
+        _offset_salvar(int(u.get("update_id", 0)) + 1)
+        m = u.get("message") or {}
+        if (m.get("chat") or {}).get("type") == "private":
+            from autopilot import AUTOPILOT
+
+            cid = str(m["chat"]["id"])
+            AUTOPILOT.save(chat_id=cid)
+            await _tg("sendMessage", chat_id=cid,
+                      text="🔗 Orbe conectado a este chat! Avisos do batedor chegam aqui com ✅/❌.\n/radar /status")
+            return True
+    return False
+
+
 async def _poller() -> None:
     while True:
         tok, chat = _cfg()
-        if not tok or not chat:
+        if not tok:
             await asyncio.sleep(20)
+            continue
+        if not chat:
+            if not await _capturar_dono():
+                await asyncio.sleep(5)
             continue
         res = (await _tg("getUpdates", offset=_offset(), timeout=25)).get("result", [])
         for u in res:
             _offset_salvar(int(u.get("update_id", 0)) + 1)
+            if _chat_de(u) != chat:   # bot é público: só o dono manda
+                continue
             try:
                 await _tratar(u)
             except Exception:
