@@ -167,9 +167,26 @@ class Swarm:
             self._save()
 
     # ------------------------------------------------------------ ciclo de vida da simulação
+    @staticmethod
+    def _migrar_missoes(cat: list[dict]) -> bool:
+        """Missões com molde antigo (sem {tema}) ganham o molde novo: item vendável por nicho."""
+        from telegram_sim import prompt_missao
+
+        mudou = False
+        for g in cat:
+            pr = str(g.get("prompt", ""))
+            if str(g.get("id", "")).startswith("missao_") and "{tema}" not in pr:
+                ideia = pr.split("sobre: ", 1)[-1].split(". Como funciona", 1)[0] if "sobre: " in pr \
+                    else str(g.get("nome", "")).replace("Produto: ", "")
+                g["prompt"] = prompt_missao(ideia.strip())
+                mudou = True
+        return mudou
+
     def _carregar_catalogo(self) -> tuple[list[dict], list[str]]:
         try:
             d = json.loads(DEFAULT_JOBS_PATH.read_text(encoding="utf-8"))
+            if self._migrar_missoes(d.get("entregas", [])):
+                DEFAULT_JOBS_PATH.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
             return d.get("entregas", []), d.get("temas", ["uso geral"])
         except Exception:
             return [], ["uso geral"]

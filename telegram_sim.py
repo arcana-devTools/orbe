@@ -156,6 +156,14 @@ def _radar_salvar(itens: list[dict]) -> None:
     RADAR.write_text(json.dumps(itens[-80:], ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def prompt_missao(ideia: str) -> str:
+    return (f"Estratégia aprovada pelo dono: \"{ideia}\". Produza o ARQUIVO que o cliente final vai "
+            "COMPRAR dentro dessa estratégia — NÃO um guia sobre a estratégia, sobre vender online, "
+            "Gumroad ou produtos digitais. Público/nicho: {tema}. Faça um pack em PDF realmente útil "
+            "para esse público (checklists, planners, modelos, roteiros ou fichas), com título vendedor "
+            "e TODO o conteúdo escrito. Em português. " + REGRAS_PRODUTO)
+
+
 def _aprovar(idx: int) -> str:
     itens = _radar()
     if idx < 0 or idx >= len(itens):
@@ -173,12 +181,8 @@ def _aprovar(idx: int) -> str:
                 "id": slug,
                 "nome": f"Produto: {str(it.get('ideia'))[:48]}",
                 "preco": 5.0,
-                "prompt": (
-                    f"Crie um PRODUTO DIGITAL COMPLETO e pronto pra vender sobre: {it.get('ideia')}. "
-                    f"Como funciona: {it.get('como_funciona')} "
-                    "Entregue: título vendedor, página de vendas honesta e o conteúdo COMPLETO do produto. "
-                    "Em português. " + REGRAS_PRODUTO
-                ),
+                "prompt": prompt_missao(str(it.get("ideia", ""))),
+
             })
         JOBS.write_text(json.dumps(cat, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:

@@ -33,8 +33,12 @@ _EMOJI = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000026FF\U00002700-\U000027BF\U0001F1E6-\U0001F1FF"
     "\u2B50\u2B55\u2934\u2935\u3030\u303D\u3297\u3299\uFE0F\u20E3\u200D]")
 _MANTER = {"\u2610", "\u2611", "\u2612", "\u2713", "\u2714"}   # ☐ ☑ ☒ ✓ ✔ (úteis em checklist)
+_BASTIDOR = re.compile(r"gumroad|p[áa]gina de vendas|\(ou docx\)|pronto para usar no|"
+                       r"que (você|o comprador) receber[áa]|texto que ser[áa]|inserido no pdf|\.?docx\b|microsoft word", re.I)
 _SECOES_FORA = re.compile(r"p[áa]gina de vendas|garantia|pol[íi]tica de reembolso|reembolso", re.I)
 _PROMESSAS = [
+    (re.compile(r"preenchimento digital", re.I), "anotação num leitor de PDF"),
+    (re.compile(r"(seu |no seu )?editor de texto( preferido)?", re.I), "um leitor de PDF"),
     (re.compile(r"(todos\s+)?com\s+campos\s+(edit[áa]veis|preench[íi]veis)", re.I), "com espaços para preencher à mão"),
     (re.compile(r"\b(recursos|modelos|templates|arquivos)\s+(edit[áa]veis|preench[íi]veis)", re.I), r"\1 prontos para imprimir"),
     (re.compile(r"\(?\s*PDF\s+(edit[áa]vel|preench[íi]vel)\s*\)?", re.I), "(para imprimir)"),
@@ -78,6 +82,7 @@ def _corpo_do_rascunho(md: str) -> str:
         saida.append(ln)
     corpo = "\n".join(saida)
     corpo = re.sub(r"^\s*#\s+.*\n", "", corpo.lstrip(), count=1)   # título do rascunho sai (vira capa)
+    corpo = "\n".join(ln for ln in corpo.splitlines() if not _BASTIDOR.search(ln))
     corpo = _limpar_promessas(corpo)
     corpo = re.sub(r"^(#{1,6})\s+\*\*(.+?)\*\*\s*$", r"\1 \2", corpo, flags=re.M)
     corpo = re.sub(r"^(#{1,6}\s.*?)\s*\((para imprimir|formato para imprimir)\)", r"\1", corpo, flags=re.M)
@@ -89,7 +94,7 @@ def _corpo_do_rascunho(md: str) -> str:
 
 def _titulos(corpo: str) -> list[str]:
     return [re.sub(r"[*_`]", "", m.group(2)).strip()
-            for m in re.finditer(r"^(#{2,3})\s+(.+)$", corpo, re.M)][:40]
+            for m in re.finditer(r"^(##)\s+(.+)$", corpo, re.M)][:30]
 
 
 # ------------------------------------------------------------------ PDF
@@ -211,6 +216,13 @@ async def produzir(rascunho: Path, agente: str = "") -> dict[str, Any]:
     pid = time.strftime("%Y%m%d-%H%M%S") + "-" + re.sub(r"[^a-z0-9]+", "-", titulo.lower())[:40].strip("-")
     pasta = PRODUTOS / pid
     paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf")
+    # IA às vezes inventa "15 páginas": vale o número REAL do PDF
+    _pg = re.compile(r"\b\d+\s+p[áa]ginas\b", re.I)
+    if _pg.search(subtitulo) or _pg.search(corpo):
+        subtitulo = _pg.sub(f"{paginas} páginas", subtitulo)
+        corpo = _pg.sub(f"{paginas} páginas", corpo)
+        paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf")
+    emb["pagina_de_vendas"] = _pg.sub(f"{paginas} páginas", str(emb["pagina_de_vendas"]))
     venda = (f"# {titulo}\n\n**{subtitulo}**\n\n{_sem_emoji(str(emb['pagina_de_vendas'])).strip()}\n\n"
              f"## O que você recebe\n- 1 arquivo PDF com {paginas} páginas (para ler na tela ou imprimir)\n"
              f"- Entrega imediata por download após a compra\n\n"
