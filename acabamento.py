@@ -159,11 +159,15 @@ async def _embalagem(corpo: str) -> tuple[dict, str]:
             '"preco_brl": inteiro entre 12 e 39, "para_quem": "1 frase", '
             '"pagina_de_vendas": "markdown, 120-220 palavras: dor do comprador, o que o PDF resolve, '
             'lista do que tem dentro (só itens do sumário), para quem NÃO é"}')
-    txt, motor = await llm_pool.chat(sistema, user, max_tokens=2500, temperature=0.6)
-    d = _json_da_ia(txt)
-    if not d.get("titulo") or not d.get("pagina_de_vendas"):
-        raise RuntimeError("IA não devolveu a embalagem em JSON")
-    return d, motor
+    for tentativa in range(3):          # IA às vezes devolve JSON quebrado: tenta de novo
+        txt, motor = await llm_pool.chat(sistema, user, max_tokens=2500, temperature=0.6 - 0.2 * tentativa)
+        try:
+            d = _json_da_ia(txt)
+        except Exception:
+            d = {}
+        if d.get("titulo") and d.get("pagina_de_vendas"):
+            return d, motor
+    raise RuntimeError("IA não devolveu a embalagem em JSON (3 tentativas)")
 
 
 # ------------------------------------------------------------------ seleção e limites
