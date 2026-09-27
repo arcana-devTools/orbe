@@ -28,6 +28,7 @@ def ler() -> list[dict]:
 def salvar(itens: list[dict]) -> None:
     BRIEFS.parent.mkdir(parents=True, exist_ok=True)
     BRIEFS.write_text(json.dumps(itens[-60:], ensure_ascii=False, indent=1), encoding="utf-8")
+    __import__("state_backup").sujo()
 
 
 def disponivel() -> dict | None:

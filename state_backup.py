@@ -187,13 +187,38 @@ async def restaurar(forcar: bool = False) -> dict[str, Any]:
     return {"ok": True, "arquivos": len(nomes)}
 
 
+_sujo = False
+
+
+def marcar_sujo() -> None:
+    """Algo importante mudou (produto julgado, brief novo, decisão do dono): salva em ~1 min,
+    sem esperar os 10 min — um redeploy/reinício não pode apagar isso."""
+    global _sujo
+    _sujo = True
+
+
+def sujo() -> None:   # atalho seguro pra chamar de qualquer módulo
+    try:
+        marcar_sujo()
+    except Exception:
+        pass
+
+
 async def laco() -> None:
+    global _sujo
+    ultimo = time.time()
     while True:
-        await asyncio.sleep(INTERVALO_S)
+        await asyncio.sleep(30)
+        agora = time.time()
+        if not ((_sujo and agora - _status["ultimo_backup"] >= 45) or agora - ultimo >= INTERVALO_S):
+            continue
+        ultimo, _sujo = agora, False
         try:
-            await salvar()
+            r = await salvar()
+            if not r.get("ok"):
+                _sujo = True
         except Exception:
-            pass
+            _sujo = True
 
 
 def status() -> dict[str, Any]:

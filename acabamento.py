@@ -288,6 +288,7 @@ async def _julgar(pasta: Path, meta: dict, corpo: str, brief: dict | None) -> di
         mercado.marcar(brief["id"], "usado" if meta["status"] != "reprovado" else "novo", tentativas=tent)
         if meta["status"] == "reprovado" and tent >= 2:
             mercado.marcar(brief["id"], "descartado", motivo="reprovado 2x pelo crítico")
+    __import__("state_backup").sujo()
     return meta
 
 
@@ -412,6 +413,7 @@ def marcar(pid: str, status: str) -> dict | None:
     meta["status"] = status
     meta[f"{status}_em"] = time.time()
     p.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    __import__("state_backup").sujo()
     return meta
 
 

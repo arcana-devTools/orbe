@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -95,7 +96,8 @@ async def enviar_produto(meta: dict) -> bool:
                + "\nAbre o PDF, confere, e decide:")[:1000]
     teclado = {"inline_keyboard": [[
         {"text": "✅ Aprovar p/ vender", "callback_data": f"pok_{chave}"},
-        {"text": "🔁 Refazer", "callback_data": f"prf_{chave}"}]]}
+        {"text": "🔁 Refazer", "callback_data": f"prf_{chave}"}],
+        [{"text": "📝 ver página de vendas", "callback_data": f"pvd_{chave}"}]]}
     try:
         async with httpx.AsyncClient(timeout=60) as cx:
             r = await cx.post(f"https://api.telegram.org/bot{tok}/sendDocument",
@@ -103,12 +105,63 @@ async def enviar_produto(meta: dict) -> bool:
                                     "reply_markup": json.dumps(teclado)},
                               files={"document": (f"{meta['titulo'][:50]}.pdf", pdf.read_bytes(),
                                                   "application/pdf")})
-            ok = r.json().get("ok") is True
-        venda = (acabamento.PRODUTOS / meta["id"] / "pagina_de_vendas.md").read_text(encoding="utf-8")
-        await _tg("sendMessage", chat_id=chat, text=("📝 Página de vendas:\n\n" + venda)[:4000])
-        return ok
+            return r.json().get("ok") is True
     except Exception:
         return False
+
+
+HORA_RESUMO = int(os.environ.get("ORBE_TG_HORA", "19") or 19)   # horário de Brasília
+_enviando = False
+
+
+def _hora_brasilia() -> int:
+    return time.gmtime(time.time() - 3 * 3600).tm_hour
+
+
+async def resumo_diario(forcar: bool = False) -> bool:
+    """Única notificação do dia: no HORA_RESUMO, só se houver produto aprovado pelo crítico
+    que o dono ainda não viu. Sem produto → silêncio total."""
+    global _enviando
+    import acabamento
+
+    if _enviando or (not forcar and _hora_brasilia() != HORA_RESUMO):
+        return False
+    tok, chat = _cfg()
+    novos = [m for m in acabamento._metas() if m.get("status") == "aguardando_dono" and not m.get("notificado")]
+    if not tok or not chat or not novos:
+        return False
+    _enviando = True
+    try:
+        dia = time.time() - 86400
+        metas = acabamento._metas()
+        reprov = sum(1 for m in metas if m.get("status") == "reprovado" and m.get("criado", 0) > dia)
+        try:
+            import mercado
+
+            pesq = sum(1 for b in mercado.ler() if b.get("ts", b.get("criado", 0)) > dia)
+        except Exception:
+            pesq = 0
+        await _tg("sendMessage", chat_id=chat, text=(
+            f"🌙 Resumo do dia\n{len(novos)} produto(s) passaram no crítico e esperam sua decisão.\n"
+            f"(nas últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)"))
+        for m in novos[:3]:
+            if await enviar_produto(m):
+                m["notificado"] = time.time()
+                p = acabamento.PRODUTOS / m["id"] / "meta.json"
+                p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+        __import__("state_backup").sujo()
+        return True
+    finally:
+        _enviando = False
+
+
+def _pagina_de_vendas(chave: str) -> str:
+    import acabamento
+
+    pid = acabamento.achar(chave)
+    p = acabamento.PRODUTOS / (pid or "_") / "pagina_de_vendas.md"
+    return ("📝 Página de vendas:\n\n" + html.escape(p.read_text(encoding="utf-8")))[:4000] if pid and p.exists() \
+        else "página não encontrada"
 
 
 def _decidir_produto(chave: str, aprovar: bool) -> str:
@@ -242,6 +295,8 @@ async def _tratar(update: dict) -> None:
             texto = _rejeitar(int(data[4:]))
         elif data.startswith("pok_") or data.startswith("prf_"):
             texto = _decidir_produto(data[4:], data.startswith("pok_"))
+        elif data.startswith("pvd_"):
+            texto = _pagina_de_vendas(data[4:])
         await _tg("answerCallbackQuery", callback_query_id=cb.get("id"))
     else:
         cmd = str(msg.get("text", "")).strip().lower()
@@ -261,7 +316,8 @@ async def _tratar(update: dict) -> None:
                      "/radar — ver ideias caçadas\n"
                      "/sim <nº> — aprovar ideia\n"
                      "/status — colônia\n\n"
-                     "Quando o batedor achar algo, mando botões ✅/❌ aqui.")
+                     "/produtos — produtos prontos\n\n"
+                     f"Só mando 1 mensagem por dia ({HORA_RESUMO}h), e só se tiver produto aprovado pelo crítico.")
         else:
             return
     if texto:

@@ -404,13 +404,8 @@ class Swarm:
         a.wallet = round(a.wallet + 8.0, 4)
         a.ganho_total = round(a.ganho_total + 8.0, 2)
         self.log(f"🧵 {a.id} finalizou o produto “{meta['titulo']}” ({meta['paginas']} págs, "
-                 f"R$ {meta['preco_brl']}, nota {cr.get('media')}) → +$8.00 (crédito simulado) — aguardando o dono")
-        try:
-            from telegram_sim import enviar_produto
-
-            await enviar_produto(meta)
-        except Exception:
-            pass
+                 f"R$ {meta['preco_brl']}, nota {cr.get('media')}) → +$8.00 (crédito simulado) — "
+                 f"vai no resumo diário do dono")
 
     def _radar_ler(self) -> list[dict]:
         try:
@@ -517,18 +512,7 @@ class Swarm:
                    f"esforço {top.get('esforco_horas_semana')}h/sem, risco {top.get('risco')}. "
                    f"1º passo: {top.get('primeiro_passo')}")
             self.log(f"🛰️ {len(novos)} nova(s) ideia(s) no RADAR — top: {str(top.get('ideia'))[:60]}")
-            try:
-                radar_atual = self._radar_ler()
-                from telegram_sim import aviso_ideia
-                for n_i in novos:
-                    try:
-                        idx = next(i for i, x in enumerate(radar_atual)
-                                   if x.get("ts") == n_i.get("ts") and x.get("ideia") == n_i.get("ideia"))
-                        await aviso_ideia(n_i, idx)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            # sem ping no Telegram: o dono vê o radar com /radar (ele não quer notificação o dia todo)
         except Exception as exc:
             self.log(f"⚠️ radar falhou: {type(exc).__name__}: {str(exc)[:80]}")
         finally:
@@ -545,6 +529,13 @@ class Swarm:
                 await self._acabamento()
             if self.ciclos % 5 == 1:
                 await self._pesquisa_mercado()
+            try:   # 1 mensagem por dia, no horário do dono, e só se tiver produto aprovado
+                from telegram_sim import resumo_diario
+
+                if await resumo_diario():
+                    self.log("📨 resumo diário enviado ao dono no Telegram")
+            except Exception as exc:
+                self.log(f"📨 resumo diário falhou: {type(exc).__name__}")
             self._save()
             await asyncio.sleep(self.interval)
 
