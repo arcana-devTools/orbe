@@ -42,6 +42,18 @@ class Autopilot:
                 self.cfg.update(json.loads(self.path.read_text(encoding="utf-8")))
             except Exception:
                 pass
+        self.aplicar_env()
+
+    def aplicar_env(self) -> None:
+        """Render: ORBE_TG_TOKEN / ORBE_TG_CHAT valem mais que o arquivo."""
+        import os
+
+        tok, chat = os.environ.get("ORBE_TG_TOKEN", "").strip(), os.environ.get("ORBE_TG_CHAT", "").strip()
+        if tok:
+            self.cfg["bot_token"] = tok
+            self.cfg["enabled"] = True
+        if chat:
+            self.cfg["chat_id"] = chat
 
     # -------------------------------------------------- persistência/config
     def save(self, **kw: Any) -> None:

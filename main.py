@@ -126,9 +126,36 @@ async def _restore_logins_on_boot() -> None:
             pass
 
 
+async def _restaurar_estado_no_boot() -> None:
+    """Render acorda com disco zerado → baixa a memória da colônia do GitHub
+    e recarrega colônia + Telegram ANTES de qualquer um começar a rodar."""
+    import json as _json
+
+    import state_backup
+
+    try:
+        r = await state_backup.restaurar()
+    except Exception as exc:
+        r = {"ok": False, "erro": str(exc)}
+    if r.get("ok"):
+        try:
+            SWARM._load()
+        except Exception:
+            pass
+        try:
+            AUTOPILOT.cfg.update(_json.loads(Path("data/autopilot.json").read_text(encoding="utf-8")))
+            AUTOPILOT.aplicar_env()
+        except Exception:
+            pass
+        await BUS.ok(f"memória restaurada do GitHub ({r.get('arquivos')} arquivos)")
+    elif r.get("erro"):
+        await BUS.warn(f"memória: {r['erro']}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await BUS.info("iniciando Orbe…")
+    await _restaurar_estado_no_boot()
     await MANAGER.start()
     if MANAGER.enabled:
         await BUS.ok(f"navegador pronto (headless={_s.headless}, channel={_s.channel or 'chromium'})")
@@ -148,11 +175,85 @@ async def lifespan(app: FastAPI):
         pass
     asyncio.create_task(_memory_watchdog())
     asyncio.create_task(_restore_logins_on_boot())
+    import state_backup
+
+    asyncio.create_task(state_backup.laco())
+    if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1":
+        SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
+        await BUS.ok("colônia ligada sozinha (ORBE_COLONIA_AUTOSTART=1)")
     yield
+    try:  # Render dá ~30s no desligamento: salva a memória antes de morrer
+        SWARM._save()
+        await asyncio.wait_for(state_backup.salvar(), timeout=20)
+    except Exception:
+        pass
     await MANAGER.stop()
 
 
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
+
+_ABERTOS = {"/health", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def _senha_do_painel(request, call_next):
+    """ORBE_PANEL_PASSWORD definida → navegador pede usuário/senha (qualquer
+    usuário, senha tem que bater). Sem a variável: aberto (uso local)."""
+    senha = os.environ.get("ORBE_PANEL_PASSWORD", "")
+    if senha and request.url.path not in _ABERTOS:
+        import base64 as _b64
+        import hmac
+
+        ok = False
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("basic "):
+            try:
+                _, _, dada = _b64.b64decode(auth[6:]).decode("utf-8", "replace").partition(":")
+                ok = hmac.compare_digest(dada.encode(), senha.encode())
+            except Exception:
+                ok = False
+        if not ok:
+            ok = hmac.compare_digest(request.cookies.get("orbe_s", ""), _selo(senha))
+        if not ok:
+            from starlette.responses import Response
+
+            return Response("senha do Orbe necessária", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="Orbe", charset="UTF-8"'})
+        resp = await call_next(request)
+        https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        resp.set_cookie("orbe_s", _selo(senha), httponly=True, secure=https, samesite="lax",
+                        max_age=30 * 86400)
+        return resp
+    return await call_next(request)
+
+
+def _selo(senha: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(("orbe-selo:" + senha).encode()).hexdigest()
+
+
+def _ws_liberado(ws: WebSocket) -> bool:
+    """Websocket não passa pelo middleware http: confere o selo (cookie)."""
+    import hmac
+
+    senha = os.environ.get("ORBE_PANEL_PASSWORD", "")
+    return (not senha) or hmac.compare_digest(ws.cookies.get("orbe_s", ""), _selo(senha))
+
+
+@app.get("/api/estado")
+async def estado_status() -> dict[str, Any]:
+    import state_backup
+
+    return state_backup.status()
+
+
+@app.post("/api/estado/salvar")
+async def estado_salvar() -> dict[str, Any]:
+    import state_backup
+
+    SWARM._save()
+    return await state_backup.salvar(forcar=True)
 
 
 @app.get("/api/ping", include_in_schema=False)
@@ -946,6 +1047,9 @@ async def logs(token: str = "") -> dict[str, Any]:
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
+    if not _ws_liberado(ws):
+        await ws.close(code=4401)
+        return
     await ws.accept()
     queue: asyncio.Queue[LogEvent] = asyncio.Queue(maxsize=300)
 
@@ -1066,6 +1170,9 @@ async def desktop_type(payload: DesktopTypeIn, token: str = "") -> dict[str, Any
 @app.websocket("/vnc/ws")
 async def vnc_bridge(ws: WebSocket) -> None:
     """Ponte WebSocket <-> VNC (127.0.0.1:5900) para o noVNC embutido."""
+    if not _ws_liberado(ws):
+        await ws.close(code=4401)
+        return
     offered = ws.scope.get("subprotocols") or []
     await ws.accept(subprotocol="binary" if "binary" in offered else None)
     try:
