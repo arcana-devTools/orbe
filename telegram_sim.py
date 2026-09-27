@@ -86,9 +86,13 @@ async def enviar_produto(meta: dict) -> bool:
     if not tok or not chat or not pdf:
         return False
     chave = meta["id"][:15]
+    cr = meta.get("critica", {})
+    evid = "\n".join(f"• {e.get('sinal', '')[:90]} — {e.get('url', '')[:80]}" for e in meta.get("evidencias", [])[:2])
     legenda = (f"📦 PRODUTO PRONTO: {meta['titulo']}\n{meta.get('subtitulo', '')}\n\n"
                f"{meta['paginas']} páginas • preço sugerido R$ {meta['preco_brl']}\n"
-               "Abre o PDF, confere, e decide:")[:1000]
+               f"🧐 nota do crítico: {cr.get('media', '?')}/10\n"
+               + (f"🔎 demanda comprovada:\n{evid}\n" if evid else "")
+               + "\nAbre o PDF, confere, e decide:")[:1000]
     teclado = {"inline_keyboard": [[
         {"text": "✅ Aprovar p/ vender", "callback_data": f"pok_{chave}"},
         {"text": "🔁 Refazer", "callback_data": f"prf_{chave}"}]]}

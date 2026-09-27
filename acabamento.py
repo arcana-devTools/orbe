@@ -15,6 +15,7 @@ e pausa se já há 3 esperando o dono (não lota o Telegram).
 """
 from __future__ import annotations
 
+import asyncio
 import html as _html
 import json
 import os
@@ -50,7 +51,14 @@ _PROMESSAS = [
 ]
 
 
+# limite técnico interno ("só texto") não é argumento de venda: some do produto
+_LIMITACAO = re.compile(r"[^.\n]*\b(texto puro|100\s?% (em )?texto|sem imagens|n[ãa]o (h[áa]|cont[ée]m|possui|tem) "
+                        r"(imagens|gr[áa]ficos|v[íi]deos|recursos interativos))\b[^.\n]*\.\s?", re.I)
+
+
 def _limpar_promessas(txt: str) -> str:
+    txt = _LIMITACAO.sub(" ", txt)
+    txt = re.sub(r"(?m)^ (?=\w)", "", txt)
     for rx, novo in _PROMESSAS:
         txt = rx.sub(novo, txt)
     return re.sub(r"  +", " ", txt)
@@ -186,12 +194,17 @@ def pode_produzir() -> tuple[bool, str]:
     agora = time.time()
     por_dia = int(os.environ.get("ORBE_PRODUTOS_POR_DIA", "3") or 3)
     gap = float(os.environ.get("ORBE_PRODUTO_GAP_H", "2") or 2) * 3600
+    enviados = [m for m in metas if m.get("status") != "reprovado"]
     if sum(1 for m in metas if m.get("status") == "aguardando_dono") >= 3:
         return False, "3 produtos esperando o dono aprovar"
-    if sum(1 for m in metas if agora - m.get("criado", 0) < 86400) >= por_dia:
+    if sum(1 for m in enviados if agora - m.get("criado", 0) < 86400) >= por_dia:
         return False, f"limite de {por_dia} produtos/dia"
-    if metas and agora - metas[-1].get("criado", 0) < gap:
+    if enviados and agora - enviados[-1].get("criado", 0) < gap:
         return False, "intervalo mínimo entre produtos"
+    if sum(1 for m in metas if agora - m.get("criado", 0) < 86400) >= 12:
+        return False, "limite de 12 tentativas/dia"
+    if metas and agora - metas[-1].get("criado", 0) < 1200:
+        return False, "intervalo entre tentativas (20 min)"
     return True, ""
 
 
@@ -199,14 +212,26 @@ def proximo_rascunho() -> Path | None:
     usados = {m.get("origem") for m in _metas()}
     cands = sorted(RESULTADOS.glob("*missao_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
     for p in cands:
-        if p.name not in usados and len(p.read_text(encoding="utf-8").split()) >= 800:
+        txt = p.read_text(encoding="utf-8")
+        if p.name not in usados and len(txt.split()) >= 800 and re.search(r"^- brief:\s*\S+", txt, re.M):
             return p
     return None
 
 
 # ------------------------------------------------------------------ o trabalho
+def _brief_do_rascunho(md: str) -> dict | None:
+    m = re.search(r"^- brief:\s*(\S+)", md, re.M)
+    if not m:
+        return None
+    import mercado
+
+    return mercado.achar(m.group(1))
+
+
 async def produzir(rascunho: Path, agente: str = "") -> dict[str, Any]:
-    corpo = _corpo_do_rascunho(rascunho.read_text(encoding="utf-8"))
+    bruto = rascunho.read_text(encoding="utf-8")
+    brief = _brief_do_rascunho(bruto)
+    corpo = _corpo_do_rascunho(bruto)
     if len(corpo.split()) < 500:
         raise RuntimeError("rascunho curto demais depois da limpeza")
     emb, motor = await _embalagem(corpo)
@@ -235,9 +260,132 @@ async def produzir(rascunho: Path, agente: str = "") -> dict[str, Any]:
     (pasta / "pagina_de_vendas.md").write_text(venda, encoding="utf-8")
     meta = {"id": pid, "titulo": titulo, "subtitulo": subtitulo, "preco_brl": preco,
             "paginas": paginas, "palavras": len(corpo.split()), "origem": rascunho.name,
-            "motor": motor, "agente": agente, "criado": time.time(), "status": "aguardando_dono"}
+            "motor": motor, "agente": agente, "criado": time.time(), "status": "aguardando_dono",
+            "brief": brief.get("id") if brief else "",
+            "evidencias": (brief or {}).get("evidencias", [])[:3]}
+    return await _julgar(pasta, meta, corpo, brief)
+
+
+async def _julgar(pasta: Path, meta: dict, corpo: str, brief: dict | None) -> dict:
+    """Passa pelo crítico e decide: aguardando_dono | reprovado | aguardando_critica (IA sem cota)."""
+    meta["critica"] = await criticar(corpo, meta, brief)
+    if meta["critica"].get("indisponivel"):
+        meta["status"] = "aguardando_critica"      # não avaliado ≠ ruim: tenta de novo depois
+    else:
+        meta["status"] = "aguardando_dono" if meta["critica"]["aprovado"] else "reprovado"
+        pj = meta["critica"].get("preco_justo_brl")
+        if pj and pj < int(meta.get("preco_brl", pj)):          # preço segue o mercado, nunca sobe
+            antigo = int(meta["preco_brl"])
+            meta["preco_brl"] = pj
+            pv = pasta / "pagina_de_vendas.md"
+            if pv.exists():
+                pv.write_text(pv.read_text(encoding="utf-8").replace(f"R$ {antigo}", f"R$ {pj}"), encoding="utf-8")
     (pasta / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+    if brief and meta["status"] != "aguardando_critica":
+        import mercado
+
+        tent = int(brief.get("tentativas", 0)) + 1
+        mercado.marcar(brief["id"], "usado" if meta["status"] != "reprovado" else "novo", tentativas=tent)
+        if meta["status"] == "reprovado" and tent >= 2:
+            mercado.marcar(brief["id"], "descartado", motivo="reprovado 2x pelo crítico")
     return meta
+
+
+def pendente_critica() -> str | None:
+    for m in _metas():
+        if m.get("status") == "aguardando_critica":
+            return m["id"]
+    return None
+
+
+async def recriticar(pid: str) -> dict:
+    """(Re)avalia um produto já pronto — usado pra fila 'aguardando_critica' e pra produtos antigos."""
+    pasta = PRODUTOS / pid
+    meta = json.loads((pasta / "meta.json").read_text(encoding="utf-8"))
+    corpo = re.sub(r"^#\s+.*\n", "", (pasta / "produto.md").read_text(encoding="utf-8"), count=1)
+    brief = None
+    if meta.get("brief"):
+        import mercado
+
+        brief = mercado.achar(meta["brief"])
+    return await _julgar(pasta, meta, corpo, brief)
+
+
+NOTA_MINIMA = 8.0
+
+
+def _amostra(corpo: str, n: int = 2000) -> str:
+    """O crítico vê começo, meio e fim (tabelas costumam estar no meio/fim), sem estourar a cota."""
+    if len(corpo) <= 3 * n:
+        return corpo
+    m = len(corpo) // 2
+    return f"{corpo[:n]}\n[...]\n{corpo[m - n // 2:m + n // 2]}\n[...]\n{corpo[-n:]}"
+
+
+def _checagens(corpo: str, paginas: int) -> list[str]:
+    """Defeitos objetivos que reprovam sem nem perguntar à IA."""
+    prob = []
+    tit = _titulos(corpo)
+    if paginas < 8:
+        prob.append(f"só {paginas} páginas")
+    if len(corpo.split()) < 1500:
+        prob.append("conteúdo curto (< 1500 palavras)")
+    if len(tit) > 20:
+        prob.append(f"sumário bagunçado ({len(tit)} seções principais)")
+    if any(re.search(r"\[[^\]]{2,40}\]", t) for t in tit):
+        prob.append("títulos com marcadores [..] vazando no sumário")
+    if len(re.findall(r"\[(Nome|Data|Valor|Empresa|Cargo)[^\]]*\]", corpo)) > 25:
+        prob.append("excesso de campos-modelo [..] sem conteúdo real")
+    return prob
+
+
+async def criticar(corpo: str, meta: dict, brief: dict | None) -> dict:
+    """🧐 CRÍTICO: comprador exigente + editor de marketplace. Só nota alta passa."""
+    import llm_pool
+
+    objetivos = _checagens(corpo, int(meta.get("paginas", 0)))
+    ctx = ""
+    if brief:
+        ctx = (f"\nPesquisa de mercado: produto '{brief.get('produto')}', público {brief.get('publico')}, "
+               f"diferencial exigido: {brief.get('diferencial')}, itens obrigatórios: "
+               f"{'; '.join(brief.get('itens_obrigatorios', []))}. Concorrentes: {brief.get('concorrentes_preco')}.")
+    sistema = ("Você é um comprador EXIGENTE e um editor de marketplace (Etsy/Hotmart). Avalie com rigor: "
+               "você só pagaria se fosse claramente útil, completo e melhor que o grátis da internet. "
+               "Responda SOMENTE JSON.")
+    user = (f"Produto: {meta['titulo']} — {meta.get('subtitulo', '')} ({meta.get('paginas')} págs, "
+            f"R$ {meta.get('preco_brl')}).{ctx}\nSumário: {'; '.join(_titulos(corpo))}\n"
+            "(O PDF final já sai diagramado: capa, sumário, tipografia e tabelas formatadas — avalie o CONTEÚDO.)\n"
+            f"Trechos do início, meio e fim:\n{_amostra(corpo)}\n\n"
+            'JSON: {"utilidade": 0-10, "acabamento": 0-10, "vende": 0-10, '
+            '"cumpre_pesquisa": 0-10, "preco_justo_brl": inteiro (competitivo frente aos concorrentes), '
+            '"problemas": ["até 5, específicos"], "veredito": "aprovar|reprovar"}')
+    d, erro = None, ""
+    for tentativa in range(3):
+        try:
+            txt, _ = await llm_pool.chat(sistema, user, max_tokens=1500, temperature=0.2)
+            d = _json_da_ia(txt)
+            break
+        except Exception as exc:   # cota por minuto logo após a embalagem / JSON quebrado
+            erro = str(exc)[:120]
+            if tentativa < 2:
+                await asyncio.sleep(45)
+    if d is None:
+        return {"aprovado": False, "indisponivel": True, "media": 0.0, "notas": {},
+                "problemas": objetivos + [f"crítico sem cota agora ({erro[:60]}) — reavalia depois"]}
+    notas = [float(d.get(k, 0) or 0) for k in ("utilidade", "acabamento", "vende")]
+    if brief:
+        notas.append(float(d.get("cumpre_pesquisa", 0) or 0))
+    media = round(sum(notas) / len(notas), 1) if notas else 0.0
+    vende = float(d.get("vende", 0) or 0)
+    aprovado = (not objetivos and d.get("veredito") == "aprovar" and media >= NOTA_MINIMA
+                and min(notas) >= 7 and vende >= 8)       # o dono só quer o que VENDE
+    try:
+        preco_justo = max(9, min(39, int(float(d.get("preco_justo_brl") or 0)))) if d.get("preco_justo_brl") else None
+    except (TypeError, ValueError):
+        preco_justo = None
+    return {"aprovado": aprovado, "media": media, "preco_justo_brl": preco_justo,
+            "notas": {k: d.get(k) for k in ("utilidade", "acabamento", "vende", "cumpre_pesquisa")},
+            "problemas": objetivos + [str(x) for x in d.get("problemas", [])][:5]}
 
 
 def garantir_pdf(pid: str) -> Path | None:

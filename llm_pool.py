@@ -23,7 +23,8 @@ GROQ_MODELOS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
 GAP_MIN_S = 20          # espaçamento mínimo entre chamadas no mesmo provedor
-_estado: dict[str, dict[str, Any]] = {}   # provedor -> {ultimo, pausa_ate, erro}
+_estado: dict[str, dict[str, Any]] = {}
+_pausa_modelo: dict[str, float] = {}      # "groq:modelo" -> até quando evitar   # provedor -> {ultimo, pausa_ate, erro}
 _or_free_cache: dict[str, Any] = {"ts": 0.0, "ids": []}
 
 
@@ -79,59 +80,79 @@ async def _modelos_openrouter(cx: httpx.AsyncClient, chave: str) -> list[str]:
     return _or_free_cache["ids"]
 
 
-async def chat(system: str, user: str, max_tokens: int = 3500,
-               temperature: float = 0.7) -> tuple[str, str]:
-    """Devolve (texto, "provedor:modelo"). Levanta RuntimeError se nenhum respondeu."""
-    erros = []
-    async with httpx.AsyncClient(timeout=120) as cx:
-        for prov in provedores():
-            st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
-            if time.time() < st["pausa_ate"]:
-                erros.append(f"{prov}: em pausa (limite)")
-                continue
-            espera = GAP_MIN_S - (time.time() - st["ultimo"])
-            if espera > 0:
-                import asyncio
+async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: str, user: str,
+                      max_tokens: int, temperature: float, web: bool) -> tuple[str, str]:
+    """Devolve (texto, "") em sucesso ou ("", motivo) — motivo "chave" aborta o provedor."""
+    import asyncio
 
-                await asyncio.sleep(espera)
-            chave = _chave(prov)
-            base = GROQ_URL if prov == "groq" else OPENROUTER_URL
-            modelos = GROQ_MODELOS if prov == "groq" else await _modelos_openrouter(cx, chave)
-            hdr = {"Authorization": f"Bearer {chave}"}
-            if prov == "openrouter":
-                hdr.update({"HTTP-Referer": "https://github.com/arcana-devTools/orbe", "X-Title": "Orbe"})
+    chave = _chave(prov)
+    base = GROQ_URL if prov == "groq" else OPENROUTER_URL
+    hdr = {"Authorization": f"Bearer {chave}"}
+    if prov == "openrouter":
+        hdr.update({"HTTP-Referer": "https://github.com/arcana-devTools/orbe", "X-Title": "Orbe"})
+    corpo = {"model": modelo, "temperature": temperature, "max_tokens": max_tokens,
+             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    if web:
+        corpo["tools"] = [{"type": "browser_search"}]
+    for tentativa in range(3):          # limite POR MINUTO: espera os segundos pedidos e repete
+        try:
+            r = await cx.post(f"{base}/chat/completions", headers=hdr, json=corpo)
+        except Exception as exc:
+            return "", type(exc).__name__
+        if r.status_code == 429:
+            try:
+                ra = float(r.headers.get("retry-after", "60"))
+            except ValueError:
+                ra = 60.0
+            diario = "per day" in r.text
+            if not diario and ra <= 30 and tentativa < 2:
+                await asyncio.sleep(ra + 1)
+                continue
+            # Groq: cota é POR MODELO (ex.: 200k tokens/dia no 120b) → pausa só esse modelo
+            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + (max(ra, 600) if diario else max(ra, 20))
+            return "", "429" + (" (cota diária)" if diario else "")
+        if r.status_code in (401, 403):
+            return "", "chave"
+        if r.status_code != 200:
+            return "", f"HTTP {r.status_code}"
+        try:
+            txt = (r.json()["choices"][0]["message"].get("content") or "").strip()
+        except Exception:
+            txt = ""
+        return (txt, "") if txt else ("", "resposta vazia")
+    return "", "429"
+
+
+async def chat(system: str, user: str, max_tokens: int = 3500,
+               temperature: float = 0.7, web: bool = False) -> tuple[str, str]:
+    """Devolve (texto, "provedor:modelo"). Levanta RuntimeError se nenhum respondeu.
+    web=True: pesquisa na internet de verdade (Groq gpt-oss + browser_search)."""
+    import asyncio
+
+    erros = []
+    provs = (["groq"] if "groq" in provedores() else []) if web else provedores()
+    async with httpx.AsyncClient(timeout=180) as cx:
+        for prov in provs:
+            st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
+            if prov == "groq":
+                modelos = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
+            else:
+                modelos = await _modelos_openrouter(cx, _chave(prov))
             for modelo in modelos:
-                st["ultimo"] = time.time()
-                try:
-                    r = await cx.post(f"{base}/chat/completions", headers=hdr, json={
-                        "model": modelo, "temperature": temperature, "max_tokens": max_tokens,
-                        "messages": [{"role": "system", "content": system},
-                                     {"role": "user", "content": user}]})
-                except Exception as exc:
-                    erros.append(f"{prov}/{modelo}: {type(exc).__name__}")
+                if time.time() < _pausa_modelo.get(f"{prov}:{modelo}", 0):
+                    erros.append(f"{prov}/{modelo}: em pausa (cota)")
                     continue
-                if r.status_code == 429:
-                    try:
-                        ra = float(r.headers.get("retry-after", "60"))
-                    except ValueError:
-                        ra = 60.0
-                    st["pausa_ate"] = time.time() + min(max(ra, 30), 3600)
-                    st["erro"] = "429 limite do plano grátis"
-                    erros.append(f"{prov}: 429")
-                    break  # limite é da conta, não do modelo → próximo provedor
-                if r.status_code in (401, 403):
-                    st["erro"] = f"{r.status_code} chave recusada"
-                    erros.append(f"{prov}: {r.status_code}")
-                    break
-                if r.status_code != 200:
-                    erros.append(f"{prov}/{modelo}: HTTP {r.status_code}")
-                    continue  # modelo indisponível → tenta o próximo
-                try:
-                    txt = (r.json()["choices"][0]["message"].get("content") or "").strip()
-                except Exception:
-                    txt = ""
+                espera = GAP_MIN_S - (time.time() - st["ultimo"])
+                if espera > 0:
+                    await asyncio.sleep(espera)
+                st["ultimo"] = time.time()
+                txt, motivo = await _uma_chamada(cx, prov, modelo, system, user, max_tokens, temperature, web)
                 if txt:
                     st["erro"] = ""
                     return txt, f"{prov}:{modelo}"
-                erros.append(f"{prov}/{modelo}: resposta vazia")
-    raise RuntimeError("; ".join(erros) or "nenhuma chave de IA configurada")
+                st["erro"] = f"{modelo}: {motivo}"
+                erros.append(f"{prov}/{modelo}: {motivo}")
+                if motivo == "chave":
+                    break
+    raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
+                                             else "nenhuma chave de IA configurada"))

@@ -279,6 +279,18 @@ async def produto_pdf(pid: str):
     return FileResponse(pdf, media_type="application/pdf", filename=f"{pid}.pdf")
 
 
+@app.post("/api/produtos/{pid}/criticar")
+async def produto_criticar(pid: str) -> dict[str, Any]:
+    """Passa um produto antigo pelo crítico (reprovou → sai da fila de venda)."""
+    import acabamento
+
+    pasta = acabamento.PRODUTOS / pid
+    if "/" in pid or ".." in pid or not (pasta / "meta.json").exists():
+        raise HTTPException(404, "produto não encontrado")
+    meta = await acabamento.recriticar(pid)
+    return {"status": meta["status"], "critica": meta["critica"]}
+
+
 @app.post("/api/produtos/agora")
 async def produto_agora() -> dict[str, Any]:
     """Dispara o acabador já (respeita os limites/dia e a fila do dono)."""

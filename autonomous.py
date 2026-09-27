@@ -260,7 +260,7 @@ class Swarm:
     def _escolher_gig(self, cat: list[dict]) -> dict:
         """Missões aprovadas pelo dono (✅ no Telegram) têm prioridade: 70%."""
         missoes = [g for g in cat if str(g.get("id", "")).startswith("missao_")]
-        if missoes and self.rng.random() < 0.7:
+        if missoes:
             return self.rng.choice(missoes)
         return self.rng.choice(cat)
 
@@ -276,6 +276,21 @@ class Swarm:
         tema = self.rng.choice(temas) if temas else "geral"
         prompt = gig["prompt"].replace("{tema}", tema)
         missao = str(gig.get("id", "")).startswith("missao_")
+        brief = None
+        if missao:
+            try:
+                import mercado
+
+                brief = mercado.disponivel()
+            except Exception:
+                brief = None
+            if brief:
+                prompt, tema = mercado.prompt_do_brief(brief), brief.get("tema", tema)
+                mercado.marcar(brief["id"], "em_producao")
+            else:  # sem pesquisa de mercado não se gasta IA com produto "no escuro"
+                return
+        else:
+            return   # legendas/posts avulsos não vendem: a cota da IA vai só pra produto com demanda
         sistema = ("Você é um produtor de conteúdo profissional. Entregue SOMENTE o trabalho final, "
                    "completo, original e pronto para uso, em Markdown, em português do Brasil. "
                    "Nada de comentários sobre você ou sobre o pedido. Nunca prometa o que não está no texto.")
@@ -283,6 +298,10 @@ class Swarm:
             texto, motor = await llm_pool.chat(sistema, prompt, max_tokens=7000 if missao else 1500)
         except Exception as exc:
             self.log(f"🌫️ expedição de {a.id} sem entrega (IA: {str(exc)[:90]})")
+            if brief:
+                import mercado
+
+                mercado.marcar(brief["id"], "novo")
             return
         try:
             from config import get_settings
@@ -294,7 +313,8 @@ class Swarm:
         arq = pasta / f"{time.strftime('%Y%m%d-%H%M%S')}-{str(gig.get('id', 'gig'))[:30]}.md"
         arq.write_text(
             f"# {gig['nome']}\n\n- tema: {tema}\n- agente: {a.id}\n- motor: {motor}\n"
-            f"- gerado: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n---\n\n{texto}\n",
+            f"- gerado: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            + (f"- brief: {brief['id']}\n" if brief else "") + f"\n---\n\n{texto}\n",
             encoding="utf-8")
         preco = float(gig.get("preco", 3.0))
         a.wallet = round(a.wallet + preco, 4)
@@ -302,7 +322,48 @@ class Swarm:
         self.entregas.append({"ts": time.time(), "agente": a.id, "gig": gig["nome"], "tema": tema,
                               "preco": preco, "arquivo": str(arq), "motor": motor})
         self.entregas = self.entregas[-100:]
+        if brief:
+            import mercado
+
+            mercado.marcar(brief["id"], "rascunho_pronto", rascunho=arq.name)
         self.log(f"💼 {a.id} entregou “{gig['nome']}” ({tema}) via {motor} → +${preco:.2f} (crédito simulado)")
+
+    GAP_PESQUISA_S = 3 * 3600
+
+    async def _pesquisa_mercado(self) -> None:
+        """🔎 Sem brief bom na fila → pesquisa na web o que JÁ vende num nicho."""
+        if self._expedindo:
+            return
+        try:
+            import llm_pool
+            import mercado
+        except Exception:
+            return
+        if not llm_pool.disponivel() or mercado.disponivel():
+            return
+        if time.time() - getattr(self, "_ultima_pesquisa", 0.0) < self.GAP_PESQUISA_S:
+            return
+        self._ultima_pesquisa = time.time()
+        _cat, temas = self._carregar_catalogo()
+        vivos = [a for a in self.agents if a.alive]
+        if not vivos:
+            return
+        tema = self.rng.choice(temas or ["organização pessoal"])
+        a = max(vivos, key=lambda x: x.gen)
+        self._expedindo = True
+        try:
+            feitos = [b.get("produto", "") for b in mercado.ler()]
+            b = await mercado.pesquisar(tema, feitos)
+        except Exception as exc:
+            self.log(f"🔎 pesquisa de mercado ({tema}) falhou: {str(exc)[:80]}")
+            return
+        finally:
+            self._expedindo = False
+        if b["status"] == "novo":
+            self.log(f"🔎 {a.id} achou demanda: “{b['produto']}” ({tema}) — confiança {b['confianca']:.0f}/10, "
+                     f"{len(b['evidencias'])} evidência(s)")
+        else:
+            self.log(f"🔎 pesquisa em {tema} sem demanda comprovada — descartada")
 
     async def _acabamento(self) -> None:
         """🧵 ACABADOR: rascunho de missão → PDF vendável → Telegram do dono."""
@@ -316,24 +377,34 @@ class Swarm:
             return
         if not llm_pool.disponivel():
             return
+        pendente = acabamento.pendente_critica()      # produto pronto que o crítico ainda não avaliou
         ok, _motivo = acabamento.pode_produzir()
-        rascunho = acabamento.proximo_rascunho() if ok else None
+        rascunho = acabamento.proximo_rascunho() if ok and not pendente else None
         vivos = [a for a in self.agents if a.alive]
-        if not rascunho or not vivos:
+        if not (rascunho or pendente) or not vivos:
             return
         a = max(vivos, key=lambda x: x.ganho_total)   # o mais experiente faz o acabamento
         self._expedindo = True
         try:
-            meta = await acabamento.produzir(rascunho, a.id)
+            meta = (await acabamento.recriticar(pendente) if pendente
+                    else await acabamento.produzir(rascunho, a.id))
         except Exception as exc:
             self.log(f"🧵 acabamento de {a.id} falhou: {str(exc)[:90]}")
             return
         finally:
             self._expedindo = False
+        cr = meta.get("critica", {})
+        if meta.get("status") == "aguardando_critica":
+            self.log(f"🧐 “{meta['titulo']}” pronto, mas o crítico está sem cota de IA — reavalia depois")
+            return
+        if meta.get("status") == "reprovado":
+            self.log(f"🧐 crítico REPROVOU “{meta['titulo']}” (nota {cr.get('media')}): "
+                     f"{'; '.join(cr.get('problemas', [])[:2])[:140]} — não foi pro dono")
+            return
         a.wallet = round(a.wallet + 8.0, 4)
         a.ganho_total = round(a.ganho_total + 8.0, 2)
         self.log(f"🧵 {a.id} finalizou o produto “{meta['titulo']}” ({meta['paginas']} págs, "
-                 f"R$ {meta['preco_brl']}) → +$8.00 (crédito simulado) — aguardando o dono")
+                 f"R$ {meta['preco_brl']}, nota {cr.get('media')}) → +$8.00 (crédito simulado) — aguardando o dono")
         try:
             from telegram_sim import enviar_produto
 
@@ -472,6 +543,8 @@ class Swarm:
                 await self._radar_renda()
             if self.ciclos % 5 == 3:
                 await self._acabamento()
+            if self.ciclos % 5 == 1:
+                await self._pesquisa_mercado()
             self._save()
             await asyncio.sleep(self.interval)
 
