@@ -64,3 +64,22 @@
 - **Cuidado**: env reseta por turno (imports somem); pkill -f casa o próprio bash;
   heredoc: imports no MESMO bloco; python -u; não colar cookie no chat (anexo ok);
   nunca forçar push; site do TJSC bloqueia IP datacenter (usar IP do dono).
+
+## 2026-09-27 — Portão de qualidade: pesquisa de mercado + crítico (5238197)
+Dono reclamou: produto fraco ("Guia Prático… Gumroad") chegou ao Telegram e ele aprovou. Regra dele:
+**só chega ao dono o que realmente vende.** Fluxo agora:
+1. 🔎 `mercado.pesquisar(tema)` — Groq `openai/gpt-oss-120b`/`20b` + tool `browser_search` (web real).
+   Brief só vira `novo` com ≥4 itens entregáveis, URL de evidência (Etsy/Hotmart com vendas) e confiança ≥6.
+   Proibido diferencial que a máquina não entrega (vídeo, QR, app, foto, planilha) — `_IMPOSSIVEL`.
+2. Expedição só roda com brief (`- brief: id` no cabeçalho). **Gigs avulsos (legendas/posts) desligados**:
+   queimavam os 200k tokens/dia do 120b.
+3. 🧵 acabamento → 🧐 `criticar`: checagens objetivas + IA (amostra início/meio/fim). Aprova só com
+   média ≥8, mínimo ≥7 e **vende ≥8**. Crítico define `preco_justo_brl` (só baixa o preço).
+   Crítico sem cota → status `aguardando_critica` (reavaliado no próximo ciclo; não é reprovação).
+4. Só então Telegram ✅/🔁 com nota + evidências. `POST /api/produtos/{pid}/criticar` reavalia antigos.
+- Groq: cota é POR MODELO (TPD 200k no 120b). `llm_pool` pausa só o modelo e tenta o próximo;
+  limite por minuto (≤30s) espera e repete.
+- O "Guia Prático… Gumroad" foi reprovado no Render (nota 3.0) e saiu da fila.
+- Teste local: brief "Planner Financeiro Mensal" (evidência Etsy 570 vendas) → 15 págs → crítico
+  reprovou (vende 7). Portão funcionando. Ainda 0 produto aprovado pelo novo fluxo; R$0 de receita real.
+- Pendente: publicação automática (Etsy tem busca orgânica, exige inglês; Hotmart = afiliados BR).
