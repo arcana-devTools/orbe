@@ -261,9 +261,9 @@ class Swarm:
         missao = str(gig.get("id", "")).startswith("missao_")
         sistema = ("Você é um produtor de conteúdo profissional. Entregue SOMENTE o trabalho final, "
                    "completo, original e pronto para uso, em Markdown, em português do Brasil. "
-                   "Nada de comentários sobre você ou sobre o pedido.")
+                   "Nada de comentários sobre você ou sobre o pedido. Nunca prometa o que não está no texto.")
         try:
-            texto, motor = await llm_pool.chat(sistema, prompt, max_tokens=4000 if missao else 1500)
+            texto, motor = await llm_pool.chat(sistema, prompt, max_tokens=7000 if missao else 1500)
         except Exception as exc:
             self.log(f"🌫️ expedição de {a.id} sem entrega (IA: {str(exc)[:90]})")
             return

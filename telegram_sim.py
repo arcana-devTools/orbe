@@ -27,6 +27,8 @@ RADAR = DATA / "renda_radar.json"
 JOBS = DATA / "autonomo_jobs.json"
 OFFSET_PATH = DATA / "tg_offset.txt"
 
+REGRAS_PRODUTO = 'REGRAS: o produto é UM arquivo único e CONCRETO (ex.: um pack de checklists ou templates preenchíveis sobre um nicho específico), com TODO o conteúdo escrito por extenso — nada de sumário de capítulos vazios. NÃO prometa arquivos, bônus, planilhas, imagens, garantias, reembolsos ou resultados de renda que não estejam no próprio texto. Página de vendas honesta: diga exatamente o que o comprador recebe. Mínimo 2500 palavras de conteúdo útil.'
+
 _app: Any = None  # referência do main (AUTOPILOT, SWARM) resolvida sob demanda
 
 
@@ -119,8 +121,8 @@ def _aprovar(idx: int) -> str:
                 "prompt": (
                     f"Crie um PRODUTO DIGITAL COMPLETO e pronto pra vender sobre: {it.get('ideia')}. "
                     f"Como funciona: {it.get('como_funciona')} "
-                    "Entregue: título vendedor, descrição da página de vendas, e o conteúdo do produto "
-                    "bem estruturado (seções com textos completos). Em português."
+                    "Entregue: título vendedor, página de vendas honesta e o conteúdo COMPLETO do produto. "
+                    "Em português. " + REGRAS_PRODUTO
                 ),
             })
         JOBS.write_text(json.dumps(cat, ensure_ascii=False, indent=1), encoding="utf-8")
