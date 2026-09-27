@@ -1,3 +1,25 @@
+# ORBE — ESTADO 27/09/2026 (madrugada) — LER PRIMEIRO
+
+## ✅ ORBE VIVE NO RENDER (não rodar o servidor na sandbox: 2 pollers = conflito no Telegram + backup sobrescrito)
+- https://orbe-xfzn.onrender.com — painel com SENHA (HTTP Basic; ORBE_PANEL_PASSWORD, dono guarda). /health livre.
+- Variáveis no Render (via render_admin.py, chave da API Render no cofre "render"):
+  ORBE_STATE_KEY, ORBE_PANEL_PASSWORD, ORBE_GROQ_API_KEY, ORBE_TG_TOKEN, ORBE_TG_CHAT=6140635660,
+  ORBE_GITHUB_PAT, ORBE_COLONIA_AUTOSTART=1, ORBE_COLONIA_INTERVALO=60.
+- MEMÓRIA: state_backup.py → data/*.json + últimas 60 entregas, Fernet(ORBE_STATE_KEY), na branch
+  `orbe-estado` (NUNCA main: push na main = redeploy). Backup 10 min + ao desligar; restore no boot se disco zerado.
+- Mantém-se acordado: auto-ping em RENDER_EXTERNAL_URL/health a cada 10 min.
+- MOTOR: llm_pool.py (Groq gpt-oss-120b → OpenRouter :free → Arena só último recurso). Expedição 1/5 min,
+  missões aprovadas (✅ Telegram) 70%. Batedor via API 4×/dia (sem web ao vivo, marcado "fonte").
+- Telegram: chat do dono capturado; poller ignora outros chats. Missão aprovada: Gumroad (PDFs/checklists).
+- Dinheiro REAL: R$0. Carteiras da colônia = crédito SIMULADO. Entregas = texto real (.md).
+- Próximos (dono quer: AGENTES fazem, agente-programador só programa): agentes gerarem PDF do produto;
+  corrigir "sem reembolso" (CDC 7 dias); dono cria conta Gumroad (KYC é dele); OpenRouter opcional;
+  depois migrar p/ Oracle Always Free quando houver venda. Termux do dono = ideia p/ "modo leve" (sem Playwright).
+- Ferramentas: `python3 render_admin.py status|env ARQ|deploy`. Cofre local some quando o sandbox reseta —
+  chaves vivem nas variáveis do Render.
+
+---
+
 # ORBE — HANDOFF 26/09/2026 (~01:30 UTC) — LER PRIMEIRO
 
 ## Estado atual (tudo commitado: bfb06b4+, sincronizado com origin/main)
