@@ -291,6 +291,48 @@ async def produto_criticar(pid: str) -> dict[str, Any]:
     return {"status": meta["status"], "critica": meta["critica"]}
 
 
+class MlIrIn(BaseModel):
+    url: str = ""
+
+
+@app.post("/api/afiliados/ml/abrir")
+async def ml_abrir(payload: MlIrIn | None = None) -> dict[str, Any]:
+    """Abre o portal de afiliados no Chrome do /desktop (dono loga lá, 1x)."""
+    import afiliados_ml
+
+    _touch()
+    url = (payload.url.strip() if payload and payload.url else "") or afiliados_ml.PORTAL
+    if not url.startswith("https://") or not any(d in url for d in afiliados_ml._DOMINIOS):
+        raise HTTPException(400, "só URLs do Mercado Livre")
+    try:
+        return await afiliados_ml.abrir(url)
+    except Exception as exc:
+        raise HTTPException(500, f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+@app.get("/api/afiliados/ml/estado")
+async def ml_estado() -> dict[str, Any]:
+    import afiliados_ml
+
+    return {**afiliados_ml.status(), **(await afiliados_ml.estado())}
+
+
+@app.post("/api/afiliados/ml/salvar")
+async def ml_salvar() -> dict[str, Any]:
+    import afiliados_ml
+
+    return await afiliados_ml.salvar_sessao()
+
+
+@app.get("/api/afiliados/ml/tela")
+async def ml_tela():
+    from fastapi.responses import Response
+
+    import afiliados_ml
+
+    return Response(await afiliados_ml.tela(), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/produtos/agora")
 async def produto_agora() -> dict[str, Any]:
     """Dispara o acabador já (respeita os limites/dia e a fila do dono)."""
