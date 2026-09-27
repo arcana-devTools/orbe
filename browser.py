@@ -40,6 +40,8 @@ STEALTH_JS = """
 }
 """
 
+PERFIS_CELULAR = {"mercadolivre-afiliados"}
+
 BASE_ARGS = [
     "--no-first-run",
     "--no-default-browser-check",
@@ -174,13 +176,20 @@ class BrowserManager:
 
         user_data = self.s.profile_path(profile)
         os.makedirs(user_data, exist_ok=True)
+        # perfis que o DONO usa pelo /desktop no celular: janela do tamanho da tela em pé,
+        # página se ajusta sozinha (sem viewport fixo de PC)
+        celular = profile in PERFIS_CELULAR
+        tela = os.environ.get("ORBE_TELA", "430x940").lower().split("x")
+        args = list(BASE_ARGS) + ([f"--window-size={tela[0]},{tela[1]}", "--window-position=0,0"]
+                                  if celular else [])
         ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=str(user_data),
             headless=self.s.headless,
             channel=self.s.channel or None,
-            args=list(BASE_ARGS),
+            args=args,
             ignore_default_args=IGNORE_ARGS,
-            viewport={"width": 1366, "height": 900},
+            viewport=None if celular else {"width": 1366, "height": 900},
+            no_viewport=celular,
             locale="pt-BR",
             timezone_id="America/Sao_Paulo",
             accept_downloads=True,
