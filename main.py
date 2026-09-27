@@ -260,6 +260,35 @@ def _ws_liberado(ws: WebSocket) -> bool:
     return (not senha) or hmac.compare_digest(ws.cookies.get("orbe_s", ""), _selo(senha))
 
 
+@app.get("/api/produtos")
+async def produtos_lista() -> list[dict[str, Any]]:
+    import acabamento
+
+    return acabamento._metas()
+
+
+@app.get("/api/produtos/{pid}/pdf")
+async def produto_pdf(pid: str):
+    import acabamento
+
+    if "/" in pid or ".." in pid:
+        raise HTTPException(400, "id inválido")
+    pdf = acabamento.garantir_pdf(pid)
+    if not pdf:
+        raise HTTPException(404, "produto não encontrado")
+    return FileResponse(pdf, media_type="application/pdf", filename=f"{pid}.pdf")
+
+
+@app.post("/api/produtos/agora")
+async def produto_agora() -> dict[str, Any]:
+    """Dispara o acabador já (respeita os limites/dia e a fila do dono)."""
+    ok, motivo = __import__("acabamento").pode_produzir()
+    if not ok:
+        return {"ok": False, "motivo": motivo}
+    await SWARM._acabamento()
+    return {"ok": True, "ultimo_evento": SWARM.events[-1]["msg"] if SWARM.events else ""}
+
+
 @app.get("/api/estado")
 async def estado_status() -> dict[str, Any]:
     import state_backup

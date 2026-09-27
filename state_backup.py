@@ -82,6 +82,11 @@ def empacotar() -> bytes:
             p = DATA / nome
             if p.exists():
                 tar.add(p, arcname=nome)
+        prod = DATA / "produtos"
+        if prod.exists():
+            for p in prod.glob("*/*"):
+                if p.suffix in (".json", ".md"):
+                    tar.add(p, arcname=f"produtos/{p.parent.name}/{p.name}")
         res = DATA / "resultados"
         if res.exists():
             mds = sorted(res.glob("*.md"), key=lambda x: x.stat().st_mtime)[-MAX_RESULTADOS:]
@@ -130,15 +135,23 @@ async def salvar(forcar: bool = False) -> dict[str, Any]:
         return {"ok": True, "igual": True}
     cifrado = _fernet().encrypt(bruto)
     try:
-        async with httpx.AsyncClient(timeout=30) as cx:
-            await _garantir_branch(cx)
-            url = f"{GH}/repos/{_repo()}/contents/{CAMINHO}"
-            atual = await cx.get(url, headers=_hdr(), params={"ref": BRANCH})
-            body = {"message": f"estado {time.strftime('%Y-%m-%d %H:%M')}", "branch": BRANCH,
-                    "content": base64.b64encode(cifrado).decode()}
-            if atual.status_code == 200:
-                body["sha"] = atual.json()["sha"]
-            r = await cx.put(url, headers=_hdr(), json=body)
+        async with httpx.AsyncClient(timeout=60) as cx:
+            # commit ÓRFÃO + ref forçada: a branch guarda só a foto mais recente
+            # (o histórico não cresce a cada 10 min e o repo não incha)
+            base = f"{GH}/repos/{_repo()}/git"
+            b = await cx.post(f"{base}/blobs", headers=_hdr(),
+                              json={"content": base64.b64encode(cifrado).decode(), "encoding": "base64"})
+            b.raise_for_status()
+            t = await cx.post(f"{base}/trees", headers=_hdr(), json={"tree": [
+                {"path": CAMINHO, "mode": "100644", "type": "blob", "sha": b.json()["sha"]}]})
+            t.raise_for_status()
+            c = await cx.post(f"{base}/commits", headers=_hdr(), json={
+                "message": f"estado {time.strftime('%Y-%m-%d %H:%M')}", "tree": t.json()["sha"], "parents": []})
+            c.raise_for_status()
+            sha = c.json()["sha"]
+            r = await cx.patch(f"{base}/refs/heads/{BRANCH}", headers=_hdr(), json={"sha": sha, "force": True})
+            if r.status_code == 422 or r.status_code == 404:   # branch ainda não existe
+                r = await cx.post(f"{base}/refs", headers=_hdr(), json={"ref": f"refs/heads/{BRANCH}", "sha": sha})
             r.raise_for_status()
     except Exception as exc:
         _status["erro"] = f"{type(exc).__name__}: {str(exc)[:120]}"

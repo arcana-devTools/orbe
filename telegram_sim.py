@@ -77,6 +77,61 @@ async def aviso_ideia(ideia: dict, idx: int) -> None:
               reply_markup=teclado)
 
 
+async def enviar_produto(meta: dict) -> bool:
+    """Manda o PDF pronto pro dono com ✅ aprovar / 🔁 refazer + a página de vendas."""
+    import acabamento
+
+    tok, chat = _cfg()
+    pdf = acabamento.garantir_pdf(meta["id"])
+    if not tok or not chat or not pdf:
+        return False
+    chave = meta["id"][:15]
+    legenda = (f"📦 PRODUTO PRONTO: {meta['titulo']}\n{meta.get('subtitulo', '')}\n\n"
+               f"{meta['paginas']} páginas • preço sugerido R$ {meta['preco_brl']}\n"
+               "Abre o PDF, confere, e decide:")[:1000]
+    teclado = {"inline_keyboard": [[
+        {"text": "✅ Aprovar p/ vender", "callback_data": f"pok_{chave}"},
+        {"text": "🔁 Refazer", "callback_data": f"prf_{chave}"}]]}
+    try:
+        async with httpx.AsyncClient(timeout=60) as cx:
+            r = await cx.post(f"https://api.telegram.org/bot{tok}/sendDocument",
+                              data={"chat_id": chat, "caption": legenda,
+                                    "reply_markup": json.dumps(teclado)},
+                              files={"document": (f"{meta['titulo'][:50]}.pdf", pdf.read_bytes(),
+                                                  "application/pdf")})
+            ok = r.json().get("ok") is True
+        venda = (acabamento.PRODUTOS / meta["id"] / "pagina_de_vendas.md").read_text(encoding="utf-8")
+        await _tg("sendMessage", chat_id=chat, text=("📝 Página de vendas:\n\n" + venda)[:4000])
+        return ok
+    except Exception:
+        return False
+
+
+def _decidir_produto(chave: str, aprovar: bool) -> str:
+    import acabamento
+
+    pid = acabamento.achar(chave)
+    if not pid:
+        return "produto não encontrado (talvez de antes de um reinício)"
+    meta = acabamento.marcar(pid, "aprovado" if aprovar else "refazer")
+    if aprovar:
+        return (f"✅ APROVADO: {meta['titulo']} (R$ {meta['preco_brl']})\n"
+                "Fica na fila 'pronto pra vender'. Próxima etapa: publicar no Gumroad.")
+    return f"🔁 Descartado: {meta['titulo']}. O acabador faz outro a partir do próximo rascunho."
+
+
+async def _produtos_lista() -> str:
+    import acabamento
+
+    metas = acabamento._metas()[-10:]
+    if not metas:
+        return "nenhum produto finalizado ainda"
+    ic = {"aguardando_dono": "⏳", "aprovado": "✅", "refazer": "🔁"}
+    return "📦 PRODUTOS\n" + "\n".join(
+        f"{ic.get(m.get('status'), '•')} {html.escape(m['titulo'])} — R$ {m['preco_brl']}, {m['paginas']} págs"
+        for m in metas)
+
+
 async def _radar_lista() -> str:
     itens = _radar()
     if not itens:
@@ -177,6 +232,8 @@ async def _tratar(update: dict) -> None:
             texto = _aprovar(int(data[4:]))
         elif data.startswith("nao_"):
             texto = _rejeitar(int(data[4:]))
+        elif data.startswith("pok_") or data.startswith("prf_"):
+            texto = _decidir_produto(data[4:], data.startswith("pok_"))
         await _tg("answerCallbackQuery", callback_query_id=cb.get("id"))
     else:
         cmd = str(msg.get("text", "")).strip().lower()
@@ -187,6 +244,8 @@ async def _tratar(update: dict) -> None:
                 texto = _aprovar(int(cmd.split()[1]))
             except Exception:
                 texto = "uso: /sim <número> (ver /radar)"
+        elif cmd.startswith("/produtos"):
+            texto = await _produtos_lista()
         elif cmd.startswith("/status"):
             texto = await _status()
         elif cmd.startswith("/start"):

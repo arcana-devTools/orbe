@@ -287,6 +287,43 @@ class Swarm:
         self.entregas = self.entregas[-100:]
         self.log(f"💼 {a.id} entregou “{gig['nome']}” ({tema}) via {motor} → +${preco:.2f} (crédito simulado)")
 
+    async def _acabamento(self) -> None:
+        """🧵 ACABADOR: rascunho de missão → PDF vendável → Telegram do dono."""
+        if self._expedindo:
+            return
+        try:
+            import acabamento
+            import llm_pool
+        except Exception as exc:  # ex.: WeasyPrint ausente no ambiente
+            self.log(f"🧵 acabador indisponível: {type(exc).__name__}")
+            return
+        if not llm_pool.disponivel():
+            return
+        ok, _motivo = acabamento.pode_produzir()
+        rascunho = acabamento.proximo_rascunho() if ok else None
+        vivos = [a for a in self.agents if a.alive]
+        if not rascunho or not vivos:
+            return
+        a = max(vivos, key=lambda x: x.ganho_total)   # o mais experiente faz o acabamento
+        self._expedindo = True
+        try:
+            meta = await acabamento.produzir(rascunho, a.id)
+        except Exception as exc:
+            self.log(f"🧵 acabamento de {a.id} falhou: {str(exc)[:90]}")
+            return
+        finally:
+            self._expedindo = False
+        a.wallet = round(a.wallet + 8.0, 4)
+        a.ganho_total = round(a.ganho_total + 8.0, 2)
+        self.log(f"🧵 {a.id} finalizou o produto “{meta['titulo']}” ({meta['paginas']} págs, "
+                 f"R$ {meta['preco_brl']}) → +$8.00 (crédito simulado) — aguardando o dono")
+        try:
+            from telegram_sim import enviar_produto
+
+            await enviar_produto(meta)
+        except Exception:
+            pass
+
     def _radar_ler(self) -> list[dict]:
         try:
             return json.loads(RADAR_PATH.read_text(encoding="utf-8"))
@@ -416,6 +453,8 @@ class Swarm:
                 await self._expedicao_real()
             if self.ciclos % 15 == 10:
                 await self._radar_renda()
+            if self.ciclos % 5 == 3:
+                await self._acabamento()
             self._save()
             await asyncio.sleep(self.interval)
 
