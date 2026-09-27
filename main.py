@@ -126,6 +126,24 @@ async def _restore_logins_on_boot() -> None:
             pass
 
 
+async def _manter_acordado() -> None:
+    """Render grátis dorme após 15 min sem visita. O próprio Orbe se visita
+    pelo endereço público a cada 10 min (RENDER_EXTERNAL_URL é posto pelo
+    Render) — dispensa cron-job.org. ORBE_AUTO_PING=0 desliga."""
+    import httpx
+
+    url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not url or os.environ.get("ORBE_AUTO_PING", "1") == "0":
+        return
+    while True:
+        await asyncio.sleep(600)
+        try:
+            async with httpx.AsyncClient(timeout=30) as cx:
+                await cx.get(f"{url}/health")
+        except Exception:
+            pass
+
+
 async def _restaurar_estado_no_boot() -> None:
     """Render acorda com disco zerado → baixa a memória da colônia do GitHub
     e recarrega colônia + Telegram ANTES de qualquer um começar a rodar."""
@@ -178,6 +196,7 @@ async def lifespan(app: FastAPI):
     import state_backup
 
     asyncio.create_task(state_backup.laco())
+    asyncio.create_task(_manter_acordado())
     if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1":
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
         await BUS.ok("colônia ligada sozinha (ORBE_COLONIA_AUTOSTART=1)")
