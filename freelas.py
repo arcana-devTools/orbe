@@ -232,7 +232,7 @@ async def escrever_proposta(v: dict) -> str:
             "que trabalha com ferramentas de IA e revisão humana cuidadosa. Sem emojis. Só o texto da proposta.")
     txt, _ = await llm_pool.chat("Você escreve propostas de freelance curtas, específicas e honestas.",
                                  user, max_tokens=900, temperature=0.5)
-    return re.sub(r"\n{3,}", "\n\n", txt.strip())[:1800]
+    return sem_emoji(re.sub(r"\n{3,}", "\n\n", txt.strip()))[:1800]
 
 
 async def ciclo() -> dict[str, Any]:
@@ -260,12 +260,20 @@ async def ciclo() -> dict[str, Any]:
             "propostas": len([v for v in esc if v.get("proposta")])}
 
 
+def sem_emoji(txt: str) -> str:
+    txt = re.sub(r"([0-9])\ufe0f?\u20e3", r"\1.", txt or "")                  # 1️⃣ → 1.
+    txt = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\ufe0f]", "", txt)
+    return re.sub(r"[ \t]+\n", "\n", txt).strip()
+
+
 def pendentes() -> list[dict]:
     """Propostas p/ o resumo. O filtro roda de novo: regra nova vale até p/ proposta já escrita."""
     itens, mudou, out = ler(), False, []
     for v in itens:
         if v.get("status") != "aguardando_dono" or v.get("notificado"):
             continue
+        if v.get("proposta") and sem_emoji(v["proposta"]) != v["proposta"]:
+            v["proposta"], mudou = sem_emoji(v["proposta"]), True
         motivo = filtro_objetivo(v)
         if motivo:
             v["status"], v["motivo"], mudou = "descartada", motivo, True
