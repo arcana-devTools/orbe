@@ -26,6 +26,7 @@ REGISTRO = Path("data/workana_perfil.json")
 HABILIDADES = [("article-writing", "Escrita de artigos"), ("proofreading", "Correção de textos"),
                ("translation-1", "Tradução")]      # as 3 que o dono escolheu no cadastro
 EXPERIENCIA = 1                                     # "1 ano" — o que o dono declarou
+PRECO_HORA = int(__import__("os").environ.get("ORBE_WORKANA_PRECO_HORA", "30"))   # R$/h (Workana: 16–522)
 
 
 def _registro() -> dict:
@@ -220,8 +221,27 @@ async def completar(aplicar: bool = True) -> dict[str, Any]:
             if r.status_code >= 400:
                 log.append(r.text[:300])
 
+        # 5) preço por hora — o Workana exige para enviar propostas
+        if not ini.get("newProfileCard", {}).get("hourlyRate", {}).get("isSet") and aplicar:
+            r = await cx.get(f"{freelas.BASE}/profile/edition-component-configuration/personal_data", headers=h())
+            f = r.json()["form"]
+            nome_csrf, valor_csrf = csrf.split("/", 1)
+            dados = {"csrf_name": nome_csrf, "csrf_value": valor_csrf,
+                     "company[name]": f["name"]["value"], "company[appearAs]": f["appearAs"]["value"] or "name",
+                     f["categories"]["selects"][0]["name"]: f["categories"]["value"],
+                     "worker[hourlyRate]": str(max(16, min(522, PRECO_HORA))),
+                     "role": (ini.get("rolesInitials", {}).get("current") or {}).get("slug") or "article-writer",
+                     "customRole": ""}
+            dc = next((c.value for c in cx.cookies.jar if c.name == "dcstcookieii"), None)
+            if dc:
+                dados["dcst-input"] = dc
+            hf = {k: v for k, v in h().items() if k not in ("Content-Type", "X-Requested-With", "Accept")}
+            r = await cx.post(f["actionUrl"], headers=hf, data=dados)
+            log.append(f"preço/hora R$ {dados['worker[hourlyRate]']}: HTTP {r.status_code}")
+
         _, ini2, _ = await _pagina(cx)
         depois = secoes(ini2)
+        depois["preco_hora"] = ini2.get("newProfileCard", {}).get("hourlyRate", {}).get("amount")
     reg.update({"ultimo": time.time(), "log": log, "antes": antes, "depois": depois})
     _guardar(reg)
     return {"antes": antes, "depois": depois, "log": log}

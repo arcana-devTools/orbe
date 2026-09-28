@@ -69,3 +69,21 @@ def test_resumo_leva_proposta_de_freela(tmp_path, monkeypatch):
     assert freelas.pendentes() == []                                  # não repete amanhã
     assert "Aprovada" in T._decidir_freela("texto-blog", True)
     assert freelas.ler()[0]["status"] == "aprovada"
+
+
+def test_resumo_avisa_liberacao_uma_vez(tmp_path, monkeypatch):
+    monkeypatch.setattr(vendas, "VENDAS", tmp_path / "v.json")
+    monkeypatch.setattr(A, "PRODUTOS", tmp_path)
+    monkeypatch.setattr(T, "_RESUMO", tmp_path / "r.json")
+    monkeypatch.setattr(T, "_cfg", lambda: ("tok", "1"))
+    monkeypatch.setattr(T, "_hora_brasilia", lambda: T.HORA_RESUMO)
+    msgs = []
+
+    async def tg(method, **kw):
+        msgs.append(kw)
+        return {"ok": True}
+    monkeypatch.setattr(T, "_tg", tg)
+    freelas._salvar_estado({"em_revisao": False, "liberado_em": 1})
+    assert asyncio.run(T.resumo_diario()) is True and "LIBEROU" in msgs[0]["text"]
+    assert freelas.estado().get("liberacao_avisada")
+    assert asyncio.run(T.resumo_diario(forcar=True)) is False           # não repete

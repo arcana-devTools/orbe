@@ -406,6 +406,16 @@ class Swarm:
 
             if not freelas.cookie():
                 return
+            if time.time() - getattr(self, "_ultimo_perfil", 0.0) > 86400:   # 🪪 perfil: confere 1x/dia
+                self._ultimo_perfil = time.time()
+                try:
+                    import perfil_workana
+
+                    rp = await perfil_workana.completar()
+                    if rp.get("log"):
+                        self.log(f"🪪 perfil Workana ajustado: {'; '.join(rp['log'])[:200]} → {rp['depois'].get('pct')}%")
+                except Exception as exc:
+                    self.log(f"🪪 perfil Workana falhou: {type(exc).__name__}: {str(exc)[:120]}")
             ultimo = max([v.get("visto", 0) for v in freelas.ler()] + [getattr(self, "_ultimo_freela", 0.0)])
             if time.time() - ultimo < freelas.GAP_BUSCA_S:
                 return

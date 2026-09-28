@@ -137,9 +137,11 @@ async def resumo_diario(forcar: bool = False) -> bool:
         import freelas
 
         propostas = freelas.pendentes()
+        est_wk = freelas.estado()
+        liberou = bool(est_wk.get("liberado_em")) and not est_wk.get("liberacao_avisada")
     except Exception:
-        propostas = []
-    if not tok or not chat or not (novos or vendas_novas or propostas):
+        propostas, liberou = [], False
+    if not tok or not chat or not (novos or vendas_novas or propostas or liberou):
         return False
     if time.time() - ultimo < 20 * 3600 and not forcar:     # nunca 2 resumos no mesmo dia
         return False
@@ -163,6 +165,10 @@ async def resumo_diario(forcar: bool = False) -> bool:
         partes = ["🌙 Resumo do dia", vendas.resumo_txt(ultimo)]
         if novos:
             partes.append(f"📦 {len(novos)} produto(s) passaram no crítico e esperam sua decisão (abaixo).")
+        if liberou:
+            partes.append("🎉 O Workana LIBEROU seu perfil: já dá pra enviar propostas.")
+            est_wk["liberacao_avisada"] = time.time()
+            freelas._salvar_estado(est_wk)
         if propostas:
             partes.append(f"💼 {len(propostas)} proposta(s) de freela no Workana esperando seu OK (abaixo).")
         partes.append(f"(últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)")

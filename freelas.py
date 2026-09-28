@@ -25,10 +25,13 @@ SESSAO = Path("data/workana_sessao.txt")
 VAGAS = Path("data/freelas.json")
 BASE = "https://www.workana.com"
 BUSCAS = ["/jobs?language=pt&category=writing-translation",
-          "/jobs?language=pt&category=sales-marketing"]
+          "/jobs?language=pt&category=writing-translation&page=2",
+          "/jobs?language=pt&category=sales-marketing",
+          "/jobs?language=pt&category=admin-support"]
+ESTADO = Path("data/workana_estado.json")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/140.0.0.0 Safari/537.36")
-GAP_BUSCA_S = 6 * 3600          # 4 buscas/dia no máximo: pouco acesso, não parece robô
+GAP_BUSCA_S = 3 * 3600          # 8 buscas/dia: vaga nova tem menos concorrência, ainda é pouco acesso
 MAX_PROPOSTAS_DIA = 3
 
 _FORA = re.compile(
@@ -235,10 +238,45 @@ async def escrever_proposta(v: dict) -> str:
     return sem_emoji(re.sub(r"\n{3,}", "\n\n", txt.strip()))[:1800]
 
 
+def estado() -> dict:
+    try:
+        return json.loads(ESTADO.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _salvar_estado(d: dict) -> None:
+    ESTADO.parent.mkdir(parents=True, exist_ok=True)
+    ESTADO.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
+
+
+async def checar_liberacao() -> bool | None:
+    """True = Workana já deixa mandar proposta. Guarda quando liberou (p/ avisar o dono 1 vez)."""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as cx:
+            r = await cx.get(f"{BASE}/jobs?language=pt", headers=_hdr(False))
+        if "logout" not in r.text.lower():
+            return None
+        em_revisao = "perfil est\\u00e1 em revis" in r.text or "perfil está em revis" in r.text
+    except Exception:
+        return None
+    est = estado()
+    est["em_revisao"], est["checado"] = em_revisao, time.time()
+    if not em_revisao and not est.get("liberado_em"):
+        est["liberado_em"] = time.time()
+    _salvar_estado(est)
+    return not em_revisao
+
+
 async def ciclo() -> dict[str, Any]:
     """1 rodada: busca → filtra → escolhe → escreve propostas. Respeita o intervalo entre buscas."""
     if not cookie():
         return {"ok": False, "motivo": "sem sessão do Workana"}
+    await checar_liberacao()
     novas = await buscar()
     feitas = sum(1 for v in ler() if v.get("proposta") and time.time() - v.get("proposta_em", 0) < 86400)
     try:
@@ -299,7 +337,9 @@ def status() -> dict[str, Any]:
     cont: dict[str, int] = {}
     for v in itens:
         cont[v["status"]] = cont.get(v["status"], 0) + 1
-    return {"sessao": bool(cookie()), "vagas_vistas": len(itens), "por_status": cont,
+    est = estado()
+    return {"sessao": bool(cookie()), "perfil_em_revisao": est.get("em_revisao"),
+            "liberado_em": est.get("liberado_em"), "vagas_vistas": len(itens), "por_status": cont,
             "aguardando_dono": [{"titulo": v["titulo"], "orcamento": v["orcamento"], "nota": v.get("nota"),
                                  "url": v["url"], "proposta": v.get("proposta", "")} for v in pendentes()],
             "descartes_recentes": [f"{v['titulo'][:60]} — {v.get('motivo', '')[:90]}"
