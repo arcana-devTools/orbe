@@ -100,3 +100,19 @@ Dono reclamou: produto fraco ("Guia Prático… Gumroad") chegou ao Telegram e e
   Chrome após 20 min ocioso); login assistido por .txt (e-mail+senha) se o dono preferir; gerador de links.
 - Dono liberou (nova regra): trade/cripto/freelas — ver conversa; política adotada: trade só depois de
   simulação provar lucro, com teto definido pelo dono; nada de bots em apps/pesquisas (fraude/ban).
+
+## 2026-09-28 (noite) — 💼 Freelas no Workana
+- `freelas.py`: busca vagas (JSON: `GET /jobs?...` + `X-Requested-With: XMLHttpRequest`) a cada 6h, filtro objetivo
+  (sem acadêmico, áudio/vídeo, design, por hora, reviews/avaliações de produto = seriam falsas, 40+ propostas),
+  IA dá nota (≥7), escreve proposta honesta (sem emoji, sem inventar experiência). Máx 3/dia.
+  Resumo das 19h manda cada proposta com ✅ Enviar / ❌ Pular (`fok_`/`fno_`).
+- ENVIO de proposta AINDA NÃO existe: perfil do dono "em revisão" + 0 conexões. ✅ só marca `aprovada`.
+  Próximo: descobrir o endpoint de bid quando o perfil liberar e enviar as `aprovada`.
+- `perfil_workana.py`: agente que completou o perfil 20% → 90% (descrição, 3 habilidades, 2 amostras de portfólio
+  rotuladas "projeto próprio", histórico "Autônomo desde 09/2026"). Escrita exige cabeçalhos `X-Csrf-Token` (meta
+  csrf-token) + `x-dcst` (= cookie `dcstcookieii`, que GIRA a cada resposta → usar pote de cookies).
+  Checagem de honestidade `_limpo()` barra %, "ilimitado", anos de experiência etc.
+  Falta a FOTO (10%) — só foto real do dono; upload é via Transloadit (não implementado).
+- Sessão: `data/workana_sessao.txt` (backup criptografado), enviada ao Render via `POST /api/sessoes/workana`.
+  Funciona do sandbox e do Render sem bloqueio do Cloudflare. APIs: `GET /api/freelas`, `POST /api/freelas/ciclo`,
+  `POST /api/freelas/perfil`.
