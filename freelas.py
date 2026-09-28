@@ -96,8 +96,8 @@ def _txt(v: Any) -> str:
     return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", str(v or "")))).strip()
 
 
-def _num(s: str) -> int:
-    m = re.search(r"(\d+)", str(s or ""))
+def _num(s: Any) -> int:
+    m = re.search(r"(\d+)", str(s if s is not None else ""))
     return int(m.group(1)) if m else 0
 
 
@@ -185,18 +185,24 @@ async def escolher(max_escolhas: int = 3) -> list[dict]:
             '"preco_sugerido": inteiro na moeda da vaga}]')
     txt, _ = await llm_pool.chat("Você é um freelancer sênior realista e criterioso. Responda só JSON.",
                                  user, max_tokens=1500, temperature=0.2)
-    notas = _json(txt)
-    notas = notas if isinstance(notas, list) else []
+    try:
+        notas = _json(txt)
+    except Exception:
+        notas = []
+    if isinstance(notas, dict):     # às vezes vem {"vagas": [...]}
+        notas = next((x for x in notas.values() if isinstance(x, list)), [])
+    notas = [n for n in notas if isinstance(n, dict)] if isinstance(notas, list) else []
     escolhidas = []
     for n in notas:
         try:
-            v = cands[int(n.get("i"))]
+            v = cands[int(_num(n.get("i")) if not isinstance(n.get("i"), int) else n["i"])]
         except Exception:
             continue
-        v["nota"] = float(n.get("nota", 0) or 0)
+        m = re.search(r"\d+(?:[.,]\d+)?", str(n.get("nota", "0")))
+        v["nota"] = float(m.group(0).replace(",", ".")) if m else 0.0
         v["motivo_ia"] = str(n.get("motivo", ""))[:160]
-        v["prazo_dias"] = int(n.get("prazo_dias", 3) or 3)
-        v["preco_sugerido"] = int(float(n.get("preco_sugerido") or v["minimo"] or 0))
+        v["prazo_dias"] = _num(n.get("prazo_dias")) or 3
+        v["preco_sugerido"] = _num(str(n.get("preco_sugerido", "")).replace(".", "")) or v["minimo"]
         v["status"] = "escolhida" if v["nota"] >= 7 else "descartada"
         if v["status"] == "descartada":
             v["motivo"] = f"IA deu nota {v['nota']:.0f}: {v['motivo_ia']}"
@@ -232,7 +238,10 @@ async def ciclo() -> dict[str, Any]:
         return {"ok": False, "motivo": "sem sessão do Workana"}
     novas = await buscar()
     feitas = sum(1 for v in ler() if v.get("proposta") and time.time() - v.get("proposta_em", 0) < 86400)
-    esc = await escolher(max(0, MAX_PROPOSTAS_DIA - feitas)) if feitas < MAX_PROPOSTAS_DIA else []
+    try:
+        esc = await escolher(max(0, MAX_PROPOSTAS_DIA - feitas)) if feitas < MAX_PROPOSTAS_DIA else []
+    except Exception as exc:
+        return {"ok": False, "novas": len(novas), "motivo": f"IA falhou ao escolher: {type(exc).__name__}: {str(exc)[:160]}"}
     for v in esc:
         try:
             v["proposta"] = await escrever_proposta(v)
