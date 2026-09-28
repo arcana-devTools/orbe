@@ -84,6 +84,8 @@ def _hdr(cx: httpx.AsyncClient, csrf: str, ref: str) -> dict:
 
 def secoes(ini: dict) -> dict[str, Any]:
     pc = ini.get("profileCompleteness", {}).get("initials", {})
+    if not isinstance(pc, dict) or not pc:          # Workana esconde a caixa quando o perfil está 100%
+        return {"pct": 100, "faltando": []}
     return {"pct": pc.get("profileCompletion"),
             "faltando": [s["text"] for s in pc.get("sections", []) if not s.get("done")]}
 
