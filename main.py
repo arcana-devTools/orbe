@@ -291,6 +291,44 @@ async def produto_criticar(pid: str) -> dict[str, Any]:
     return {"status": meta["status"], "critica": meta["critica"]}
 
 
+class VendaIn(BaseModel):
+    loja: str
+    valor: float
+    moeda: str = "BRL"
+    prova: str = ""
+    produto_id: str = ""
+    titulo: str = ""
+
+
+@app.get("/api/vendas")
+async def vendas_status() -> dict[str, Any]:
+    """Vendas REAIS (nada simulado entra aqui)."""
+    import vendas
+
+    return vendas.status()
+
+
+@app.post("/api/vendas")
+async def vendas_registrar(payload: VendaIn) -> dict[str, Any]:
+    """Registro manual de uma venda real (ex.: loja ainda sem conector). Exige prova (nº do pedido)."""
+    import vendas
+
+    if not payload.prova.strip():
+        raise HTTPException(400, "informe a prova (nº do pedido/recibo)")
+    v = vendas.registrar(payload.loja, payload.valor, payload.moeda, payload.prova.strip(),
+                         payload.produto_id, payload.titulo, origem="manual")
+    if not v:
+        raise HTTPException(409, "venda repetida ou valor inválido")
+    return v
+
+
+@app.get("/api/aprendizado")
+async def aprendizado_status() -> dict[str, Any]:
+    import aprendizado
+
+    return aprendizado.status()
+
+
 class MlIrIn(BaseModel):
     url: str = ""
 

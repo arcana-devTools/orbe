@@ -83,3 +83,20 @@ Dono reclamou: produto fraco ("Guia Prático… Gumroad") chegou ao Telegram e e
 - Teste local: brief "Planner Financeiro Mensal" (evidência Etsy 570 vendas) → 15 págs → crítico
   reprovou (vende 7). Portão funcionando. Ainda 0 produto aprovado pelo novo fluxo; R$0 de receita real.
 - Pendente: publicação automática (Etsy tem busca orgânica, exige inglês; Hotmart = afiliados BR).
+
+## 2026-09-27 (noite) — itens 3/4/5 + notificações + ML afiliados (parcial)
+- Telegram: **1 resumo/dia às 19h Brasília** (`ORBE_TG_HORA`), só se houver produto aprovado OU venda real
+  nova; nunca 2 no mesmo dia (`data/tg_resumo.json`). Radar não pinga mais. Botão 📝 página de vendas sob demanda.
+- Backup: `state_backup.sujo()` salva ~1 min após mudança importante (redeploy apagava reprovação).
+- **Item 3 — inglês/Etsy:** `mercado.IDIOMAS` (`ORBE_IDIOMAS`, padrão `en,pt`) reveza por brief. Brief tem
+  `idioma`/`moeda`/`preco`. Acabamento: `TXT[idioma]`, papel Letter (en)/A4 (pt), preço US$3–15 ou R$9–39,
+  `tags` (13, Etsy), `preco_fmt(meta)`. Crítico checa idioma errado (objetivo) e dá `preco_justo` na moeda.
+- **Item 4 — vendas reais:** `vendas.py` (`data/vendas.json`), dedupe loja+prova, `CONECTORES` (vazio até
+  ter loja; Etsy entra aqui), `POST /api/vendas` manual exige prova, `/vendas` no Telegram. Nada simulado entra.
+- **Item 5 — aprendizado:** `aprendizado.py`: lições dos reprovados entram no prompt; produto com venda →
+  `tema_quente` inspira variação; publicado 30d sem venda → `ajuste_sugerido`. Rotina diária no loop.
+- Afiliados ML: `afiliados_ml.py` + `/api/afiliados/ml/*`, perfil `mercadolivre-afiliados` (janela em pé,
+  Xvfb `ORBE_TELA` 430x940). Dono ADIOU o login. Pendente: /desktop reabrir ML sozinho (watchdog fecha
+  Chrome após 20 min ocioso); login assistido por .txt (e-mail+senha) se o dono preferir; gerador de links.
+- Dono liberou (nova regra): trade/cripto/freelas — ver conversa; política adotada: trade só depois de
+  simulação provar lucro, com teto definido pelo dono; nada de bots em apps/pesquisas (fraude/ban).

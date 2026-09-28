@@ -14,7 +14,11 @@ def _produto(tmp, pid, status, **extra):
 
 
 def _preparar(tmp_path, monkeypatch, hora):
+    import vendas
+
     monkeypatch.setattr(acabamento, "PRODUTOS", tmp_path)
+    monkeypatch.setattr(vendas, "VENDAS", tmp_path / "_vendas.json")
+    monkeypatch.setattr(T, "_RESUMO", tmp_path / "_resumo.json")
     monkeypatch.setattr(T, "_cfg", lambda: ("tok", "123"))
     monkeypatch.setattr(T, "_hora_brasilia", lambda: hora)
     enviados, msgs = [], []

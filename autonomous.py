@@ -349,21 +349,55 @@ class Swarm:
         if not vivos:
             return
         tema = self.rng.choice(temas or ["organização pessoal"])
+        idioma, inspiracao, quente = mercado.proximo_idioma(), "", None
+        try:
+            import aprendizado
+
+            quente = aprendizado.tema_quente()      # 📈 o que VENDEU vira variação primeiro
+        except Exception:
+            quente = None
+        if quente:
+            tema, idioma, inspiracao = quente["tema"] or tema, quente["idioma"], quente["inspiracao"]
         a = max(vivos, key=lambda x: x.gen)
         self._expedindo = True
         try:
             feitos = [b.get("produto", "") for b in mercado.ler()]
-            b = await mercado.pesquisar(tema, feitos)
+            b = await mercado.pesquisar(tema, feitos, idioma=idioma, inspiracao=inspiracao)
+            if quente:
+                aprendizado.marcar_variado(quente["pid"])
         except Exception as exc:
             self.log(f"🔎 pesquisa de mercado ({tema}) falhou: {str(exc)[:80]}")
             return
         finally:
             self._expedindo = False
+        bandeira = "🇺🇸" if b.get("idioma") == "en" else "🇧🇷"
         if b["status"] == "novo":
-            self.log(f"🔎 {a.id} achou demanda: “{b['produto']}” ({tema}) — confiança {b['confianca']:.0f}/10, "
+            self.log(f"🔎 {bandeira} {a.id} achou demanda: “{b['produto']}” ({tema}) — confiança {b['confianca']:.0f}/10, "
                      f"{len(b['evidencias'])} evidência(s)")
         else:
             self.log(f"🔎 pesquisa em {tema} sem demanda comprovada — descartada")
+
+    async def _rotina_diaria(self) -> None:
+        """💰 puxa vendas reais das lojas conectadas + 📈 revisa encalhados (1x/dia)."""
+        if time.time() - getattr(self, "_ultima_rotina", 0.0) < 86400:
+            return
+        self._ultima_rotina = time.time()
+        try:
+            import vendas
+
+            n = await vendas.sincronizar()
+            if n:
+                self.log(f"💰 {n} venda(s) REAL(is) nova(s) registrada(s) — {vendas.fmt_totais(vendas.totais(vendas.ler()))} no total")
+        except Exception as exc:
+            self.log(f"💰 sincronizar vendas falhou: {type(exc).__name__}")
+        try:
+            import aprendizado
+
+            n = await aprendizado.revisar_encalhados()
+            if n:
+                self.log(f"🔧 {n} produto(s) encalhado(s) ganharam sugestão de novo título/preço")
+        except Exception as exc:
+            self.log(f"📈 revisão de encalhados falhou: {type(exc).__name__}")
 
     async def _acabamento(self) -> None:
         """🧵 ACABADOR: rascunho de missão → PDF vendável → Telegram do dono."""
@@ -404,7 +438,7 @@ class Swarm:
         a.wallet = round(a.wallet + 8.0, 4)
         a.ganho_total = round(a.ganho_total + 8.0, 2)
         self.log(f"🧵 {a.id} finalizou o produto “{meta['titulo']}” ({meta['paginas']} págs, "
-                 f"R$ {meta['preco_brl']}, nota {cr.get('media')}) → +$8.00 (crédito simulado) — "
+                 f"{acabamento.preco_fmt(meta)}, nota {cr.get('media')}) → +$8.00 (crédito simulado) — "
                  f"vai no resumo diário do dono")
 
     def _radar_ler(self) -> list[dict]:
@@ -529,6 +563,8 @@ class Swarm:
                 await self._acabamento()
             if self.ciclos % 5 == 1:
                 await self._pesquisa_mercado()
+            if self.ciclos % 30 == 7:
+                await self._rotina_diaria()
             try:   # 1 mensagem por dia, no horário do dono, e só se tiver produto aprovado
                 from telegram_sim import resumo_diario
 

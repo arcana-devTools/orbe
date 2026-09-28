@@ -30,7 +30,8 @@ from cryptography.fernet import Fernet, InvalidToken
 DATA = Path("data")
 ARQUIVOS = ["autonomous.json", "autonomo_jobs.json", "renda_radar.json",
             "autopilot.json", "tg_offset.txt", "prefs.json", "briefs.json",
-            "ml_sessao.json", "afiliados_ml.json"]
+            "ml_sessao.json", "afiliados_ml.json", "vendas.json", "aprendizado.json",
+            "tg_resumo.json"]
 MAX_RESULTADOS = 60           # últimas entregas (.md) que viajam junto
 BRANCH = "orbe-estado"
 CAMINHO = "estado/orbe-state.enc"

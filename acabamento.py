@@ -28,6 +28,35 @@ PRODUTOS = Path("data/produtos")
 RESULTADOS = Path("data/resultados")
 REEMBOLSO = ("Você pode pedir reembolso integral em até 7 dias após a compra, sem precisar "
              "justificar (direito de arrependimento — art. 49 do Código de Defesa do Consumidor).")
+REEMBOLSO_EN = ("If the file doesn't open or isn't as described, message us within 7 days "
+                "for a full refund.")
+# textos fixos do PDF / página de vendas por idioma (en = Etsy/EUA, pt = Brasil)
+TXT = {
+    "pt": {"rod": "Produto digital em PDF · uso pessoal", "sumario": "O que tem aqui",
+           "termos": "Uso pessoal. Não é permitido revender ou redistribuir este arquivo.",
+           "reembolso": REEMBOLSO, "t_reembolso": "Reembolso", "recebe": "O que você recebe",
+           "arquivo": "1 arquivo PDF com {n} páginas (para ler na tela ou imprimir)",
+           "entrega": "Entrega imediata por download após a compra", "preco": "Preço sugerido",
+           "paginas": "páginas", "papel": "A4", "moeda": "BRL", "faixa": (9, 39)},
+    "en": {"rod": "Printable PDF · personal use", "sumario": "What's inside",
+           "termos": "For personal use only. Reselling or redistributing this file is not allowed.",
+           "reembolso": REEMBOLSO_EN, "t_reembolso": "Refunds", "recebe": "What you get",
+           "arquivo": "1 PDF file, {n} pages (read on screen or print at home, US Letter)",
+           "entrega": "Instant download after purchase", "preco": "Suggested price",
+           "paginas": "pages", "papel": "letter", "moeda": "USD", "faixa": (3, 15)},
+}
+_SIMBOLO = {"BRL": "R$", "USD": "US$"}
+
+
+def _t(idioma: str | None) -> dict:
+    return TXT.get(idioma or "pt", TXT["pt"])
+
+
+def preco_fmt(meta: dict) -> str:
+    """'R$ 19' ou 'US$ 7' (produtos antigos só tinham preco_brl)."""
+    moeda = meta.get("moeda") or "BRL"
+    valor = meta.get("preco", meta.get("preco_brl", "?"))
+    return f"{_SIMBOLO.get(moeda, moeda)} {valor}"
 
 # ------------------------------------------------------------------ limpeza
 _EMOJI = re.compile(
@@ -36,7 +65,8 @@ _EMOJI = re.compile(
 _MANTER = {"\u2610", "\u2611", "\u2612", "\u2713", "\u2714"}   # ☐ ☑ ☒ ✓ ✔ (úteis em checklist)
 _BASTIDOR = re.compile(r"gumroad|p[áa]gina de vendas|\(ou docx\)|pronto para usar no|"
                        r"que (você|o comprador) receber[áa]|texto que ser[áa]|inserido no pdf|\.?docx\b|microsoft word", re.I)
-_SECOES_FORA = re.compile(r"p[áa]gina de vendas|garantia|pol[íi]tica de reembolso|reembolso", re.I)
+_SECOES_FORA = re.compile(r"p[áa]gina de vendas|garantia|pol[íi]tica de reembolso|reembolso|"
+                          r"sales page|guarantee|refund|money[- ]back", re.I)
 _PROMESSAS = [
     (re.compile(r"preenchimento digital", re.I), "anotação num leitor de PDF"),
     (re.compile(r"(seu |no seu )?editor de texto( preferido)?", re.I), "um leitor de PDF"),
@@ -48,12 +78,18 @@ _PROMESSAS = [
     (re.compile(r"campos\s+(edit[áa]veis|preench[íi]veis)", re.I), "espaços para preencher"),
     (re.compile(r"\b(edit[áa]ve(l|is)|preench[íi]ve(l|is))\b", re.I), "para imprimir"),
     (re.compile(r"n[ãa]o h[áa] (pol[íi]tica de )?reembolso[^.\n]*\.?", re.I), ""),
+    # inglês (produtos pro Etsy): o PDF não é editável nem preenchível no computador
+    (re.compile(r"\b(fully\s+)?(editable|fillable)\s+(pdf|fields?|forms?)\b", re.I), "printable pages"),
+    (re.compile(r"\b(editable|fillable)\b", re.I), "printable"),
+    (re.compile(r"[^.\n]*\bno refunds?\b[^.\n]*\.?", re.I), ""),
 ]
 
 
 # limite técnico interno ("só texto") não é argumento de venda: some do produto
 _LIMITACAO = re.compile(r"[^.\n]*\b(texto puro|100\s?% (em )?texto|sem imagens|n[ãa]o (h[áa]|cont[ée]m|possui|tem) "
-                        r"(imagens|gr[áa]ficos|v[íi]deos|recursos interativos))\b[^.\n]*\.\s?", re.I)
+                        r"(imagens|gr[áa]ficos|v[íi]deos|recursos interativos)|text[- ]only|plain text|"
+                        r"no (images|graphics|pictures)|(does not|doesn't) (contain|include|have) "
+                        r"(any )?(images|graphics|pictures))\b[^.\n]*\.\s?", re.I)
 
 
 def _limpar_promessas(txt: str) -> str:
@@ -107,11 +143,11 @@ def _titulos(corpo: str) -> list[str]:
 
 # ------------------------------------------------------------------ PDF
 CSS = """
-@page { size: A4; margin: 22mm 20mm 20mm 20mm;
+@page { size: PAPEL; margin: 22mm 20mm 20mm 20mm;
         @bottom-center { content: counter(page) " / " counter(pages); font-size: 9pt; color: #888; } }
 @page capa { margin: 0; @bottom-center { content: none; } }
 body { font-family: 'DejaVu Sans', 'Liberation Sans', sans-serif; font-size: 10.5pt; line-height: 1.5; color: #222; }
-.capa { page: capa; height: 297mm; background: linear-gradient(160deg, #1f3b73 0%, #3a6ea5 60%, #7fb2e5 100%);
+.capa { page: capa; height: ALTURA; background: linear-gradient(160deg, #1f3b73 0%, #3a6ea5 60%, #7fb2e5 100%);
         color: white; padding: 70mm 22mm 0 22mm; box-sizing: border-box; page-break-after: always; }
 .capa h1 { font-size: 30pt; line-height: 1.15; margin: 0 0 8mm 0; border: none; color: white; }
 .capa .sub { font-size: 14pt; opacity: .92; }
@@ -127,19 +163,21 @@ code { background: #f1f1f1; padding: 0 3px; } .termos { font-size: 9pt; color: #
 """
 
 
-def gerar_pdf(titulo: str, subtitulo: str, corpo_md: str, destino: Path) -> int:
+def gerar_pdf(titulo: str, subtitulo: str, corpo_md: str, destino: Path, idioma: str = "pt") -> int:
     """Monta capa + sumário + conteúdo e grava o PDF. Devolve nº de páginas."""
     import markdown
     from weasyprint import HTML
 
     corpo_html = markdown.markdown(corpo_md, extensions=["tables", "sane_lists"])
     sumario = "".join(f"<li>{_html.escape(re.sub(r'^\d+[.)]?\s*', '', t))}</li>" for t in _titulos(corpo_md))
-    doc = f"""<html><head><meta charset="utf-8"><style>{CSS}</style></head><body>
+    t = _t(idioma)
+    css = CSS.replace("PAPEL", t["papel"]).replace("ALTURA", "279mm" if t["papel"] == "letter" else "297mm")
+    doc = f"""<html lang="{'en' if idioma == 'en' else 'pt-BR'}"><head><meta charset="utf-8"><style>{css}</style></head><body>
 <section class="capa"><h1>{_html.escape(titulo)}</h1><div class="sub">{_html.escape(subtitulo)}</div>
-<div class="rod">Produto digital em PDF · uso pessoal</div></section>
-<section class="sumario"><h2>O que tem aqui</h2><ol>{sumario}</ol></section>
+<div class="rod">{t['rod']}</div></section>
+<section class="sumario"><h2>{t['sumario']}</h2><ol>{sumario}</ol></section>
 {corpo_html}
-<div class="termos">Uso pessoal. Não é permitido revender ou redistribuir este arquivo. {REEMBOLSO}</div>
+<div class="termos">{t['termos']} {t['reembolso']}</div>
 </body></html>"""
     render = HTML(string=doc).render()
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -153,10 +191,31 @@ def _json_da_ia(txt: str) -> dict:
     return json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}
 
 
-async def _embalagem(corpo: str) -> tuple[dict, str]:
+async def _embalagem(corpo: str, idioma: str = "pt") -> tuple[dict, str]:
     import llm_pool
 
     amostra = corpo[:2500]
+    if idioma == "en":
+        sistema = ("You write HONEST Etsy listings for printable digital products for US buyers. "
+                   "Never promise income, results, bonuses or anything not in the table of contents. "
+                   "IMPORTANT: the PDF is NOT editable and has NO fillable fields — buyers print it or "
+                   "annotate it. No emojis. Reply ONLY with valid JSON.")
+        user = ("REAL table of contents:\n- " + "\n- ".join(_titulos(corpo)) +
+                f"\n\nContent sample:\n{amostra}\n\n"
+                'Return JSON: {"titulo": "cover title, max 60 chars", "subtitulo": "max 90 chars", '
+                '"preco": integer USD between 3 and 15, "para_quem": "1 sentence", '
+                '"tags": ["up to 13 Etsy search tags, max 20 chars each"], '
+                '"pagina_de_vendas": "markdown, 120-220 words, in English: buyer pain, what the PDF solves, '
+                'list of what is inside (only table-of-contents items), who it is NOT for"}')
+        for tentativa in range(3):
+            txt, motor = await llm_pool.chat(sistema, user, max_tokens=2500, temperature=0.6 - 0.2 * tentativa)
+            try:
+                d = _json_da_ia(txt)
+            except Exception:
+                d = {}
+            if d.get("titulo") and d.get("pagina_de_vendas"):
+                return d, motor
+        raise RuntimeError("IA não devolveu a embalagem em JSON (3 tentativas)")
     sistema = ("Você é redator de páginas de venda HONESTAS para produtos digitais no Brasil. "
                "Nunca prometa renda, resultados, bônus, garantias ou algo que não esteja no sumário. "
                "ATENÇÃO: o PDF NÃO é editável e NÃO tem campos preenchíveis — é para imprimir ou anotar. "
@@ -164,7 +223,8 @@ async def _embalagem(corpo: str) -> tuple[dict, str]:
     user = ("Sumário REAL do PDF:\n- " + "\n- ".join(_titulos(corpo)) +
             f"\n\nTrecho do conteúdo:\n{amostra}\n\n"
             'Devolva JSON: {"titulo": "até 60 caracteres", "subtitulo": "até 90 caracteres", '
-            '"preco_brl": inteiro entre 12 e 39, "para_quem": "1 frase", '
+            '"preco": inteiro entre 12 e 39 (reais), "para_quem": "1 frase", '
+            '"tags": ["até 13 palavras-chave de busca"], '
             '"pagina_de_vendas": "markdown, 120-220 palavras: dor do comprador, o que o PDF resolve, '
             'lista do que tem dentro (só itens do sumário), para quem NÃO é"}')
     for tentativa in range(3):          # IA às vezes devolve JSON quebrado: tenta de novo
@@ -234,31 +294,38 @@ async def produzir(rascunho: Path, agente: str = "") -> dict[str, Any]:
     corpo = _corpo_do_rascunho(bruto)
     if len(corpo.split()) < 500:
         raise RuntimeError("rascunho curto demais depois da limpeza")
-    emb, motor = await _embalagem(corpo)
+    idioma = (brief or {}).get("idioma") or "pt"
+    t = _t(idioma)
+    emb, motor = await _embalagem(corpo, idioma)
     titulo = _limpar_promessas(_sem_emoji(str(emb["titulo"])))[:80].strip()
     subtitulo = _limpar_promessas(_sem_emoji(str(emb.get("subtitulo", ""))))[:120].strip()
     emb["pagina_de_vendas"] = _limpar_promessas(_sem_emoji(str(emb["pagina_de_vendas"])))
+    lo, hi = t["faixa"]
     try:
-        preco = max(12, min(39, int(emb.get("preco_brl", 19))))
+        preco = max(lo, min(hi, int(float(emb.get("preco", emb.get("preco_brl", 0))))))
     except Exception:
-        preco = 19
+        preco = 19 if idioma == "pt" else 6
+    tags = [re.sub(r"\s+", " ", _sem_emoji(str(x))).strip()[:20] for x in (emb.get("tags") or [])
+            if str(x).strip()][:13]
     pid = time.strftime("%Y%m%d-%H%M%S") + "-" + re.sub(r"[^a-z0-9]+", "-", titulo.lower())[:40].strip("-")
     pasta = PRODUTOS / pid
-    paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf")
+    paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf", idioma)
     # IA às vezes inventa "15 páginas": vale o número REAL do PDF
-    _pg = re.compile(r"\b\d+\s+p[áa]ginas\b", re.I)
+    _pg = re.compile(r"\b\d+\s+(p[áa]ginas|pages)\b", re.I)
     if _pg.search(subtitulo) or _pg.search(corpo):
-        subtitulo = _pg.sub(f"{paginas} páginas", subtitulo)
-        corpo = _pg.sub(f"{paginas} páginas", corpo)
-        paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf")
-    emb["pagina_de_vendas"] = _pg.sub(f"{paginas} páginas", str(emb["pagina_de_vendas"]))
+        subtitulo = _pg.sub(f"{paginas} {t['paginas']}", subtitulo)
+        corpo = _pg.sub(f"{paginas} {t['paginas']}", corpo)
+        paginas = gerar_pdf(titulo, subtitulo, corpo, pasta / "produto.pdf", idioma)
+    emb["pagina_de_vendas"] = _pg.sub(f"{paginas} {t['paginas']}", str(emb["pagina_de_vendas"]))
+    simbolo = _SIMBOLO[t["moeda"]]
     venda = (f"# {titulo}\n\n**{subtitulo}**\n\n{_sem_emoji(str(emb['pagina_de_vendas'])).strip()}\n\n"
-             f"## O que você recebe\n- 1 arquivo PDF com {paginas} páginas (para ler na tela ou imprimir)\n"
-             f"- Entrega imediata por download após a compra\n\n"
-             f"## Reembolso\n{REEMBOLSO}\n\n**Preço sugerido:** R$ {preco}\n")
+             f"## {t['recebe']}\n- {t['arquivo'].format(n=paginas)}\n- {t['entrega']}\n\n"
+             f"## {t['t_reembolso']}\n{t['reembolso']}\n\n**{t['preco']}:** {simbolo} {preco}\n"
+             + (f"\nTags: {', '.join(tags)}\n" if tags else ""))
     (pasta / "produto.md").write_text(f"# {titulo}\n\n{corpo}\n", encoding="utf-8")
     (pasta / "pagina_de_vendas.md").write_text(venda, encoding="utf-8")
-    meta = {"id": pid, "titulo": titulo, "subtitulo": subtitulo, "preco_brl": preco,
+    meta = {"id": pid, "titulo": titulo, "subtitulo": subtitulo, "preco": preco, "moeda": t["moeda"],
+            "idioma": idioma, "tags": tags, **({"preco_brl": preco} if t["moeda"] == "BRL" else {}),
             "paginas": paginas, "palavras": len(corpo.split()), "origem": rascunho.name,
             "motor": motor, "agente": agente, "criado": time.time(), "status": "aguardando_dono",
             "brief": brief.get("id") if brief else "",
@@ -273,13 +340,17 @@ async def _julgar(pasta: Path, meta: dict, corpo: str, brief: dict | None) -> di
         meta["status"] = "aguardando_critica"      # não avaliado ≠ ruim: tenta de novo depois
     else:
         meta["status"] = "aguardando_dono" if meta["critica"]["aprovado"] else "reprovado"
-        pj = meta["critica"].get("preco_justo_brl")
-        if pj and pj < int(meta.get("preco_brl", pj)):          # preço segue o mercado, nunca sobe
-            antigo = int(meta["preco_brl"])
-            meta["preco_brl"] = pj
+        pj = meta["critica"].get("preco_justo")
+        atual = meta.get("preco", meta.get("preco_brl"))
+        if pj and atual and pj < int(atual):                     # preço segue o mercado, nunca sobe
+            antigo_txt = preco_fmt(meta)
+            meta["preco"] = pj
+            if (meta.get("moeda") or "BRL") == "BRL":
+                meta["preco_brl"] = pj
             pv = pasta / "pagina_de_vendas.md"
             if pv.exists():
-                pv.write_text(pv.read_text(encoding="utf-8").replace(f"R$ {antigo}", f"R$ {pj}"), encoding="utf-8")
+                pv.write_text(pv.read_text(encoding="utf-8").replace(antigo_txt, preco_fmt(meta)),
+                              encoding="utf-8")
     (pasta / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
     if brief and meta["status"] != "aguardando_critica":
         import mercado
@@ -323,9 +394,20 @@ def _amostra(corpo: str, n: int = 2000) -> str:
     return f"{corpo[:n]}\n[...]\n{corpo[m - n // 2:m + n // 2]}\n[...]\n{corpo[-n:]}"
 
 
-def _checagens(corpo: str, paginas: int) -> list[str]:
+_PT = re.compile(r"\b(de|que|para|com|não|você|uma|seu|sua|dos|das)\b", re.I)
+_EN = re.compile(r"\b(the|and|you|your|with|for|this|that|of|to)\b", re.I)
+
+
+def _idioma_errado(corpo: str, idioma: str) -> bool:
+    pt, en = len(_PT.findall(corpo)), len(_EN.findall(corpo))
+    return (en < pt) if idioma == "en" else (pt < en)
+
+
+def _checagens(corpo: str, paginas: int, idioma: str = "pt") -> list[str]:
     """Defeitos objetivos que reprovam sem nem perguntar à IA."""
     prob = []
+    if _idioma_errado(corpo, idioma):
+        prob.append("texto no idioma errado (" + ("devia ser inglês" if idioma == "en" else "devia ser português") + ")")
     tit = _titulos(corpo)
     if paginas < 8:
         prob.append(f"só {paginas} páginas")
@@ -344,7 +426,10 @@ async def criticar(corpo: str, meta: dict, brief: dict | None) -> dict:
     """🧐 CRÍTICO: comprador exigente + editor de marketplace. Só nota alta passa."""
     import llm_pool
 
-    objetivos = _checagens(corpo, int(meta.get("paginas", 0)))
+    idioma = meta.get("idioma") or "pt"
+    objetivos = _checagens(corpo, int(meta.get("paginas", 0)), idioma)
+    mercado_txt = ("Mercado: Etsy EUA — comprador AMERICANO; o texto tem que soar inglês nativo e natural. "
+                   if idioma == "en" else "Mercado: Brasil (Hotmart/Kiwify/Etsy). ")
     ctx = ""
     if brief:
         ctx = (f"\nPesquisa de mercado: produto '{brief.get('produto')}', público {brief.get('publico')}, "
@@ -353,12 +438,12 @@ async def criticar(corpo: str, meta: dict, brief: dict | None) -> dict:
     sistema = ("Você é um comprador EXIGENTE e um editor de marketplace (Etsy/Hotmart). Avalie com rigor: "
                "você só pagaria se fosse claramente útil, completo e melhor que o grátis da internet. "
                "Responda SOMENTE JSON.")
-    user = (f"Produto: {meta['titulo']} — {meta.get('subtitulo', '')} ({meta.get('paginas')} págs, "
-            f"R$ {meta.get('preco_brl')}).{ctx}\nSumário: {'; '.join(_titulos(corpo))}\n"
+    user = (mercado_txt + f"Produto: {meta['titulo']} — {meta.get('subtitulo', '')} ({meta.get('paginas')} págs, "
+            f"{preco_fmt(meta)}).{ctx}\nSumário: {'; '.join(_titulos(corpo))}\n"
             "(O PDF final já sai diagramado: capa, sumário, tipografia e tabelas formatadas — avalie o CONTEÚDO.)\n"
             f"Trechos do início, meio e fim:\n{_amostra(corpo)}\n\n"
             'JSON: {"utilidade": 0-10, "acabamento": 0-10, "vende": 0-10, '
-            '"cumpre_pesquisa": 0-10, "preco_justo_brl": inteiro (competitivo frente aos concorrentes), '
+            '"cumpre_pesquisa": 0-10, "preco_justo": inteiro na MESMA moeda do produto (competitivo frente aos concorrentes), '
             '"problemas": ["até 5, específicos"], "veredito": "aprovar|reprovar"}')
     d, erro = None, ""
     for tentativa in range(3):
@@ -381,10 +466,12 @@ async def criticar(corpo: str, meta: dict, brief: dict | None) -> dict:
     aprovado = (not objetivos and d.get("veredito") == "aprovar" and media >= NOTA_MINIMA
                 and min(notas) >= 7 and vende >= 8)       # o dono só quer o que VENDE
     try:
-        preco_justo = max(9, min(39, int(float(d.get("preco_justo_brl") or 0)))) if d.get("preco_justo_brl") else None
+        lo, hi = _t(idioma)["faixa"]
+        bruto = d.get("preco_justo") or d.get("preco_justo_brl")
+        preco_justo = max(lo, min(hi, int(float(bruto)))) if bruto else None
     except (TypeError, ValueError):
         preco_justo = None
-    return {"aprovado": aprovado, "media": media, "preco_justo_brl": preco_justo,
+    return {"aprovado": aprovado, "media": media, "preco_justo": preco_justo,
             "notas": {k: d.get(k) for k in ("utilidade", "acabamento", "vende", "cumpre_pesquisa")},
             "problemas": objetivos + [str(x) for x in d.get("problemas", [])][:5]}
 
@@ -399,7 +486,7 @@ def garantir_pdf(pid: str) -> Path | None:
         meta = json.loads((pasta / "meta.json").read_text(encoding="utf-8"))
         md = (pasta / "produto.md").read_text(encoding="utf-8")
         corpo = re.sub(r"^#\s+.*\n", "", md, count=1)
-        gerar_pdf(meta["titulo"], meta.get("subtitulo", ""), corpo, pdf)
+        gerar_pdf(meta["titulo"], meta.get("subtitulo", ""), corpo, pdf, meta.get("idioma") or "pt")
         return pdf
     except Exception:
         return None

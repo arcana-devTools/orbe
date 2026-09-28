@@ -33,7 +33,7 @@ def test_checagens_objetivas():
 
 
 def test_aprova_so_com_nota_de_venda_alta(monkeypatch):
-    ok = {"utilidade": 9, "acabamento": 9, "vende": 8, "veredito": "aprovar", "preco_justo_brl": 19}
+    ok = {"utilidade": 9, "acabamento": 9, "vende": 8, "veredito": "aprovar", "preco_justo": 19}
     assert _rodar(monkeypatch, ok)["aprovado"]
     fraco = dict(ok, vende=7)                       # média 8.3, mas "vende" 7 → não chega ao dono
     assert not _rodar(monkeypatch, fraco)["aprovado"]
@@ -53,7 +53,7 @@ def test_julgar_status_e_preco(tmp_path, monkeypatch):
     (tmp_path / "pagina_de_vendas.md").write_text("**Preço sugerido:** R$ 29\n", encoding="utf-8")
 
     async def crit(corpo, meta, brief):
-        return {"aprovado": True, "media": 8.7, "preco_justo_brl": 19, "notas": {}, "problemas": []}
+        return {"aprovado": True, "media": 8.7, "preco_justo": 19, "notas": {}, "problemas": []}
     monkeypatch.setattr(A, "criticar", crit)
     m = asyncio.run(A._julgar(tmp_path, dict(META), CORPO_BOM, None))
     assert m["status"] == "aguardando_dono" and m["preco_brl"] == 19

@@ -9,6 +9,7 @@ data/briefs.json: [{id, tema, ..., status: novo|em_producao|usado|descartado}]
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -50,24 +51,48 @@ def achar(bid: str) -> dict | None:
     return next((b for b in ler() if b.get("id") == bid), None)
 
 
-async def pesquisar(tema: str, ja_feitos: list[str] | None = None) -> dict:
+# en = produto em inglês pro Etsy (compradores dos EUA, US$); pt = Brasil (Hotmart/Kiwify, R$)
+IDIOMAS = [x.strip() for x in os.environ.get("ORBE_IDIOMAS", "en,pt").split(",")
+           if x.strip() in ("en", "pt")] or ["pt"]
+MOEDA = {"pt": "BRL", "en": "USD"}
+
+
+def proximo_idioma() -> str:
+    """Revezamento: cada pesquisa nova vai pro idioma da vez (não fica tudo num mercado só)."""
+    return IDIOMAS[len(ler()) % len(IDIOMAS)]
+
+
+async def pesquisar(tema: str, ja_feitos: list[str] | None = None, idioma: str = "pt",
+                    inspiracao: str = "") -> dict:
     import llm_pool
 
+    idioma = idioma if idioma in MOEDA else "pt"
     evitar = "; ".join((ja_feitos or [])[-8:]) or "nenhum"
     sistema = ("Você é pesquisador de mercado de produtos digitais imprimíveis. Use a busca na web. "
                "Seja cético: só conta como evidência o que você VIU numa página (nº de vendas, avaliações, "
                "selo 'Bestseller', posição em ranking). Nunca invente URL ou número.")
-    user = (f"Nicho: {tema}. Pesquise no Etsy (etsy.com) e na Hotmart/Kiwify quais PDFs imprimíveis "
-            "(planners, checklists, fichas, modelos) desse nicho estão vendendo AGORA. Depois proponha UM "
-            "produto em português para o público brasileiro, com demanda comprovada e um diferencial claro "
-            "frente aos concorrentes. LIMITE: o produto é UM PDF só com texto, tabelas, checklists e espaços "
+    if idioma == "en":
+        onde = (f"Nicho: {tema} (traduza para como americanos buscam no Etsy). Pesquise no Etsy (etsy.com) "
+                "quais PDFs imprimíveis (planners, checklists, worksheets, templates) desse nicho estão vendendo "
+                "AGORA (selo Bestseller, nº de vendas/avaliações). Depois proponha UM produto em INGLÊS "
+                "americano para compradores dos EUA no Etsy, com demanda comprovada e um diferencial claro "
+                "frente aos concorrentes. Preencha TODOS os campos do JSON em inglês; preço em dólar (US$). ")
+    else:
+        onde = (f"Nicho: {tema}. Pesquise no Etsy (etsy.com) e na Hotmart/Kiwify quais PDFs imprimíveis "
+                "(planners, checklists, fichas, modelos) desse nicho estão vendendo AGORA. Depois proponha UM "
+                "produto em português para o público brasileiro, com demanda comprovada e um diferencial claro "
+                "frente aos concorrentes. Preço em reais (R$). ")
+    if inspiracao:
+        onde = (f"Um produto nosso JÁ VENDEU: “{inspiracao}”. Proponha um COMPLEMENTO ou variação para o "
+                "mesmo público (não uma cópia), confirmando a demanda na web. ") + onde
+    user = (onde + "LIMITE: o produto é UM PDF só com texto, tabelas, checklists e espaços "
             "para preencher — nada de vídeo, QR code, app, áudio, imagens/fotos, planilha ou arquivo extra; "
             "o diferencial tem que caber nisso (ex.: mais completo, adaptado ao Brasil, níveis, exemplos prontos) "
             "e NÃO cite esse limite no diferencial (ele é interno). "
             f"Não repita estes já feitos: {evitar}.\n"
             'Responda SOMENTE com JSON: {"produto": "nome curto", "publico": "...", "dor": "...", '
             '"itens_obrigatorios": ["5 a 12 itens concretos do PDF"], "diferencial": "...", '
-            '"preco_brl": inteiro na faixa BAIXA-MÉDIA dos concorrentes, "evidencias": [{"url": "https://...", "sinal": "o que prova venda"}], '
+            '"preco": inteiro na faixa BAIXA-MÉDIA dos concorrentes, "evidencias": [{"url": "https://...", "sinal": "o que prova venda"}], '
             '"concorrentes_preco": "faixa de preço vista", "confianca": 0-10}')
     txt, motor = await llm_pool.chat(sistema, user, max_tokens=3000, temperature=0.4, web=True)
     i, j = txt.find("{"), txt.rfind("}")
@@ -79,7 +104,8 @@ async def pesquisar(tema: str, ja_feitos: list[str] | None = None) -> dict:
         "publico": d.get("publico", ""), "dor": d.get("dor", ""),
         "itens_obrigatorios": [str(x) for x in d.get("itens_obrigatorios", [])
                                if not _IMPOSSIVEL.search(str(x))][:12],
-        "diferencial": d.get("diferencial", ""), "preco_brl": d.get("preco_brl", 0),
+        "diferencial": d.get("diferencial", ""), "preco": d.get("preco", d.get("preco_brl", 0)),
+        "idioma": idioma, "moeda": MOEDA[idioma], "inspiracao": inspiracao,
         "concorrentes_preco": d.get("concorrentes_preco", ""), "evidencias": evid[:6],
         "confianca": float(d.get("confianca", 0) or 0), "motor": motor, "criado": time.time(),
     }
@@ -99,9 +125,21 @@ def prompt_do_brief(b: dict) -> str:
     from telegram_sim import REGRAS_PRODUTO
 
     itens = "\n".join(f"- {x}" for x in b.get("itens_obrigatorios", []))
+    if b.get("idioma") == "en":
+        lingua = ("Escreva TODO o produto em INGLÊS americano nativo (en-US): títulos, instruções e exemplos "
+                  "dos EUA (dólar, datas MM/DD). ")
+        faixa = b.get("concorrentes_preco") or "US$ 3-12"
+    else:
+        lingua, faixa = "Em português do Brasil. ", b.get("concorrentes_preco") or "R$ 15-40"
+    try:
+        import aprendizado
+
+        licoes = aprendizado.licoes_prompt()
+    except Exception:
+        licoes = ""
     return (f"Produza o PDF imprimível \"{b['produto']}\" para: {b.get('publico')}. "
             f"Dor que resolve: {b.get('dor')}. Diferencial obrigatório frente aos concorrentes: "
             f"{b.get('diferencial')}.\nItens OBRIGATÓRIOS (cada um com conteúdo completo, pronto pra usar):\n"
-            f"{itens}\nNível de qualidade: melhor que os concorrentes que vendem por "
-            f"{b.get('concorrentes_preco') or 'R$ 15-40'}. Em português do Brasil. Nunca escreva no produto "
-            "que ele é 'texto puro', 'sem imagens' ou similar — o PDF final é diagramado. " + REGRAS_PRODUTO)
+            f"{itens}\nNível de qualidade: melhor que os concorrentes que vendem por {faixa}. " + lingua +
+            "Nunca escreva no produto que ele é 'texto puro', 'sem imagens' ou similar — o PDF final é "
+            "diagramado. " + licoes + REGRAS_PRODUTO)

@@ -90,8 +90,9 @@ async def enviar_produto(meta: dict) -> bool:
     cr = meta.get("critica", {})
     evid = "\n".join(f"• {e.get('sinal', '')[:90]} — {e.get('url', '')[:80]}" for e in meta.get("evidencias", [])[:2])
     legenda = (f"📦 PRODUTO PRONTO: {meta['titulo']}\n{meta.get('subtitulo', '')}\n\n"
-               f"{meta['paginas']} páginas • preço sugerido R$ {meta['preco_brl']}\n"
-               f"🧐 nota do crítico: {cr.get('media', '?')}/10\n"
+               f"{meta['paginas']} páginas • preço sugerido {acabamento.preco_fmt(meta)}\n"
+               + ("🇺🇸 em inglês — pro Etsy (EUA)\n" if meta.get("idioma") == "en" else "🇧🇷 em português\n")
+               + f"🧐 nota do crítico: {cr.get('media', '?')}/10\n"
                + (f"🔎 demanda comprovada:\n{evid}\n" if evid else "")
                + "\nAbre o PDF, confere, e decide:")[:1000]
     teclado = {"inline_keyboard": [[
@@ -126,9 +127,15 @@ async def resumo_diario(forcar: bool = False) -> bool:
 
     if _enviando or (not forcar and _hora_brasilia() != HORA_RESUMO):
         return False
+    import vendas
+
     tok, chat = _cfg()
     novos = [m for m in acabamento._metas() if m.get("status") == "aguardando_dono" and not m.get("notificado")]
-    if not tok or not chat or not novos:
+    ultimo = _ultimo_resumo()
+    vendas_novas = vendas.desde(ultimo)
+    if not tok or not chat or not (novos or vendas_novas):
+        return False
+    if time.time() - ultimo < 20 * 3600 and not forcar:     # nunca 2 resumos no mesmo dia
         return False
     _enviando = True
     try:
@@ -141,9 +148,20 @@ async def resumo_diario(forcar: bool = False) -> bool:
             pesq = sum(1 for b in mercado.ler() if b.get("ts", b.get("criado", 0)) > dia)
         except Exception:
             pesq = 0
-        await _tg("sendMessage", chat_id=chat, text=(
-            f"🌙 Resumo do dia\n{len(novos)} produto(s) passaram no crítico e esperam sua decisão.\n"
-            f"(nas últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)"))
+        try:
+            import aprendizado
+
+            apr = aprendizado.resumo_txt()
+        except Exception:
+            apr = ""
+        partes = ["🌙 Resumo do dia", vendas.resumo_txt(ultimo)]
+        if novos:
+            partes.append(f"📦 {len(novos)} produto(s) passaram no crítico e esperam sua decisão (abaixo).")
+        partes.append(f"(últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)")
+        if apr:
+            partes.append(apr)
+        await _tg("sendMessage", chat_id=chat, text="\n".join(partes))
+        _marcar_resumo()
         for m in novos[:3]:
             if await enviar_produto(m):
                 m["notificado"] = time.time()
@@ -153,6 +171,21 @@ async def resumo_diario(forcar: bool = False) -> bool:
         return True
     finally:
         _enviando = False
+
+
+_RESUMO = Path("data/tg_resumo.json")
+
+
+def _ultimo_resumo() -> float:
+    try:
+        return float(json.loads(_RESUMO.read_text(encoding="utf-8")).get("ultimo", 0))
+    except Exception:
+        return 0.0
+
+
+def _marcar_resumo() -> None:
+    _RESUMO.parent.mkdir(parents=True, exist_ok=True)
+    _RESUMO.write_text(json.dumps({"ultimo": time.time()}), encoding="utf-8")
 
 
 def _pagina_de_vendas(chave: str) -> str:
@@ -172,8 +205,8 @@ def _decidir_produto(chave: str, aprovar: bool) -> str:
         return "produto não encontrado (talvez de antes de um reinício)"
     meta = acabamento.marcar(pid, "aprovado" if aprovar else "refazer")
     if aprovar:
-        return (f"✅ APROVADO: {meta['titulo']} (R$ {meta['preco_brl']})\n"
-                "Fica na fila 'pronto pra vender'. Próxima etapa: publicar no Gumroad.")
+        return (f"✅ APROVADO: {meta['titulo']} ({acabamento.preco_fmt(meta)})\n"
+                "Fica na fila 'pronto pra vender' — publica sozinho quando a loja estiver conectada.")
     return f"🔁 Descartado: {meta['titulo']}. O acabador faz outro a partir do próximo rascunho."
 
 
@@ -185,7 +218,7 @@ async def _produtos_lista() -> str:
         return "nenhum produto finalizado ainda"
     ic = {"aguardando_dono": "⏳", "aprovado": "✅", "refazer": "🔁"}
     return "📦 PRODUTOS\n" + "\n".join(
-        f"{ic.get(m.get('status'), '•')} {html.escape(m['titulo'])} — R$ {m['preco_brl']}, {m['paginas']} págs"
+        f"{ic.get(m.get('status'), '•')} {html.escape(m['titulo'])} — {acabamento.preco_fmt(m)}, {m['paginas']} págs"
         for m in metas)
 
 
@@ -309,6 +342,10 @@ async def _tratar(update: dict) -> None:
                 texto = "uso: /sim <número> (ver /radar)"
         elif cmd.startswith("/produtos"):
             texto = await _produtos_lista()
+        elif cmd.startswith("/vendas"):
+            import vendas
+
+            texto = html.escape(vendas.resumo_txt(time.time() - 86400))
         elif cmd.startswith("/status"):
             texto = await _status()
         elif cmd.startswith("/start"):
@@ -316,7 +353,8 @@ async def _tratar(update: dict) -> None:
                      "/radar — ver ideias caçadas\n"
                      "/sim <nº> — aprovar ideia\n"
                      "/status — colônia\n\n"
-                     "/produtos — produtos prontos\n\n"
+                     "/produtos — produtos prontos\n"
+                     "/vendas — vendas REAIS (dinheiro de verdade)\n\n"
                      f"Só mando 1 mensagem por dia ({HORA_RESUMO}h), e só se tiver produto aprovado pelo crítico.")
         else:
             return
