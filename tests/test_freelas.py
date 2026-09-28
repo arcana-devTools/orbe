@@ -31,6 +31,14 @@ def test_filtro_barra_academico_hora_audio_e_lotada():
     assert "fora" in freelas.filtro_objetivo(_vaga(description="transcrição de áudio de 2h"))
     assert "concorrência" in freelas.filtro_objetivo(_vaga(totalBids="Propostas: 55"))
     assert "pouco" in freelas.filtro_objetivo(_vaga(budget="R$ 20 - 40"))
+    assert "fora" in freelas.filtro_objetivo(_vaga(description="emitir opiniões e avaliações sobre produtos, escrita de reviews"))
+
+
+def test_proposta_ja_escrita_cai_se_regra_nova_barrar():
+    v = _vaga(description="escrita de reviews de produtos")
+    v.update(status="aguardando_dono", proposta="x")
+    freelas._salvar([v])
+    assert freelas.pendentes() == [] and freelas.ler()[0]["status"] == "descartada"
 
 
 def test_checagem_de_honestidade_do_perfil():

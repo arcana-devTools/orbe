@@ -36,7 +36,9 @@ _FORA = re.compile(
     r"faculdade|resenha acad|abnt|transcri[çc][ãa]o|transcrever|[áa]udio|v[íi]deo|locu[çc][ãa]o|narra[çc][ãa]o|"
     r"podcast|design|logo|canva|photoshop|ilustra|edi[çc][ãa]o de v|reuni[ãa]o|chamada|presencial|"
     r"telefone|atendimento|call center|instagram ao vivo|gerenciar redes|social media manager|"
-    r"ghost ?writer de livro inteiro|revis[ãa]o de livro de \d{3})", re.I)
+    r"ghost ?writer de livro inteiro|revis[ãa]o de livro de \d{3}|"
+    r"reviews?\b|avalia[çc](?:ão|ões) (?:de|sobre) produtos|opini(?:ão|ões) sobre produtos|"
+    r"coment[áa]rios? (?:positivos|em massa)|seguidores|curtidas|google meu neg[óo]cio.{0,20}avalia)", re.I)
 
 
 # ------------------------------------------------------------------ sessão
@@ -179,7 +181,8 @@ async def escolher(max_escolhas: int = 3) -> list[dict]:
     user = ("Vagas de freelance (Workana). Nossa equipe entrega SÓ TEXTO feito por IA com revisão: artigos, "
             "revisão/correção, tradução PT↔EN, descrições de produto, copy de anúncio, posts, e-mails, roteiros "
             "escritos. NÃO fazemos: acadêmico, áudio/vídeo, design, reuniões, trabalho contínuo por hora, nada que "
-            "exija conhecimento técnico que possa causar dano (jurídico/médico/financeiro assinados).\n"
+            "exija conhecimento técnico que possa causar dano (jurídico/médico/financeiro assinados), NEM reviews/avaliações/"
+            "opiniões de produtos (não usamos os produtos: seria avaliação falsa).\n"
             f"{lista}\n\nPara cada vaga dê nota 0-10 de CHANCE de entregarmos com excelência e sermos escolhidos. "
             'Responda SOMENTE JSON: [{"i": n, "nota": 0-10, "motivo": "curto", "prazo_dias": n, '
             '"preco_sugerido": inteiro na moeda da vaga}]')
@@ -258,7 +261,19 @@ async def ciclo() -> dict[str, Any]:
 
 
 def pendentes() -> list[dict]:
-    return [v for v in ler() if v.get("status") == "aguardando_dono" and not v.get("notificado")]
+    """Propostas p/ o resumo. O filtro roda de novo: regra nova vale até p/ proposta já escrita."""
+    itens, mudou, out = ler(), False, []
+    for v in itens:
+        if v.get("status") != "aguardando_dono" or v.get("notificado"):
+            continue
+        motivo = filtro_objetivo(v)
+        if motivo:
+            v["status"], v["motivo"], mudou = "descartada", motivo, True
+        else:
+            out.append(v)
+    if mudou:
+        _salvar(itens)
+    return out
 
 
 def marcar(slug_ini: str, status: str) -> dict | None:
@@ -278,4 +293,6 @@ def status() -> dict[str, Any]:
         cont[v["status"]] = cont.get(v["status"], 0) + 1
     return {"sessao": bool(cookie()), "vagas_vistas": len(itens), "por_status": cont,
             "aguardando_dono": [{"titulo": v["titulo"], "orcamento": v["orcamento"], "nota": v.get("nota"),
-                                 "url": v["url"]} for v in itens if v["status"] == "aguardando_dono"]}
+                                 "url": v["url"], "proposta": v.get("proposta", "")} for v in pendentes()],
+            "descartes_recentes": [f"{v['titulo'][:60]} — {v.get('motivo', '')[:90]}"
+                                   for v in itens if v["status"] == "descartada"][-10:]}
