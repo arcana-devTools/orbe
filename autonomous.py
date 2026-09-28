@@ -399,6 +399,26 @@ class Swarm:
         except Exception as exc:
             self.log(f"📈 revisão de encalhados falhou: {type(exc).__name__}")
 
+    async def _freelas(self) -> None:
+        """💼 Workana: busca vagas no máx. a cada 6h, a IA escolhe e escreve propostas (dono aprova às 19h)."""
+        try:
+            import freelas
+
+            if not freelas.cookie():
+                return
+            ultimo = max([v.get("visto", 0) for v in freelas.ler()] + [getattr(self, "_ultimo_freela", 0.0)])
+            if time.time() - ultimo < freelas.GAP_BUSCA_S:
+                return
+            self._ultimo_freela = time.time()
+            r = await freelas.ciclo()
+            if r.get("ok"):
+                self.log(f"💼 Workana: {r['novas']} vaga(s) nova(s), {r['descartadas']} descartada(s) pelo filtro, "
+                         f"{r['propostas']} proposta(s) escrita(s) p/ o dono aprovar")
+            else:
+                self.log(f"💼 Workana: {r.get('motivo')}")
+        except Exception as exc:
+            self.log(f"💼 Workana falhou: {type(exc).__name__}: {str(exc)[:120]}")
+
     async def _acabamento(self) -> None:
         """🧵 ACABADOR: rascunho de missão → PDF vendável → Telegram do dono."""
         if self._expedindo:
@@ -565,6 +585,8 @@ class Swarm:
                 await self._pesquisa_mercado()
             if self.ciclos % 30 == 7:
                 await self._rotina_diaria()
+            if self.ciclos % 10 == 5:
+                await self._freelas()
             try:   # 1 mensagem por dia, no horário do dono, e só se tiver produto aprovado
                 from telegram_sim import resumo_diario
 

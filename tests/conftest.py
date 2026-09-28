@@ -78,3 +78,12 @@ logged_out_selector: "a[href*='nao-existe-login']"
         path.unlink()
     except OSError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _freelas_isolado(tmp_path, monkeypatch):
+    """Nenhum teste lê/escreve as vagas ou a sessão REAIS do Workana."""
+    import freelas
+
+    monkeypatch.setattr(freelas, "VAGAS", tmp_path / "_freelas.json")
+    monkeypatch.setattr(freelas, "SESSAO", tmp_path / "_workana_sessao.txt")

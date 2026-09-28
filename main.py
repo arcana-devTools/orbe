@@ -329,6 +329,43 @@ async def aprendizado_status() -> dict[str, Any]:
     return aprendizado.status()
 
 
+class SessaoIn(BaseModel):
+    cookie: str
+
+
+@app.post("/api/sessoes/workana")
+async def sessao_workana(payload: SessaoIn) -> dict[str, Any]:
+    """Recebe o cookie do Workana (o dono logou no PC dele). Fica só no disco + backup criptografado."""
+    import freelas
+
+    if "workana_session" not in payload.cookie:
+        raise HTTPException(400, "cookie sem workana_session")
+    freelas.salvar_cookie(payload.cookie)
+    return {"ok": True, "logado": await freelas.sessao_ok()}
+
+
+@app.get("/api/freelas")
+async def freelas_status() -> dict[str, Any]:
+    import freelas
+
+    return freelas.status()
+
+
+@app.post("/api/freelas/perfil")
+async def freelas_perfil() -> dict[str, Any]:
+    """Agente de perfil: completa descrição/habilidades/portfólio/histórico com textos honestos da colônia."""
+    import perfil_workana
+
+    return await perfil_workana.completar()
+
+
+@app.post("/api/freelas/ciclo")
+async def freelas_ciclo() -> dict[str, Any]:
+    import freelas
+
+    return await freelas.ciclo()
+
+
 class MlIrIn(BaseModel):
     url: str = ""
 

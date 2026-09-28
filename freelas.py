@@ -1,0 +1,272 @@
+"""💼 FREELAS (Workana) — a colônia acha vagas que CONSEGUE entregar e escreve a proposta.
+
+Fluxo: buscar vagas (sessão do dono, só leitura, poucas vezes por dia) → filtro objetivo →
+IA escolhe as melhores → IA escreve proposta honesta → resumo das 19h com ✅/❌ → (envio quando
+o Workana liberar o perfil do dono) → entrega feita pela colônia, aprovada pelo dono.
+
+Regras:
+- Nada de trabalho acadêmico (TCC, dissertação, monografia…) — é fraude acadêmica.
+- Nada que a colônia não entrega: áudio, vídeo, locução, design, reunião/chamada, vaga por hora.
+- Proposta honesta: sem inventar experiência/portfólio; diz que usa IA com revisão.
+- Sessão (cookie) do dono fica no backup CRIPTOGRAFADO; nunca no git.
+"""
+from __future__ import annotations
+
+import html as _html
+import json
+import re
+import time
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+SESSAO = Path("data/workana_sessao.txt")
+VAGAS = Path("data/freelas.json")
+BASE = "https://www.workana.com"
+BUSCAS = ["/jobs?language=pt&category=writing-translation",
+          "/jobs?language=pt&category=sales-marketing"]
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/140.0.0.0 Safari/537.36")
+GAP_BUSCA_S = 6 * 3600          # 4 buscas/dia no máximo: pouco acesso, não parece robô
+MAX_PROPOSTAS_DIA = 3
+
+_FORA = re.compile(
+    r"\b(tcc|monografia|disserta[çc][ãa]o|tese|artigo cient[íi]fico|trabalho acad[êe]mic|escrita acad[êe]mica|"
+    r"faculdade|resenha acad|abnt|transcri[çc][ãa]o|transcrever|[áa]udio|v[íi]deo|locu[çc][ãa]o|narra[çc][ãa]o|"
+    r"podcast|design|logo|canva|photoshop|ilustra|edi[çc][ãa]o de v|reuni[ãa]o|chamada|presencial|"
+    r"telefone|atendimento|call center|instagram ao vivo|gerenciar redes|social media manager|"
+    r"ghost ?writer de livro inteiro|revis[ãa]o de livro de \d{3})", re.I)
+
+
+# ------------------------------------------------------------------ sessão
+def cookie() -> str:
+    try:
+        return SESSAO.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def salvar_cookie(valor: str) -> None:
+    SESSAO.parent.mkdir(parents=True, exist_ok=True)
+    SESSAO.write_text(valor.strip(), encoding="utf-8")
+    try:
+        SESSAO.chmod(0o600)
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
+
+
+def _hdr(json_: bool = True) -> dict:
+    h = {"Cookie": cookie(), "User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9"}
+    if json_:
+        h.update({"X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/plain, */*"})
+    return h
+
+
+async def sessao_ok() -> bool:
+    if not cookie():
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as cx:
+            r = await cx.get(f"{BASE}/dashboard", headers=_hdr(False))
+        return r.status_code == 200 and "/login" not in str(r.url) and "logout" in r.text.lower()
+    except Exception:
+        return False
+
+
+# ------------------------------------------------------------------ vagas
+def ler() -> list[dict]:
+    try:
+        return json.loads(VAGAS.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _salvar(itens: list[dict]) -> None:
+    VAGAS.parent.mkdir(parents=True, exist_ok=True)
+    VAGAS.write_text(json.dumps(itens[-200:], ensure_ascii=False, indent=1), encoding="utf-8")
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
+
+
+def _txt(v: Any) -> str:
+    return re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", str(v or "")))).strip()
+
+
+def _num(s: str) -> int:
+    m = re.search(r"(\d+)", str(s or ""))
+    return int(m.group(1)) if m else 0
+
+
+def _orcamento(s: str) -> tuple[str, int]:
+    """'R$ 260 - 500' → ('BRL', 260); 'USD 50 - 100' → ('USD', 50); 'Menos de R$ 50' → ('BRL', 0)."""
+    moeda = "USD" if re.search(r"USD|US\$", s or "") else "BRL"
+    nums = [int(x.replace(".", "")) for x in re.findall(r"\d[\d.]*", s or "")]
+    return moeda, (min(nums) if nums and not re.search(r"menos", s or "", re.I) else 0)
+
+
+def normalizar(j: dict) -> dict:
+    moeda, minimo = _orcamento(str(j.get("budget", "")))
+    skills = j.get("skills") or []
+    if isinstance(skills, str):
+        skills = re.findall(r"'anchorText': '([^']+)'", skills)
+    else:
+        skills = [s.get("anchorText", "") for s in skills if isinstance(s, dict)]
+    return {"slug": j.get("slug", ""), "titulo": _txt(j.get("title")), "descricao": _txt(j.get("description"))[:1500],
+            "orcamento": _txt(j.get("budget")), "moeda": moeda, "minimo": minimo,
+            "propostas": _num(j.get("totalBids")), "publicado": _txt(j.get("postedDate")),
+            "por_hora": str(j.get("isHourly")).lower() == "true",
+            "pagamento_verificado": str(j.get("hasVerifiedPaymentMethod")).lower() == "true",
+            "skills": skills, "url": f"{BASE}/job/{j.get('slug', '')}"}
+
+
+def filtro_objetivo(v: dict) -> str:
+    """'' = passa; senão o motivo de descarte."""
+    texto = f"{v['titulo']} {v['descricao']} {' '.join(v['skills'])}"
+    if v["por_hora"]:
+        return "vaga por hora (exige controle de horas)"
+    m = _FORA.search(texto)
+    if m:
+        return f"fora do que a colônia entrega ({m.group(0)})"
+    if v["propostas"] >= 40:
+        return "concorrência alta (40+ propostas)"
+    if v["minimo"] and v["moeda"] == "BRL" and v["minimo"] < 50:
+        return "paga muito pouco"
+    return ""
+
+
+async def buscar() -> list[dict]:
+    novas, conhecidas = [], {v["slug"] for v in ler()}
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as cx:
+        for q in BUSCAS:
+            r = await cx.get(BASE + q, headers=_hdr())
+            if r.status_code != 200 or "json" not in r.headers.get("content-type", ""):
+                raise RuntimeError(f"Workana respondeu {r.status_code} (sessão expirou?)")
+            res = r.json().get("results", {})
+            res = res.get("results", []) if isinstance(res, dict) else res
+            for j in res:
+                v = normalizar(j)
+                if v["slug"] and v["slug"] not in conhecidas:
+                    conhecidas.add(v["slug"])
+                    v["visto"] = time.time()
+                    v["motivo"] = filtro_objetivo(v)
+                    v["status"] = "descartada" if v["motivo"] else "candidata"
+                    novas.append(v)
+    itens = ler() + novas
+    _salvar(itens)
+    return novas
+
+
+# ------------------------------------------------------------------ IA: escolher + propor
+def _json(txt: str) -> Any:
+    i, j = min([p for p in (txt.find("["), txt.find("{")) if p >= 0] or [-1]), max(txt.rfind("]"), txt.rfind("}"))
+    return json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}
+
+
+async def escolher(max_escolhas: int = 3) -> list[dict]:
+    """IA ranqueia as candidatas: só fica o que dá pra entregar SÓ com texto, bem feito."""
+    import llm_pool
+
+    itens = ler()
+    cands = [v for v in itens if v["status"] == "candidata"][-12:]
+    if not cands:
+        return []
+    lista = "\n".join(f"{i}. {v['titulo']} | {v['orcamento']} | {v['propostas']} propostas | "
+                      f"{v['descricao'][:350]}" for i, v in enumerate(cands))
+    user = ("Vagas de freelance (Workana). Nossa equipe entrega SÓ TEXTO feito por IA com revisão: artigos, "
+            "revisão/correção, tradução PT↔EN, descrições de produto, copy de anúncio, posts, e-mails, roteiros "
+            "escritos. NÃO fazemos: acadêmico, áudio/vídeo, design, reuniões, trabalho contínuo por hora, nada que "
+            "exija conhecimento técnico que possa causar dano (jurídico/médico/financeiro assinados).\n"
+            f"{lista}\n\nPara cada vaga dê nota 0-10 de CHANCE de entregarmos com excelência e sermos escolhidos. "
+            'Responda SOMENTE JSON: [{"i": n, "nota": 0-10, "motivo": "curto", "prazo_dias": n, '
+            '"preco_sugerido": inteiro na moeda da vaga}]')
+    txt, _ = await llm_pool.chat("Você é um freelancer sênior realista e criterioso. Responda só JSON.",
+                                 user, max_tokens=1500, temperature=0.2)
+    notas = _json(txt)
+    notas = notas if isinstance(notas, list) else []
+    escolhidas = []
+    for n in notas:
+        try:
+            v = cands[int(n.get("i"))]
+        except Exception:
+            continue
+        v["nota"] = float(n.get("nota", 0) or 0)
+        v["motivo_ia"] = str(n.get("motivo", ""))[:160]
+        v["prazo_dias"] = int(n.get("prazo_dias", 3) or 3)
+        v["preco_sugerido"] = int(float(n.get("preco_sugerido") or v["minimo"] or 0))
+        v["status"] = "escolhida" if v["nota"] >= 7 else "descartada"
+        if v["status"] == "descartada":
+            v["motivo"] = f"IA deu nota {v['nota']:.0f}: {v['motivo_ia']}"
+    for v in cands:   # a IA não citou → não serve
+        if v["status"] == "candidata":
+            v["status"], v["motivo"] = "descartada", "IA não recomendou"
+    escolhidas = sorted([v for v in cands if v["status"] == "escolhida"], key=lambda x: -x["nota"])[:max_escolhas]
+    for v in cands:
+        if v["status"] == "escolhida" and v not in escolhidas:
+            v["status"], v["motivo"] = "descartada", "fora do top do dia"
+    _salvar(itens)
+    return escolhidas
+
+
+async def escrever_proposta(v: dict) -> str:
+    import llm_pool
+
+    user = (f"Vaga: {v['titulo']}\nOrçamento: {v['orcamento']}\nDescrição: {v['descricao']}\n\n"
+            f"Escreva a proposta (português do Brasil, 90-160 palavras) para esta vaga no Workana. Regras: "
+            "comece pelo problema do cliente (não por 'Olá, meu nome é'); diga em 3-4 passos concretos COMO "
+            f"vai fazer; prazo {v.get('prazo_dias', 3)} dias; ofereça uma amostra curta grátis (1 parágrafo) "
+            "para ele avaliar; termine com UMA pergunta objetiva sobre o projeto. Honestidade: perfil novo, sem "
+            "avaliações ainda — NÃO invente experiência, clientes, portfólio ou números. Diga de forma natural "
+            "que trabalha com ferramentas de IA e revisão humana cuidadosa. Sem emojis. Só o texto da proposta.")
+    txt, _ = await llm_pool.chat("Você escreve propostas de freelance curtas, específicas e honestas.",
+                                 user, max_tokens=900, temperature=0.5)
+    return re.sub(r"\n{3,}", "\n\n", txt.strip())[:1800]
+
+
+async def ciclo() -> dict[str, Any]:
+    """1 rodada: busca → filtra → escolhe → escreve propostas. Respeita o intervalo entre buscas."""
+    if not cookie():
+        return {"ok": False, "motivo": "sem sessão do Workana"}
+    novas = await buscar()
+    feitas = sum(1 for v in ler() if v.get("proposta") and time.time() - v.get("proposta_em", 0) < 86400)
+    esc = await escolher(max(0, MAX_PROPOSTAS_DIA - feitas)) if feitas < MAX_PROPOSTAS_DIA else []
+    for v in esc:
+        try:
+            v["proposta"] = await escrever_proposta(v)
+            v["proposta_em"] = time.time()
+            v["status"] = "aguardando_dono"
+        except Exception as exc:
+            v["status"], v["motivo"] = "candidata", f"proposta falhou: {type(exc).__name__}"
+    itens = ler()
+    por_slug = {v["slug"]: v for v in esc}
+    itens = [por_slug.get(v["slug"], v) for v in itens]
+    _salvar(itens)
+    return {"ok": True, "novas": len(novas), "descartadas": sum(1 for v in novas if v["status"] == "descartada"),
+            "propostas": len([v for v in esc if v.get("proposta")])}
+
+
+def pendentes() -> list[dict]:
+    return [v for v in ler() if v.get("status") == "aguardando_dono" and not v.get("notificado")]
+
+
+def marcar(slug_ini: str, status: str) -> dict | None:
+    itens = ler()
+    alvo = next((v for v in itens if v["slug"].startswith(slug_ini)), None)
+    if alvo:
+        alvo["status"] = status
+        alvo[f"{status}_em"] = time.time()
+        _salvar(itens)
+    return alvo
+
+
+def status() -> dict[str, Any]:
+    itens = ler()
+    cont: dict[str, int] = {}
+    for v in itens:
+        cont[v["status"]] = cont.get(v["status"], 0) + 1
+    return {"sessao": bool(cookie()), "vagas_vistas": len(itens), "por_status": cont,
+            "aguardando_dono": [{"titulo": v["titulo"], "orcamento": v["orcamento"], "nota": v.get("nota"),
+                                 "url": v["url"]} for v in itens if v["status"] == "aguardando_dono"]}

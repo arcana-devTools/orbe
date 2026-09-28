@@ -133,7 +133,13 @@ async def resumo_diario(forcar: bool = False) -> bool:
     novos = [m for m in acabamento._metas() if m.get("status") == "aguardando_dono" and not m.get("notificado")]
     ultimo = _ultimo_resumo()
     vendas_novas = vendas.desde(ultimo)
-    if not tok or not chat or not (novos or vendas_novas):
+    try:
+        import freelas
+
+        propostas = freelas.pendentes()
+    except Exception:
+        propostas = []
+    if not tok or not chat or not (novos or vendas_novas or propostas):
         return False
     if time.time() - ultimo < 20 * 3600 and not forcar:     # nunca 2 resumos no mesmo dia
         return False
@@ -157,6 +163,8 @@ async def resumo_diario(forcar: bool = False) -> bool:
         partes = ["🌙 Resumo do dia", vendas.resumo_txt(ultimo)]
         if novos:
             partes.append(f"📦 {len(novos)} produto(s) passaram no crítico e esperam sua decisão (abaixo).")
+        if propostas:
+            partes.append(f"💼 {len(propostas)} proposta(s) de freela no Workana esperando seu OK (abaixo).")
         partes.append(f"(últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)")
         if apr:
             partes.append(apr)
@@ -167,10 +175,51 @@ async def resumo_diario(forcar: bool = False) -> bool:
                 m["notificado"] = time.time()
                 p = acabamento.PRODUTOS / m["id"] / "meta.json"
                 p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+        for v in propostas[:3]:
+            if await enviar_proposta(v):
+                itens = freelas.ler()
+                for x in itens:
+                    if x["slug"] == v["slug"]:
+                        x["notificado"] = time.time()
+                freelas._salvar(itens)
         __import__("state_backup").sujo()
         return True
     finally:
         _enviando = False
+
+
+async def enviar_proposta(v: dict) -> bool:
+    """Vaga do Workana + proposta escrita pela colônia, com ✅ enviar / ❌ pular."""
+    tok, chat = _cfg()
+    if not tok or not chat:
+        return False
+    chave = v["slug"][:48]
+    texto = (f"💼 FREELA: {v['titulo']}\n💵 {v['orcamento']} • {v['propostas']} propostas • {v['publicado']}\n"
+             + ("✅ cliente com pagamento verificado\n" if v.get("pagamento_verificado") else "")
+             + f"🧐 chance (IA): {v.get('nota', '?')}/10 — {v.get('motivo_ia', '')}\n"
+             f"💰 preço sugerido: {v.get('preco_sugerido', '?')} • prazo {v.get('prazo_dias', '?')} dia(s)\n"
+             f"{v['url']}\n\n📝 Proposta:\n{v.get('proposta', '')}")[:4000]
+    teclado = {"inline_keyboard": [[{"text": "✅ Enviar", "callback_data": f"fok_{chave}"},
+                                    {"text": "❌ Pular", "callback_data": f"fno_{chave}"}]]}
+    try:
+        r = await _tg("sendMessage", chat_id=chat, text=texto, reply_markup=teclado,
+                      disable_web_page_preview=True)
+        return r.get("ok") is True
+    except Exception:
+        return False
+
+
+def _decidir_freela(chave: str, enviar: bool) -> str:
+    import freelas
+
+    v = freelas.marcar(chave, "aprovada" if enviar else "pulada")
+    if not v:
+        return "vaga não encontrada"
+    if not enviar:
+        return f"❌ Pulei: {html.escape(v['titulo'][:80])}"
+    return (f"✅ Aprovada: {html.escape(v['titulo'][:80])}\n"
+            "O Workana ainda não liberou seu perfil para enviar propostas; assim que liberar, "
+            "a colônia envia as aprovadas sozinha.")
 
 
 _RESUMO = Path("data/tg_resumo.json")
@@ -328,6 +377,8 @@ async def _tratar(update: dict) -> None:
             texto = _rejeitar(int(data[4:]))
         elif data.startswith("pok_") or data.startswith("prf_"):
             texto = _decidir_produto(data[4:], data.startswith("pok_"))
+        elif data.startswith("fok_") or data.startswith("fno_"):
+            texto = _decidir_freela(data[4:], data.startswith("fok_"))
         elif data.startswith("pvd_"):
             texto = _pagina_de_vendas(data[4:])
         await _tg("answerCallbackQuery", callback_query_id=cb.get("id"))
