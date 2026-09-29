@@ -67,7 +67,15 @@ def _socks_vivo(px: str) -> bool:
 
 
 def _warp_conf() -> str:
-    """Perfil do WARP: do cofre (conta 'warp') ou do arquivo deixado no sandbox."""
+    """Perfil do WARP: variável ORBE_WARP_CONF (Render), cofre ou arquivo local."""
+    env = os.environ.get("ORBE_WARP_CONF")
+    if env:
+        return env.strip()
+    for arq in (Path("data/warp.conf"), Path("data/_uic/warp/wgcf-profile.conf")):
+        try:
+            return arq.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
     try:
         d = VAULT.get("warp")
         if d:
