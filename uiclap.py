@@ -38,14 +38,35 @@ class UiclapErro(RuntimeError):
     pass
 
 
+LOGIN_ARQ = Path("data/uiclap_login.json")   # no Render: vai no backup criptografado (como a sessão do 99)
+
+
 def credencial() -> dict | None:
     try:
         from secrets_vault import VAULT
 
-        e = VAULT.get("uiclap")
-        return (e or {}).get("extra") or None
+        e = (VAULT.get("uiclap") or {}).get("extra")
+        if e:
+            return e
+    except Exception:
+        pass
+    try:
+        return json.loads(LOGIN_ARQ.read_text(encoding="utf-8")) or None
     except Exception:
         return None
+
+
+def guardar_login_servidor(extra: dict) -> None:
+    faltam = [k for k in ("refreshToken", "apiKey", "uid", "user", "fbase_key") if not extra.get(k)]
+    if faltam:
+        raise UiclapErro("faltam campos: " + ", ".join(faltam))
+    LOGIN_ARQ.parent.mkdir(parents=True, exist_ok=True)
+    LOGIN_ARQ.write_text(json.dumps(extra, ensure_ascii=False), encoding="utf-8")
+    _tok.update(id="", exp=0)
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
 
 
 def salvar_credencial(bruto: str) -> dict:

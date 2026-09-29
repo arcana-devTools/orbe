@@ -466,6 +466,17 @@ async def uiclap_publicar_servidor(request: Request, proxy: str = "") -> dict[st
         return {"ok": False, "erro": f"{type(e).__name__}: {e}"[:800], "trace": traceback.format_exc()[-1500:]}
 
 
+@app.post("/api/uiclap/login")
+async def uiclap_login(request: Request) -> dict[str, Any]:
+    import uiclap
+
+    try:
+        uiclap.guardar_login_servidor(await request.json())
+    except uiclap.UiclapErro as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
 @app.post("/api/uiclap/kit-teste")
 async def uiclap_kit_teste() -> dict[str, Any]:
     """Kit de TESTE: o favorito sobe miolo+capa e APAGA o rascunho (não publica)."""

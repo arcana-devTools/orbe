@@ -28,7 +28,7 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 DATA = Path("data")
-ARQUIVOS = ["autonomous.json", "autonomo_jobs.json", "renda_radar.json",
+ARQUIVOS = ["uiclap_login.json", "autonomous.json", "autonomo_jobs.json", "renda_radar.json",
             "autopilot.json", "tg_offset.txt", "prefs.json", "briefs.json",
             "ml_sessao.json", "afiliados_ml.json", "vendas.json", "aprendizado.json",
             "tg_resumo.json", "workana_sessao.txt", "freelas.json", "workana_perfil.json", "workana_estado.json", "99_sessao.txt"]
