@@ -453,17 +453,21 @@ text-decoration:none;font-size:18px}} li{{margin:6px 0}} code{{background:#eee;p
 
 @app.post("/api/uiclap/publicar-servidor")
 async def uiclap_publicar_servidor(request: Request, proxy: str = "") -> dict[str, Any]:
-    """O próprio servidor abre o portal e roda o favorito (sem o dono). Publica o 1º kit 'pronto' da fila."""
+    """O próprio servidor abre o portal e roda o favorito (sem o dono), em segundo plano."""
     import uiclap
 
-    try:
-        return await uiclap.publicar_no_servidor(_origem_publica(request), proxy or None)
-    except uiclap.UiclapErro as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:  # noqa: BLE001
-        import traceback
+    if not uiclap.PUB["rodando"]:
+        asyncio.create_task(uiclap.publicar_em_fundo(_origem_publica(request), proxy or None))
+        await asyncio.sleep(0.2)
+    return {"ok": True, "rodando": uiclap.PUB["rodando"]}
 
-        return {"ok": False, "erro": f"{type(e).__name__}: {e}"[:800], "trace": traceback.format_exc()[-1500:]}
+
+@app.get("/api/uiclap/publicar-servidor")
+async def uiclap_publicar_status() -> dict[str, Any]:
+    import uiclap
+
+    return {"rodando": uiclap.PUB["rodando"], "desde_s": round(time.time() - uiclap.PUB["inicio"]),
+            "ultimo": uiclap.PUB["ultimo"]}
 
 
 @app.post("/api/uiclap/login")
@@ -474,7 +478,13 @@ async def uiclap_login(request: Request) -> dict[str, Any]:
         uiclap.guardar_login_servidor(await request.json())
     except uiclap.UiclapErro as e:
         raise HTTPException(400, str(e))
-    return {"ok": True}
+    import state_backup
+
+    try:
+        b = await state_backup.salvar(forcar=True)
+    except Exception as e:  # noqa: BLE001
+        b = {"erro": str(e)[:200]}
+    return {"ok": True, "backup": {k: v for k, v in (b or {}).items() if k in ("ok", "erro", "bytes", "motivo")}}
 
 
 @app.post("/api/uiclap/kit-teste")

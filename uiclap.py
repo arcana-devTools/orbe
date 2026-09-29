@@ -458,6 +458,7 @@ def proximo_kit() -> dict | None:
 
 
 def kit_capa(kid: str, lombada_mm: float) -> bytes:
+    lombada_mm = round(lombada_mm * 2) / 2
     m = _kit_meta(kid)
     if not m:
         raise UiclapErro("kit não existe")
@@ -591,6 +592,24 @@ fim();
 
 
 # ------------------------------------------------------------------ publicação SEM o dono: o servidor roda o favorito
+import asyncio  # noqa: E402
+
+PUB = {"rodando": False, "ultimo": None, "inicio": 0.0}
+
+
+async def publicar_em_fundo(origem: str, proxy: str | None = None) -> None:
+    if PUB["rodando"]:
+        return
+    PUB.update(rodando=True, inicio=time.time(), ultimo=None)
+    try:
+        PUB["ultimo"] = await publicar_no_servidor(origem, proxy)
+    except Exception as e:  # noqa: BLE001
+        PUB["ultimo"] = {"ok": False, "erro": f"{type(e).__name__}: {e}"[:600]}
+    finally:
+        PUB["rodando"] = False
+        PUB["ultimo"]["em"] = time.time()
+
+
 async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: int = 240) -> dict[str, Any]:
     """Abre um Chromium COM janela (Xvfb), injeta o login e roda o mesmo pub.js do favorito.
     Headless é recusado pelo anti-robô; com janela ele passou (teste 29/09)."""
@@ -612,14 +631,25 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
     user["stsTokenManager"] = {"refreshToken": r["refresh_token"], "accessToken": r["id_token"],
                                "expirationTime": int(time.time() * 1000) + 3500 * 1000}
     reg = {"fbase_key": e["fbase_key"], "value": user}
+    k = proximo_kit()
+    if not k:
+        return {"ok": False, "erro": "nenhum livro pronto na fila"}
+    est = (k.get("paginas") or 60) * 0.07        # 64 págs → 4 mm, 76 → 5 mm (lombada vem do UICLAP depois)
+    import gc
+
+    for lb in sorted({max(0.0, round(est * 2) / 2 + d) for d in (-1, -0.5, 0, 0.5, 1)} | {float(round(est))}):
+        await asyncio.to_thread(kit_capa, k["kid"], lb)   # capa pronta ANTES do Chromium (512 MB no Render)
+    gc.collect()
     src = f"{origem.rstrip('/')}/uic/pub.js?t={token_favorito()}&v={int(time.time())}"
     out: dict[str, Any] = {"appcheck": [], "caixa": "", "ok": False}
     async with async_playwright() as pw:
-        b = await pw.chromium.launch(headless=not os.environ.get("DISPLAY"), args=BASE_ARGS,
+        leve = ["--renderer-process-limit=2", "--disable-gpu", "--disable-extensions",
+                "--disable-features=Translate,MediaRouter,OptimizationHints", "--js-flags=--max-old-space-size=192"]
+        b = await pw.chromium.launch(headless=not os.environ.get("DISPLAY"), args=[*BASE_ARGS, *leve],
                                      ignore_default_args=IGNORE_ARGS, **({"proxy": {"server": proxy}} if proxy else {}))
         try:
             ctx = await b.new_context(locale="pt-BR", timezone_id="America/Sao_Paulo",
-                                      viewport={"width": 1366, "height": 900})
+                                      viewport={"width": 1280, "height": 800})
             await ctx.add_init_script(STEALTH_JS)
             page = await ctx.new_page()
             page.on("request", lambda rq: out["appcheck"].append(
