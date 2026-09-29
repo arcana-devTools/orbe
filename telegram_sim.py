@@ -284,6 +284,16 @@ def _decidir_produto(chave: str, aprovar: bool) -> str:
         return "produto não encontrado (talvez de antes de um reinício)"
     meta = acabamento.marcar(pid, "aprovado" if aprovar else "refazer")
     if aprovar:
+        if (meta.get("idioma") or "pt") == "pt":
+            try:
+                import uiclap
+
+                uiclap.kit_de_produto(pid)
+                n = sum(1 for k in uiclap.kits() if k.get("status") == "pronto" and not k.get("teste"))
+                return (f"✅ APROVADO: {meta['titulo']}\n📚 Livro físico pronto pro UICLAP ({n} na fila). "
+                        "Quando puder: abra portal.uiclap.com no Chrome e clique no favorito 📚 Publicar Orbe.")
+            except Exception as e:
+                print("kit UICLAP falhou:", e, flush=True)
         return (f"✅ APROVADO: {meta['titulo']} ({acabamento.preco_fmt(meta)})\n"
                 "Fica na fila 'pronto pra vender' — publica sozinho quando a loja estiver conectada.")
     return f"🔁 Descartado: {meta['titulo']}. O acabador faz outro a partir do próximo rascunho."

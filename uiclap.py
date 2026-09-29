@@ -326,3 +326,226 @@ async def testar_navegador(login_bruto: str) -> dict[str, Any]:
     reais = [t for t in vistos if t.startswith("eyJ")]
     return {"logado": "login" not in url.lower(), "url": url, "titulo": titulo, "chamadas": len(vistos),
             "anti_robo_ok": bool(reais), "erros": sorted({t for t in vistos if not t.startswith("eyJ")})[:3]}
+
+
+# ------------------------------------------------------------------ PLANO B: kit + favorito no Chrome do dono
+# O anti-robô (App Check) do UICLAP recusa IP de servidor. Então o servidor só PREPARA o livro (kit) e um
+# favorito no Chrome do dono faz o upload pelo próprio portal (IP de casa, navegador de verdade).
+KITS = Path("data/uiclap_kits")
+VALOR_AUTOR = 8.0            # R$ que o dono recebe por exemplar (o UICLAP soma custo de impressão + taxa)
+_BISAC = [  # (palavras-chave, código, descrição) — categoria principal do livro
+    (r"dinheiro|finan|investi|renda|or[çc]amento|d[íi]vida", "BUS050000", "NEGÓCIOS E ECONOMIA / Finanças Pessoais"),
+    (r"neg[óo]cio|empreend|vend|marketing|cliente|empresa", "BUS000000", "NEGÓCIOS E ECONOMIA / Geral"),
+    (r"receita|cozinh|culin", "CKB000000", "CULINÁRIA / Geral"),
+    (r"sa[úu]de|dieta|exerc|sono|ansiedade", "HEA000000", "SAÚDE E BEM-ESTAR / Geral"),
+    (r"filho|beb[êe]|crian[çc]a|fam[íi]lia|pais", "FAM000000", "FAMÍLIA E RELACIONAMENTOS / Geral"),
+    (r"estud|concurso|enem|aprend|professor|aula", "EDU000000", "EDUCAÇÃO / Geral"),
+    (r"computador|programa|excel|intelig[êe]ncia artificial|\bia\b|chatgpt|aplicativo", "COM000000",
+     "COMPUTAÇÃO / Geral"),
+    (r"deus|f[ée]|ora[çc][ãa]o|b[íi]blia", "REL000000", "RELIGIÃO / Geral"),
+]
+
+
+def token_favorito() -> str:
+    import hashlib
+    import os
+
+    senha = os.environ.get("ORBE_PANEL_PASSWORD", "") or "local"
+    return hashlib.sha256(("orbe-uiclap:" + senha).encode()).hexdigest()[:32]
+
+
+def _kit_meta(kid: str) -> dict | None:
+    try:
+        return json.loads((KITS / kid / "kit.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _kit_salvar(meta: dict) -> None:
+    (KITS / meta["kid"]).mkdir(parents=True, exist_ok=True)
+    (KITS / meta["kid"] / "kit.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def kits() -> list[dict]:
+    out = [m for m in (_kit_meta(p.name) for p in KITS.glob("*")) if m]
+    return sorted(out, key=lambda m: m.get("criado", 0))
+
+
+def _categoria(texto: str) -> dict:
+    for pat, cod, desc in _BISAC:
+        if re.search(pat, texto, re.I):
+            return {"bisac": cod, "descricao": desc}
+    return {"bisac": "SEL000000", "descricao": "AUTOAJUDA / Geral"}
+
+
+def criar_kit(titulo: str, subtitulo: str, autor: str, corpo_md: str, sinopse: str, palavras: list[str],
+              origem: str = "", teste: bool = False, valor_autor: float = VALOR_AUTOR) -> dict:
+    sinopse = re.sub(r"\s+", " ", re.sub(r"[#*_>`]|\[|\]\([^)]*\)", "", sinopse)).strip()
+    if len(sinopse) < 200:
+        sinopse = (sinopse + " " + re.sub(r"\s+", " ", re.sub(r"[#*_>`]", "", corpo_md))[:600]).strip()
+    sinopse = sinopse[:1900].rsplit(" ", 1)[0] if len(sinopse) > 1900 else sinopse
+    pdf, paginas = montar_miolo(titulo, subtitulo, autor, corpo_md)
+    kid = time.strftime("%Y%m%d-%H%M%S") + ("-teste" if teste else "")
+    (KITS / kid).mkdir(parents=True, exist_ok=True)
+    (KITS / kid / "miolo.pdf").write_bytes(pdf)
+    meta = {"kid": kid, "status": "pronto", "teste": teste, "criado": time.time(), "origem": origem,
+            "paginas": paginas, "valor_autor": valor_autor,
+            "info": {"titulo": titulo[:250], "subtitulo": subtitulo[:250], "autor": autor, "descricao": sinopse,
+                     "pessoas": [{"tipo": "A", "nome": autor}],
+                     "categorias": [_categoria(f"{titulo} {subtitulo} {sinopse}")],
+                     "palavrasChave": [str(p)[:40] for p in palavras][:7]}}
+    _kit_salvar(meta)
+    return meta
+
+
+def kit_de_produto(pid: str, autor: str = "Victor") -> dict:
+    """Produto PT aprovado pelo dono → kit de livro físico para o UICLAP."""
+    import acabamento
+
+    pasta = acabamento.PRODUTOS / pid
+    meta = json.loads((pasta / "meta.json").read_text(encoding="utf-8"))
+    corpo = (pasta / "produto.md").read_text(encoding="utf-8").split("\n", 2)[-1]
+    venda = (pasta / "pagina_de_vendas.md").read_text(encoding="utf-8") if (pasta / "pagina_de_vendas.md").exists() else ""
+    venda = re.split(r"(?im)^##\s*(o que voc[êe] recebe|reembolso|garantia)", venda)[0]
+    venda = "\n".join(l for l in venda.splitlines()[1:] if not re.search(r"(?i)pdf|download|arquivo|pre[çc]o", l))
+    return criar_kit(meta["titulo"], meta.get("subtitulo", ""), autor, corpo, venda, meta.get("tags", []), origem=pid)
+
+
+def proximo_kit() -> dict | None:
+    for m in kits():
+        if m.get("status") == "pronto":
+            return m
+    return None
+
+
+def kit_capa(kid: str, lombada_mm: float) -> bytes:
+    m = _kit_meta(kid)
+    if not m:
+        raise UiclapErro("kit não existe")
+    alvo = KITS / kid / f"capa_{lombada_mm:.1f}.jpg"
+    if not alvo.exists():
+        i = m["info"]
+        alvo.write_bytes(montar_capa(i["titulo"], i.get("subtitulo", ""), i["autor"], i["descricao"][:900], lombada_mm))
+    return alvo.read_bytes()
+
+
+def kit_resultado(kid: str, dado: dict) -> dict:
+    m = _kit_meta(kid)
+    if not m:
+        raise UiclapErro("kit não existe")
+    m["status"] = ("testado" if m.get("teste") else "publicado") if dado.get("ok") else "falhou"
+    m["resultado"] = json.loads(json.dumps(dado, ensure_ascii=False)[:6000]) if len(json.dumps(dado)) <= 6000 else {
+        k: (str(v)[:1500] if not isinstance(v, (int, float, bool)) else v) for k, v in dado.items()}
+    m["resultado_em"] = time.time()
+    _kit_salvar(m)
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
+    return m
+
+
+def script_favorito(origem: str) -> str:
+    return (_JS.replace("__ORIGEM__", origem.rstrip("/")).replace("__TOKEN__", token_favorito()))
+
+
+def link_favorito(origem: str) -> str:
+    o = origem.rstrip("/")
+    return ("javascript:(function(){var s=document.createElement('script');s.src='" + o + "/uic/pub.js?t="
+            + token_favorito() + "&v='+Date.now();document.body.appendChild(s);})();")
+
+
+_JS = r"""(async () => {
+const O = "__ORIGEM__", T = "__TOKEN__";
+if (window.__orbeRodando) return; window.__orbeRodando = true;
+const box = document.createElement("div");
+box.style.cssText = "position:fixed;top:12px;right:12px;z-index:2147483647;background:#fff;color:#111;border:3px solid #f26a21;border-radius:10px;padding:12px 14px;width:360px;max-height:75vh;overflow:auto;font:14px/1.45 sans-serif;box-shadow:0 6px 24px #0005";
+document.body.appendChild(box);
+const log = (m, cor) => { const p = document.createElement("div"); p.textContent = m; if (cor) p.style.color = cor; box.appendChild(p); box.scrollTop = 1e9; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fim = () => { window.__orbeRodando = false; const b = document.createElement("button"); b.textContent = "Fechar"; b.style.cssText = "margin-top:8px;padding:4px 12px"; b.onclick = () => box.remove(); box.appendChild(b); };
+log("📚 Orbe → UICLAP", "#f26a21");
+if (location.host !== "portal.uiclap.com") { log("Abra o portal.uiclap.com (logado) e clique no favorito de novo.", "red"); return fim(); }
+const idb = (db, store) => new Promise(res => { const o = indexedDB.open(db); o.onerror = () => res([]);
+  o.onsuccess = () => { try { const r = o.result.transaction(store, "readonly").objectStore(store).getAll();
+    r.onsuccess = () => res(r.result || []); r.onerror = () => res([]); } catch (e) { res([]); } }; });
+async function idToken() {
+  const u = (await idb("firebaseLocalStorageDb", "firebaseLocalStorage"))[0];
+  if (!u) throw "você não está logado no portal";
+  const v = u.value, s = v.stsTokenManager;
+  if (s.expirationTime - Date.now() > 120000) return s.accessToken;
+  const r = await fetch("https://securetoken.googleapis.com/v1/token?key=" + v.apiKey, { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(s.refreshToken) });
+  return (await r.json()).id_token;
+}
+async function appCheck() {
+  const vs = await idb("firebase-app-check-database", "firebase-app-check-store");
+  const ok = vs.map(x => (x && x.value) ? x.value : x).filter(x => x && x.token && (x.expireTimeMillis || 0) > Date.now() + 60000);
+  return ok.length ? ok[0].token : null;
+}
+let AC = null;
+async function api(path, method = "GET", body) {
+  const h = { "Authorization": "Bearer " + await idToken(), "X-Firebase-AppCheck": AC, "Accept": "application/json, text/plain, */*" };
+  let b;
+  if (body !== undefined) { if (typeof body === "string") { b = body; h["Content-Type"] = "application/x-www-form-urlencoded"; } else { b = JSON.stringify(body); h["Content-Type"] = "application/json"; } }
+  const r = await fetch("/data/v2/" + path, { method, headers: h, body: b, credentials: "include" });
+  if (!r.ok) throw path.split("/").slice(0, 2).join("/") + ": HTTP " + r.status;
+  const t = await r.text(); try { return JSON.parse(t); } catch (e) { return t; }
+}
+const ok = (d, etapa) => { const n = d && typeof d === "object" ? d.retorno : 0; if (!(n > 0)) throw etapa + ": retorno " + n + " " + JSON.stringify(d).slice(0, 120); return n; };
+const avisa = (kid, res) => fetch(O + "/uic/kit/" + kid + "/resultado?t=" + T, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(res) }).catch(() => {});
+let k = null, doc = 0, etapa = "início";
+try {
+  AC = await appCheck();
+  if (!AC) { log("Aperte F5 (recarregar), espere 5 segundos e clique no favorito de novo.", "red"); return fim(); }
+  log("Buscando o livro no Orbe (pode levar até 1 min se o servidor estiver dormindo)…");
+  const f = await (await fetch(O + "/uic/fila?t=" + T)).json();
+  if (!f.kit) { log("Nenhum livro pronto na fila agora. 🙂"); return fim(); }
+  k = f.kit; log((k.teste ? "🧪 TESTE (não publica): " : "Livro: ") + k.info.titulo);
+  etapa = "informações";
+  const base = await api("doc/0");
+  doc = ok(await api("doc/info/0", "POST", Object.assign({}, base.info, { idioma: "pt_BR", productType: "BOOK", idade: 7 }, k.info)), "informações");
+  log("✓ rascunho criado (" + doc + ")");
+  etapa = "miolo";
+  const tk = await api("uploadticket/m/" + doc); ok(tk, "ticket do miolo");
+  const pdf = await (await fetch(O + "/uic/kit/" + k.kid + "/miolo.pdf?t=" + T)).blob();
+  let r = await fetch(tk.url, { method: "PUT", headers: { "Content-Type": "application/pdf" }, body: pdf });
+  if (!r.ok) throw "envio do PDF: HTTP " + r.status;
+  r = await fetch("https://process.uiclap.com/v2/cont/ups/", { method: "POST", headers: { "Authorization": "Ticket " + tk.mensagem }, body: "" });
+  const m = await r.json(); if (m.r !== 0) throw "miolo recusado (r=" + m.r + ") " + (m.m || "");
+  log("✓ miolo lido: " + m.p + " páginas, lombada " + m.l + " mm");
+  const car = (await api("doc/" + doc)).caracteristicas;
+  Object.assign(car, { paginas: m.p, lombada: m.l, tamanhoInfo: { i: 0, largura: m.w, altura: m.h } });
+  await sleep(8000);
+  let d = null;
+  for (let i = 0; i < 8; i++) { try { d = await api("doc/miolov2/" + doc, "POST", car); if (d && d.retorno > 0) break; } catch (e) { if (i === 7) throw e; } await sleep(6000); }
+  ok(d, "salvar miolo"); log("✓ miolo salvo");
+  etapa = "capa";
+  const jpg = await (await fetch(O + "/uic/kit/" + k.kid + "/capa.jpg?t=" + T + "&lombada=" + m.l)).blob();
+  Object.assign(car, { temOrelha: false, larguraOrelha: 0 });
+  const tc = await api("ticket/c/" + doc, "POST", car); ok(tc, "ticket da capa");
+  const fd = new FormData(); fd.append("a", jpg, "arq.jpg"); fd.append("t", "image/jpeg");
+  r = await fetch("https://process.uiclap.com/capa/upso/", { method: "POST", headers: { "Authorization": "Ticket " + tc.mensagem }, body: fd });
+  const c = await r.json(); if (c.r !== 0) throw "capa recusada (r=" + c.r + ") " + (c.m || "");
+  Object.assign(car, { temCapa: true, logoCapa: { tipo: 5, posicao: 2 }, logoLombada: { tipo: 8, posicao: 2 } });
+  ok(await api("doc/capa/" + doc, "POST", car), "salvar capa"); log("✓ capa salva");
+  if (k.teste) {
+    etapa = "limpeza"; await api("doc/" + doc, "DELETE");
+    log("✅ TESTE OK: miolo e capa foram aceitos. Rascunho de teste apagado.", "green");
+    await avisa(k.kid, { ok: true, teste: true, doc, paginas: m.p, lombada: m.l }); return fim();
+  }
+  etapa = "finalizar";
+  const idl = ok(await api("doc/finaliza/" + doc, "POST", ""), "finalizar"); log("✓ edição finalizada");
+  etapa = "publicar";
+  const t = await api("titulo/" + idl);
+  ok(await api("titulo/publica/" + idl, "POST", { acabamento: t.acabamento, isPrivado: false, senha: "", valorAutor: k.valor_autor }), "publicar");
+  const t2 = await api("titulo/" + idl);
+  log("✅ PUBLICADO! Pode fechar. O Orbe vai mostrar no resumo.", "green");
+  await avisa(k.kid, { ok: true, doc, id_livro: idl, titulo: t2 });
+} catch (e) {
+  log("✗ Parou em '" + etapa + "': " + e, "red");
+  if (k) await avisa(k.kid, { ok: false, doc, etapa, erro: String(e) });
+  log(doc ? "O Orbe foi avisado. O rascunho ficou em 'Títulos em edição'." : "O Orbe foi avisado.");
+}
+fim();
+})();"""

@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -219,6 +219,24 @@ async def _senha_do_painel(request, call_next):
     """ORBE_PANEL_PASSWORD definida → navegador pede usuário/senha (qualquer
     usuário, senha tem que bater). Sem a variável: aberto (uso local)."""
     senha = os.environ.get("ORBE_PANEL_PASSWORD", "")
+    if request.url.path.startswith("/uic/"):          # favorito do UICLAP: chave própria (?t=) + CORS do portal
+        from starlette.responses import Response
+
+        cors = {"Access-Control-Allow-Origin": "https://portal.uiclap.com",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600"}
+        if request.method == "OPTIONS":
+            return Response(status_code=204, headers=cors)
+        import hmac
+
+        import uiclap
+
+        if not hmac.compare_digest(request.query_params.get("t", ""), uiclap.token_favorito()):
+            return Response("chave do favorito inválida", status_code=401, headers=cors)
+        resp = await call_next(request)
+        for k2, v2 in cors.items():
+            resp.headers[k2] = v2
+        return resp
     if senha and request.url.path not in _ABERTOS:
         import base64 as _b64
         import hmac
@@ -359,6 +377,90 @@ async def freelas_perfil99() -> dict[str, Any]:
     import freelas99
 
     return await freelas99.completar_perfil()
+
+
+def _origem_publica(request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    return f"{proto}://{request.headers.get('host', request.url.netloc)}"
+
+
+@app.get("/uic/pub.js", include_in_schema=False)
+async def uic_script(request: Request):
+    import uiclap
+
+    return Response(uiclap.script_favorito(_origem_publica(request)), media_type="application/javascript",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/uic/fila", include_in_schema=False)
+async def uic_fila() -> dict[str, Any]:
+    import uiclap
+
+    k = uiclap.proximo_kit()
+    return {"kit": {kk: k[kk] for kk in ("kid", "info", "valor_autor", "teste", "paginas")} if k else None}
+
+
+@app.get("/uic/kit/{kid}/miolo.pdf", include_in_schema=False)
+async def uic_miolo(kid: str):
+    import uiclap
+
+    arq = uiclap.KITS / Path(kid).name / "miolo.pdf"
+    if not arq.exists():
+        raise HTTPException(404, "kit não existe")
+    return Response(arq.read_bytes(), media_type="application/pdf")
+
+
+@app.get("/uic/kit/{kid}/capa.jpg", include_in_schema=False)
+async def uic_capa(kid: str, lombada: float = 0.0):
+    import uiclap
+
+    jpg = await asyncio.to_thread(uiclap.kit_capa, Path(kid).name, max(0.0, min(lombada, 80.0)))
+    return Response(jpg, media_type="image/jpeg")
+
+
+@app.post("/uic/kit/{kid}/resultado", include_in_schema=False)
+async def uic_resultado(kid: str, request: Request) -> dict[str, Any]:
+    import uiclap
+
+    m = uiclap.kit_resultado(Path(kid).name, await request.json())
+    return {"ok": True, "status": m["status"]}
+
+
+@app.get("/uiclap/favorito", include_in_schema=False)
+async def uiclap_favorito(request: Request):
+    import html as _h
+
+    import uiclap
+
+    link = uiclap.link_favorito(_origem_publica(request))
+    fila = [f"{_h.escape(k['info']['titulo'])} — {k['status']}{' (teste)' if k.get('teste') else ''}"
+            for k in uiclap.kits()[-8:]]
+    pagina = f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Orbe → UICLAP</title>
+<style>body{{font:16px/1.5 sans-serif;max-width:640px;margin:24px auto;padding:0 16px;color:#222}}
+a.fav{{display:inline-block;background:#f26a21;color:#fff;padding:12px 18px;border-radius:8px;font-weight:bold;
+text-decoration:none;font-size:18px}} li{{margin:6px 0}} code{{background:#eee;padding:1px 4px}}</style></head><body>
+<h2>📚 Favorito "Publicar Orbe"</h2>
+<p><a class="fav" href="{_h.escape(link)}">📚 Publicar Orbe</a></p>
+<ol><li>Aperte <b>Ctrl+Shift+B</b> para mostrar a barra de favoritos do Chrome.</li>
+<li><b>Arraste o botão laranja</b> acima até a barra de favoritos.</li>
+<li>Abra o <b>portal.uiclap.com</b> (logado) e clique no favorito <b>📚 Publicar Orbe</b>.</li>
+<li>Uma caixinha laranja aparece no canto e mostra cada etapa. Não feche a aba até aparecer ✅.</li></ol>
+<h3>Fila</h3><ul>{''.join(f'<li>{x}</li>' for x in fila) or '<li>vazia</li>'}</ul></body></html>"""
+    return HTMLResponse(pagina)
+
+
+@app.post("/api/uiclap/kit-teste")
+async def uiclap_kit_teste() -> dict[str, Any]:
+    """Kit de TESTE: o favorito sobe miolo+capa e APAGA o rascunho (não publica)."""
+    import uiclap
+
+    corpo = "\n\n".join(f"## Capítulo {i}\n\n" + ("Texto de teste da colônia Orbe para validar o envio de miolo "
+                                                     "e capa no UICLAP. " * 45) for i in range(1, 21))
+    m = await asyncio.to_thread(uiclap.criar_kit, "Teste Orbe (não publicar)", "Rascunho de teste automático",
+                                "Victor", corpo, "Rascunho de teste automático da colônia Orbe. " * 8, ["teste"],
+                                "teste", True)
+    return {k: m[k] for k in ("kid", "paginas", "status", "teste")}
 
 
 class UiclapTesteIn(BaseModel):
