@@ -460,6 +460,10 @@ async def uiclap_publicar_servidor(request: Request, proxy: str = "") -> dict[st
         return await uiclap.publicar_no_servidor(_origem_publica(request), proxy or None)
     except uiclap.UiclapErro as e:
         raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        import traceback
+
+        return {"ok": False, "erro": f"{type(e).__name__}: {e}"[:800], "trace": traceback.format_exc()[-1500:]}
 
 
 @app.post("/api/uiclap/kit-teste")
