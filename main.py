@@ -361,6 +361,17 @@ async def freelas_perfil99() -> dict[str, Any]:
     return await freelas99.completar_perfil()
 
 
+class UiclapTesteIn(BaseModel):
+    login: str
+
+
+@app.post("/api/uiclap/teste-navegador")
+async def uiclap_teste_navegador(payload: UiclapTesteIn) -> dict[str, Any]:
+    import uiclap
+
+    return await uiclap.testar_navegador(payload.login)
+
+
 @app.get("/api/freelas")
 async def freelas_status() -> dict[str, Any]:
     import freelas

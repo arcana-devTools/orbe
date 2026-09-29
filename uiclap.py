@@ -281,3 +281,43 @@ body {{ margin: 0; font-family: 'DejaVu Sans', sans-serif; }}
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=92, dpi=(DPI_CAPA, DPI_CAPA))
     return buf.getvalue()
+
+
+# ------------------------------------------------------------------ navegador de verdade (teste do anti-robô)
+async def testar_navegador(login_bruto: str) -> dict[str, Any]:
+    """Abre o portal no Chrome do servidor com o login do dono e diz se o App Check (anti-robô) passou.
+    Não guarda nada e não devolve tokens."""
+    from browser import MANAGER
+
+    i = login_bruto.find("[{")
+    item = json.JSONDecoder().raw_decode(login_bruto[i:])[0][0]
+    v = dict(item["value"])
+    async with httpx.AsyncClient(timeout=30) as cx:
+        r = (await cx.post(f"https://securetoken.googleapis.com/v1/token?key={v['apiKey']}",
+                           data={"grant_type": "refresh_token",
+                                 "refresh_token": v["stsTokenManager"]["refreshToken"]})).json()
+    v["stsTokenManager"] = {"refreshToken": r["refresh_token"], "accessToken": r["id_token"],
+                            "expirationTime": int(time.time() * 1000) + 3500 * 1000}
+    reg = {"fbase_key": item["fbase_key"], "value": v}
+    ctx = await MANAGER.context_for("uiclap")
+    page = await ctx.new_page()
+    vistos: list[str] = []
+    page.on("request", lambda rq: vistos.append(rq.headers.get("x-firebase-appcheck", "")) if "/data/v2/" in rq.url else None)
+    try:
+        await page.goto("https://portal.uiclap.com/", wait_until="domcontentloaded")
+        await page.wait_for_timeout(3000)
+        await page.evaluate("""(reg) => new Promise((res, rej) => {
+            const o = indexedDB.open('firebaseLocalStorageDb', 1);
+            o.onupgradeneeded = () => o.result.createObjectStore('firebaseLocalStorage', {keyPath: 'fbase_key'});
+            o.onsuccess = () => { const tx = o.result.transaction('firebaseLocalStorage', 'readwrite');
+                tx.objectStore('firebaseLocalStorage').put(reg); tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error); };
+            o.onerror = () => rej(o.error); })""", reg)
+        await page.goto("https://portal.uiclap.com/conta", wait_until="domcontentloaded")
+        await page.wait_for_timeout(15000)
+        titulo = await page.title()
+    finally:
+        await page.close()
+        await MANAGER.close_profile("uiclap")
+    reais = [t for t in vistos if t.startswith("eyJ")]
+    return {"logado": "Perfil" in titulo or "Portal" in titulo, "titulo": titulo, "chamadas": len(vistos),
+            "anti_robo_ok": bool(reais), "erros": sorted({t for t in vistos if not t.startswith("eyJ")})[:3]}
