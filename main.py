@@ -411,6 +411,27 @@ async def uic_miolo(kid: str):
     return Response(pdf, media_type="application/pdf")
 
 
+@app.post("/uic/kit/{kid}/recursos", include_in_schema=False)
+async def uic_recursos(kid: str, payload: dict[str, Any], t: str = "") -> dict[str, Any]:
+    """O publicador (GitHub Actions) manda os links de afiliado do tema do livro.
+
+    Só entra se a chave do favorito estiver certa. Nada mais do Orbe muda:
+    o PDF é refeito com a página "Recursos recomendados" na próxima vez que
+    o publicador pedir o miolo.
+    """
+    import hmac
+
+    import uiclap
+
+    if not hmac.compare_digest(t, uiclap.token_favorito()):
+        raise HTTPException(401, "chave do favorito inválida")
+    rec = [r for r in (payload.get("recursos") or []) if r.get("curto")]
+    if not rec:
+        raise HTTPException(400, "nenhum link")
+    salvo = await asyncio.to_thread(uiclap.kit_guardar_recursos, Path(kid).name, rec)
+    return {"ok": bool(salvo), "links": len(rec)}
+
+
 @app.get("/uic/kit/{kid}/capa.jpg", include_in_schema=False)
 async def uic_capa(kid: str, lombada: float = 0.0):
     import uiclap

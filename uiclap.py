@@ -479,6 +479,26 @@ def kit_de_produto(pid: str, autor: str = "Victor") -> dict:
     return criar_kit(meta["titulo"], meta.get("subtitulo", ""), autor, corpo, venda, meta.get("tags", []), origem=pid)
 
 
+def kit_guardar_recursos(kid: str, rec: list[dict]) -> bool:
+    """Grava os links de afiliado mandados pelo publicador e refaz o PDF."""
+    import json
+
+    m = _kit_meta(kid)
+    if not m:
+        return False
+    limpo = [{"titulo": str(r.get("titulo", ""))[:90], "curto": str(r["curto"])[:200],
+              "longo": str(r.get("longo", ""))[:400]} for r in rec if r.get("curto")][:6]
+    (KITS / kid).mkdir(parents=True, exist_ok=True)
+    (KITS / kid / "recursos.json").write_text(json.dumps(limpo, ensure_ascii=False, indent=1),
+                                              encoding="utf-8")
+    (KITS / kid / "miolo.pdf").unlink(missing_ok=True)   # refeito com a página de recursos
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
+    return True
+
+
 def _kit_recursos(kid: str, m: dict) -> list[dict]:
     """Links de afiliado do tema do livro (Shopee; ML entra quando o dono for aprovado).
 
