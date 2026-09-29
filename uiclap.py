@@ -388,6 +388,7 @@ def criar_kit(titulo: str, subtitulo: str, autor: str, corpo_md: str, sinopse: s
     kid = time.strftime("%Y%m%d-%H%M%S") + ("-teste" if teste else "")
     (KITS / kid).mkdir(parents=True, exist_ok=True)
     (KITS / kid / "miolo.pdf").write_bytes(pdf)
+    (KITS / kid / "corpo.md").write_text(corpo_md, encoding="utf-8")
     meta = {"kid": kid, "status": "pronto", "teste": teste, "criado": time.time(), "origem": origem,
             "paginas": paginas, "valor_autor": valor_autor,
             "info": {"titulo": titulo[:250], "subtitulo": subtitulo[:250], "autor": autor, "descricao": sinopse,
@@ -395,6 +396,10 @@ def criar_kit(titulo: str, subtitulo: str, autor: str, corpo_md: str, sinopse: s
                      "categorias": [_categoria(f"{titulo} {subtitulo} {sinopse}")],
                      "palavrasChave": [str(p)[:40] for p in palavras][:7]}}
     _kit_salvar(meta)
+    try:
+        __import__("state_backup").sujo()
+    except Exception:
+        pass
     return meta
 
 
@@ -409,6 +414,19 @@ def kit_de_produto(pid: str, autor: str = "Victor") -> dict:
     venda = re.split(r"(?im)^##\s*(o que voc[êe] recebe|reembolso|garantia)", venda)[0]
     venda = "\n".join(l for l in venda.splitlines()[1:] if not re.search(r"(?i)pdf|download|arquivo|pre[çc]o", l))
     return criar_kit(meta["titulo"], meta.get("subtitulo", ""), autor, corpo, venda, meta.get("tags", []), origem=pid)
+
+
+def kit_miolo(kid: str) -> bytes:
+    arq = KITS / kid / "miolo.pdf"
+    if not arq.exists():                       # Render reiniciou: refaz o PDF a partir do texto guardado
+        m = _kit_meta(kid)
+        if not m or not (KITS / kid / "corpo.md").exists():
+            raise UiclapErro("kit não existe")
+        i = m["info"]
+        pdf, _ = montar_miolo(i["titulo"], i.get("subtitulo", ""), i["autor"],
+                              (KITS / kid / "corpo.md").read_text(encoding="utf-8"))
+        arq.write_bytes(pdf)
+    return arq.read_bytes()
 
 
 def proximo_kit() -> dict | None:

@@ -404,10 +404,11 @@ async def uic_fila() -> dict[str, Any]:
 async def uic_miolo(kid: str):
     import uiclap
 
-    arq = uiclap.KITS / Path(kid).name / "miolo.pdf"
-    if not arq.exists():
+    try:
+        pdf = await asyncio.to_thread(uiclap.kit_miolo, Path(kid).name)
+    except uiclap.UiclapErro:
         raise HTTPException(404, "kit não existe")
-    return Response(arq.read_bytes(), media_type="application/pdf")
+    return Response(pdf, media_type="application/pdf")
 
 
 @app.get("/uic/kit/{kid}/capa.jpg", include_in_schema=False)

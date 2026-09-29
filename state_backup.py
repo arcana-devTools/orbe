@@ -89,6 +89,9 @@ def empacotar() -> bytes:
             for p in prod.glob("*/*"):
                 if p.suffix in (".json", ".md"):
                     tar.add(p, arcname=f"produtos/{p.parent.name}/{p.name}")
+        for p in (DATA / "uiclap_kits").glob("*/*"):      # kits de livro: só texto; o PDF é refeito sob demanda
+            if p.suffix in (".json", ".md"):
+                tar.add(p, arcname=f"uiclap_kits/{p.parent.name}/{p.name}")
         res = DATA / "resultados"
         if res.exists():
             mds = sorted(res.glob("*.md"), key=lambda x: x.stat().st_mtime)[-MAX_RESULTADOS:]
