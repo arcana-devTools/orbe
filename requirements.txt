@@ -12,3 +12,6 @@ weasyprint>=62
 markdown>=3.5
 pypdfium2>=4.30
 Pillow>=10.0
+segno>=1.6
+socksio>=1.0
+h11>=0.14

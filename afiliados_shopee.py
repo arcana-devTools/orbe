@@ -52,10 +52,94 @@ def _cabecalho() -> dict[str, str]:
             "X-CSRFToken": csrf, "Cookie": ck}
 
 
+# ---- IP residencial: de datacenter o portal da Shopee pede captcha ------------
+_PORTA = int(os.environ.get("ORBE_WARP_PORTA", "25345"))
+_PROC: dict[str, Any] = {}
+_BIN = Path(os.environ.get("ORBE_TMP", "/tmp")) / "wireproxy"
+
+
+def _socks_vivo(px: str) -> bool:
+    try:
+        with httpx.Client(proxy=px, timeout=12) as c:
+            return "warp=on" in c.get("https://www.cloudflare.com/cdn-cgi/trace").text
+    except Exception:
+        return False
+
+
+def _warp_conf() -> str:
+    """Perfil do WARP: do cofre (conta 'warp') ou do arquivo deixado no sandbox."""
+    try:
+        d = VAULT.get("warp")
+        if d:
+            e = d.get("extra") if isinstance(d, dict) else d.extra
+            if e.get("conf"):
+                return e["conf"]
+    except Exception:
+        pass
+    for arq in (Path("data/_uic/warp/wgcf-profile.conf"), Path("/tmp/wgcf-profile.conf")):
+        try:
+            return arq.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+    return ""
+
+
+def _wireproxy() -> Path | None:
+    if _BIN.exists() and _BIN.stat().st_size > 1_000_000:
+        return _BIN
+    url = ("https://github.com/whyvl/wireproxy/releases/latest/download/"
+           "wireproxy_linux_amd64.tar.gz")
+    try:
+        with httpx.Client(timeout=90, follow_redirects=True) as c:
+            r = c.get(url)
+        import io
+        import tarfile
+
+        with tarfile.open(fileobj=io.BytesIO(r.content)) as t:
+            for m in t.getmembers():
+                if m.name.endswith("wireproxy"):
+                    _BIN.write_bytes(t.extractfile(m).read())
+                    _BIN.chmod(0o755)
+                    return _BIN
+    except Exception:
+        return None
+    return None
+
+
+def _socks() -> str | None:
+    """Socks5 pronto: o ORBE_SOCKS do ambiente, ou um túnel WARP que a gente mesmo sobe."""
+    px = os.environ.get("ORBE_SOCKS")
+    if px and _socks_vivo(px):
+        return px
+    local = f"socks5://127.0.0.1:{_PORTA}"
+    if _socks_vivo(local):
+        return local
+    p = _PROC.get("p")
+    if p and p.poll() is None and _socks_vivo(local):
+        return local
+    conf, bin = _warp_conf(), _wireproxy()
+    if not conf or not bin:
+        return px or None
+    ini = _BIN.parent / f"warp_{_PORTA}.ini"
+    ini.write_text(conf + f"\n[Socks5]\nBindAddress = 127.0.0.1:{_PORTA}\n", encoding="utf-8")
+    try:
+        import subprocess
+
+        _PROC["p"] = subprocess.Popen([str(bin), "-s", "-c", str(ini)],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return px or None
+    for _ in range(30):
+        time.sleep(1)
+        if _socks_vivo(local):
+            return local
+    return px or None
+
+
 def _cliente() -> httpx.Client:
-    """ORBE_SOCKS = proxy socks5 (WARP). Sem ele, o portal costuma pedir captcha."""
-    return httpx.Client(headers=_cabecalho(), timeout=40,
-                        proxy=os.environ.get("ORBE_SOCKS") or None, follow_redirects=False)
+    """ORBE_SOCKS = proxy socks5 pronto; sem ele a gente sobe o WARP."""
+    return httpx.Client(headers=_cabecalho(), timeout=40, proxy=_socks(),
+                        follow_redirects=False)
 
 
 def _cache() -> dict[str, Any]:
@@ -106,6 +190,18 @@ def converter(url: str, sub_ids: list[str] | None = None) -> dict[str, str]:
                                       "em": time.time()}
     _salva(c)
     return c["links"][url]
+
+
+def qr_base64(url: str) -> str:
+    """PNG do QR code da URL, pronto para <img src="data:image/png;base64,...">."""
+    import base64
+    import io
+
+    import segno
+
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="png", scale=6, border=2)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
 def url_busca(palavras: str) -> str:

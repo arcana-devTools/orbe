@@ -234,11 +234,24 @@ table { border-collapse: collapse; width: 100%; font-size: 8.5pt; page-break-ins
 th, td { border: 1px solid #999; padding: 3px 4px; vertical-align: top; } th { background: #eee; }
 blockquote { border-left: 3px solid #999; margin: 6px 0; padding: 2px 10px; color: #333; }
 .branca { page: limpa; page-break-before: always; }
+.recursos { page-break-before: always; }
+.recursos .nota { font-size: 8.5pt; color: #555; }
+table.rec { border: 0; width: 100%; page-break-inside: avoid; }
+table.rec td { border: 0; padding: 3mm 0; vertical-align: middle; }
+table.rec td.qr { width: 28mm; }
+table.rec img { width: 25mm; height: 25mm; display: block; }
+table.rec .t { font-weight: bold; font-size: 10pt; }
+table.rec .l { font-size: 9.5pt; color: #222; }
 """
 
 
-def montar_miolo(titulo: str, subtitulo: str, autor: str, corpo_md: str) -> tuple[bytes, int]:
-    """PDF 14x21 pronto para impressão. Nº de páginas múltiplo de 4 (o UICLAP arredonda para cima)."""
+def montar_miolo(titulo: str, subtitulo: str, autor: str, corpo_md: str,
+                 recursos: list[dict] | None = None) -> tuple[bytes, int]:
+    """PDF 14x21 pronto para impressão. Nº de páginas múltiplo de 4 (o UICLAP arredonda para cima).
+
+    recursos: lista de {"titulo", "curto"} — vira a página "Recursos recomendados",
+    com QR code (link impresso sem QR quase ninguém digita).
+    """
     import markdown
     from weasyprint import HTML
 
@@ -251,13 +264,34 @@ def montar_miolo(titulo: str, subtitulo: str, autor: str, corpo_md: str) -> tupl
                       for t in acabamento._titulos(corpo))
     ano = time.strftime("%Y")
 
+    rec_html = ""
+    if recursos:
+        import base64
+
+        try:
+            import afiliados_shopee
+
+            qr = afiliados_shopee.qr_base64
+        except Exception:      # sem o módulo, imprime só o endereço
+            qr = lambda u: ""
+        linhas = "".join(
+            f"<tr><td class='qr'>"
+            + (f"<img src='data:image/png;base64,{qr(r['curto'])}'>" if qr(r["curto"]) else "")
+            + f"</td><td><span class='t'>{_html.escape(r.get('titulo', ''))}</span><br>"
+            + f"<span class='l'>{_html.escape(r['curto'])}</span></td></tr>" for r in recursos)
+        rec_html = ("<section class='recursos'><h3>Recursos recomendados</h3>"
+                    "<p class='nota'>Os endereços abaixo são links de afiliado: se você comprar "
+                    "por algum deles, eu recebo uma comissão da loja, sem nenhum custo extra "
+                    "para você. Aponte a câmera do celular para o quadrado ou digite o endereço.</p>"
+                    f"<table class='rec'>{linhas}</table></section>")
+
     def _html_doc(brancas: int) -> str:
         return (f"<html lang='pt-BR'><head><meta charset='utf-8'><style>{CSS_MIOLO}</style></head><body>"
                 f"<section class='rosto'><h1>{_html.escape(titulo)}</h1><div class='sub'>{_html.escape(subtitulo)}"
                 f"</div><div class='aut'>{_html.escape(autor)}</div></section>"
                 f"<section class='creditos'>{_html.escape(titulo)}<br>© {ano} {_html.escape(autor)}. "
                 f"Todos os direitos reservados.<br>Publicação independente.</section>"
-                f"<section class='sumario'><h3>Sumário</h3><ol>{sumario}</ol></section>{corpo_html}"
+                f"<section class='sumario'><h3>Sumário</h3><ol>{sumario}</ol></section>{corpo_html}{rec_html}"
                 + "<div class='branca'></div>" * brancas + "</body></html>")
 
     r = HTML(string=_html_doc(0)).render()
@@ -405,8 +439,16 @@ def criar_kit(titulo: str, subtitulo: str, autor: str, corpo_md: str, sinopse: s
     if len(sinopse) < 200:
         sinopse = (sinopse + " " + re.sub(r"\s+", " ", re.sub(r"[#*_>`]", "", corpo_md))[:600]).strip()
     sinopse = sinopse[:1900].rsplit(" ", 1)[0] if len(sinopse) > 1900 else sinopse
-    pdf, paginas = montar_miolo(titulo, subtitulo, autor, corpo_md)
     kid = time.strftime("%Y%m%d-%H%M%S") + ("-teste" if teste else "")
+    rec: list[dict] = []
+    if __import__("os").environ.get("ORBE_AFILIADOS", "1") == "1":
+        try:
+            import afiliados_shopee
+
+            rec = afiliados_shopee.recursos(titulo, 4)
+        except Exception as e:  # noqa: BLE001  — livro nunca depende do afiliado
+            print(f"[orbe] recursos de afiliado indisponíveis: {str(e)[:120]}")
+    pdf, paginas = montar_miolo(titulo, subtitulo, autor, corpo_md, recursos=rec)
     (KITS / kid).mkdir(parents=True, exist_ok=True)
     (KITS / kid / "miolo.pdf").write_bytes(pdf)
     (KITS / kid / "corpo.md").write_text(corpo_md, encoding="utf-8")
@@ -437,6 +479,36 @@ def kit_de_produto(pid: str, autor: str = "Victor") -> dict:
     return criar_kit(meta["titulo"], meta.get("subtitulo", ""), autor, corpo, venda, meta.get("tags", []), origem=pid)
 
 
+def _kit_recursos(kid: str, m: dict) -> list[dict]:
+    """Links de afiliado do tema do livro (Shopee; ML entra quando o dono for aprovado).
+
+    Nunca derruba o livro: se o portal pedir anti-robô ou o cofre estiver vazio,
+    o livro sai sem a página de recursos.
+    """
+    import json
+    import os
+
+    arq = KITS / kid / "recursos.json"
+    if arq.exists():
+        try:
+            return json.loads(arq.read_text(encoding="utf-8")) or []
+        except Exception:
+            pass
+    if os.environ.get("ORBE_AFILIADOS", "1") != "1":
+        return []
+    try:
+        import afiliados_shopee
+
+        rec = afiliados_shopee.recursos(m["info"].get("titulo", ""), 4)
+    except Exception as e:  # noqa: BLE001  — nunca derruba o livro por causa de afiliado
+        print(f"[orbe] recursos de afiliado indisponíveis: {str(e)[:120]}")
+        return []
+    if rec:
+        arq.parent.mkdir(parents=True, exist_ok=True)
+        arq.write_text(json.dumps(rec, ensure_ascii=False, indent=1), encoding="utf-8")
+    return rec
+
+
 def kit_miolo(kid: str) -> bytes:
     arq = KITS / kid / "miolo.pdf"
     if not arq.exists():                       # Render reiniciou: refaz o PDF a partir do texto guardado
@@ -445,7 +517,8 @@ def kit_miolo(kid: str) -> bytes:
             raise UiclapErro("kit não existe")
         i = m["info"]
         pdf, _ = montar_miolo(i["titulo"], i.get("subtitulo", ""), i["autor"],
-                              (KITS / kid / "corpo.md").read_text(encoding="utf-8"))
+                              (KITS / kid / "corpo.md").read_text(encoding="utf-8"),
+                              recursos=_kit_recursos(kid, m))
         arq.write_bytes(pdf)
     return arq.read_bytes()
 
