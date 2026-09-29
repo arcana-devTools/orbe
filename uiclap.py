@@ -619,7 +619,18 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
 
     from browser import BASE_ARGS, IGNORE_ARGS, STEALTH_JS
 
-    e = credencial()
+    lim = 0
+    for arq in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = Path(arq).read_text().strip()
+            lim = int(v) if v.isdigit() else 0
+            break
+        except Exception:
+            pass
+    if lim and lim < 1400 * 2**20 and os.environ.get("ORBE_UIC_FORCAR") != "1":
+        # medido 29/09: o Chromium sozinho chega a ~550 MB nesse fluxo → derruba o Render grátis (512 MB)
+        return {"ok": False, "erro": f"memória insuficiente ({lim // 2**20} MB); precisa de ~1,5 GB"}
+    e = credencial() or {}
     if not e.get("user") or not e.get("fbase_key"):
         raise UiclapErro("falta o login completo do UICLAP no cofre")
     async with httpx.AsyncClient(timeout=30) as cx:
@@ -643,7 +654,7 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
     src = f"{origem.rstrip('/')}/uic/pub.js?t={token_favorito()}&v={int(time.time())}"
     out: dict[str, Any] = {"appcheck": [], "caixa": "", "ok": False}
     async with async_playwright() as pw:
-        leve = ["--renderer-process-limit=2", "--disable-gpu", "--disable-extensions",
+        leve = ["--renderer-process-limit=1", "--disable-gpu", "--disable-extensions",
                 "--disable-features=Translate,MediaRouter,OptimizationHints", "--js-flags=--max-old-space-size=192"]
         b = await pw.chromium.launch(headless=not os.environ.get("DISPLAY"), args=[*BASE_ARGS, *leve],
                                      ignore_default_args=IGNORE_ARGS, **({"proxy": {"server": proxy}} if proxy else {}))
@@ -651,6 +662,17 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
             ctx = await b.new_context(locale="pt-BR", timezone_id="America/Sao_Paulo",
                                       viewport={"width": 1280, "height": 800})
             await ctx.add_init_script(STEALTH_JS)
+            if os.environ.get("ORBE_UIC_LEVE", "0") == "1":   # só o essencial: 512 MB no Render
+                ok_host = ("uiclap.com", "google.com", "gstatic.com", "googleapis.com", "recaptcha.net",
+                           "firebaseapp.com", "onrender.com", "firebaseio.com")
+
+                async def _filtro(route):
+                    rq = route.request
+                    host = rq.url.split("/")[2] if "://" in rq.url else ""
+                    if rq.resource_type in ("image", "media", "font") or not any(host.endswith(h) for h in ok_host):
+                        return await route.abort()
+                    await route.continue_()
+                await ctx.route("**/*", _filtro)
             page = await ctx.new_page()
             page.on("request", lambda rq: out["appcheck"].append(
                 rq.headers.get("x-firebase-appcheck", "")[:3] or "-") if "/data/v2/" in rq.url else None)
@@ -663,7 +685,8 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
                     tx.objectStore('firebaseLocalStorage').put(reg); tx.oncomplete = () => res(true);
                     tx.onerror = () => rej(tx.error); };
                 o.onerror = () => rej(o.error); })""", reg)
-            await page.goto("https://portal.uiclap.com/conta", wait_until="domcontentloaded", timeout=90000)
+            await page.goto(os.environ.get("ORBE_UIC_PAGINA", "https://portal.uiclap.com/conta"),
+                            wait_until="domcontentloaded", timeout=90000)
             await page.wait_for_timeout(12000)
             out["appcheck"] = out["appcheck"][:6]
             if not any(x == "eyJ" for x in out["appcheck"]):
