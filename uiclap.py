@@ -627,9 +627,9 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
             break
         except Exception:
             pass
-    if lim and lim < 1400 * 2**20 and os.environ.get("ORBE_UIC_FORCAR") != "1":
-        # medido 29/09: o Chromium sozinho chega a ~550 MB nesse fluxo → derruba o Render grátis (512 MB)
-        return {"ok": False, "erro": f"memória insuficiente ({lim // 2**20} MB); precisa de ~1,5 GB"}
+    if lim and lim < 900 * 2**20 and os.environ.get("ORBE_UIC_FORCAR") != "1":
+        # medido 29/09: Chromium 397 MB + driver do Playwright 142 + Xvfb 56 + Python ~60 = ~650 MB
+        return {"ok": False, "erro": f"memória insuficiente ({lim // 2**20} MB); precisa de ~900 MB livres"}
     e = credencial() or {}
     if not e.get("user") or not e.get("fbase_key"):
         raise UiclapErro("falta o login completo do UICLAP no cofre")
@@ -654,15 +654,32 @@ async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: 
     src = f"{origem.rstrip('/')}/uic/pub.js?t={token_favorito()}&v={int(time.time())}"
     out: dict[str, Any] = {"appcheck": [], "caixa": "", "ok": False}
     async with async_playwright() as pw:
-        leve = ["--renderer-process-limit=1", "--disable-gpu", "--disable-extensions",
-                "--disable-features=Translate,MediaRouter,OptimizationHints", "--js-flags=--max-old-space-size=192"]
+        # medido 29/09 (PSS): 541 MB com os flags de fábrica → 397 MB assim
+        leve = [*(["--single-process"] if os.environ.get("ORBE_UIC_UNICO", "1") == "1" else []),
+                "--renderer-process-limit=1", "--disable-gpu", "--disable-extensions",
+                "--no-zygote", "--no-sandbox", "--blink-settings=imagesEnabled=false",
+                "--disable-accelerated-2d-canvas", "--disable-remote-fonts",
+                "--disable-features=Translate,MediaRouter,OptimizationHints,IsolateOrigins,site-per-process",
+                f"--js-flags={os.environ.get('ORBE_UIC_JS', '--max-old-space-size=96 --max-semi-space-size=1')}"]
+        leve += os.environ.get("ORBE_UIC_EXTRA", "").split()
         b = await pw.chromium.launch(headless=not os.environ.get("DISPLAY"), args=[*BASE_ARGS, *leve],
                                      ignore_default_args=IGNORE_ARGS, **({"proxy": {"server": proxy}} if proxy else {}))
         try:
             ctx = await b.new_context(locale="pt-BR", timezone_id="America/Sao_Paulo",
-                                      viewport={"width": 1280, "height": 800})
+                                      viewport={"width": 1024, "height": 700})
             await ctx.add_init_script(STEALTH_JS)
-            if os.environ.get("ORBE_UIC_LEVE", "0") == "1":   # só o essencial: 512 MB no Render
+            if os.environ.get("ORBE_UIC_LEVE", "2") == "2":   # corta rastreadores/anúncios (não afetam o anti-robô)
+                lixo = ("facebook.", "clarity.ms", "bing.com", "twitter.com", "t.co", "openai.com", "doubleclick.net",
+                        "googletagmanager.com", "google-analytics.com", "analytics.google.com", "youtube.com",
+                        "ytimg.com", "hotjar", "tiktok")
+
+                async def _corta(route):
+                    host = route.request.url.split("/")[2] if "://" in route.request.url else ""
+                    if any(x in host for x in lixo) or route.request.resource_type == "media":
+                        return await route.abort()
+                    await route.continue_()
+                await ctx.route("**/*", _corta)
+            elif os.environ.get("ORBE_UIC_LEVE") == "1":   # só o essencial (quebrou o anti-robô no teste)
                 ok_host = ("uiclap.com", "google.com", "gstatic.com", "googleapis.com", "recaptcha.net",
                            "firebaseapp.com", "onrender.com", "firebaseio.com")
 
