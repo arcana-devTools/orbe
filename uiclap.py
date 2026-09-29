@@ -312,12 +312,17 @@ async def testar_navegador(login_bruto: str) -> dict[str, Any]:
             o.onsuccess = () => { const tx = o.result.transaction('firebaseLocalStorage', 'readwrite');
                 tx.objectStore('firebaseLocalStorage').put(reg); tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error); };
             o.onerror = () => rej(o.error); })""", reg)
-        await page.goto("https://portal.uiclap.com/conta", wait_until="domcontentloaded")
-        await page.wait_for_timeout(15000)
+        await page.goto("https://portal.uiclap.com/conta", wait_until="domcontentloaded", timeout=90000)
+        for _ in range(30):                       # Render é lento: espera o app carregar e chamar a API
+            await page.wait_for_timeout(2000)
+            if len(vistos) >= 2:
+                break
+        await page.wait_for_timeout(3000)
         titulo = await page.title()
+        url = page.url
     finally:
         await page.close()
         await MANAGER.close_profile("uiclap")
     reais = [t for t in vistos if t.startswith("eyJ")]
-    return {"logado": "Perfil" in titulo or "Portal" in titulo, "titulo": titulo, "chamadas": len(vistos),
+    return {"logado": "login" not in url.lower(), "url": url, "titulo": titulo, "chamadas": len(vistos),
             "anti_robo_ok": bool(reais), "erros": sorted({t for t in vistos if not t.startswith("eyJ")})[:3]}
