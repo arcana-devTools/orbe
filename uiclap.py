@@ -567,3 +567,67 @@ try {
 }
 fim();
 })();"""
+
+
+# ------------------------------------------------------------------ publicação SEM o dono: o servidor roda o favorito
+async def publicar_no_servidor(origem: str, proxy: str | None = None, espera_s: int = 240) -> dict[str, Any]:
+    """Abre um Chromium COM janela (Xvfb), injeta o login e roda o mesmo pub.js do favorito.
+    Headless é recusado pelo anti-robô; com janela ele passou (teste 29/09)."""
+    import os
+
+    from playwright.async_api import async_playwright
+
+    from browser import BASE_ARGS, IGNORE_ARGS, STEALTH_JS
+
+    e = credencial()
+    if not e.get("user") or not e.get("fbase_key"):
+        raise UiclapErro("falta o login completo do UICLAP no cofre")
+    async with httpx.AsyncClient(timeout=30) as cx:
+        r = (await cx.post(f"https://securetoken.googleapis.com/v1/token?key={e['apiKey']}",
+                           data={"grant_type": "refresh_token", "refresh_token": e["refreshToken"]})).json()
+    if "id_token" not in r:
+        raise UiclapErro("login do UICLAP expirou — reenvie o uiclap-login.txt")
+    user = dict(e["user"])
+    user["stsTokenManager"] = {"refreshToken": r["refresh_token"], "accessToken": r["id_token"],
+                               "expirationTime": int(time.time() * 1000) + 3500 * 1000}
+    reg = {"fbase_key": e["fbase_key"], "value": user}
+    src = f"{origem.rstrip('/')}/uic/pub.js?t={token_favorito()}&v={int(time.time())}"
+    out: dict[str, Any] = {"appcheck": [], "caixa": "", "ok": False}
+    async with async_playwright() as pw:
+        b = await pw.chromium.launch(headless=not os.environ.get("DISPLAY"), args=BASE_ARGS,
+                                     ignore_default_args=IGNORE_ARGS, **({"proxy": {"server": proxy}} if proxy else {}))
+        try:
+            ctx = await b.new_context(locale="pt-BR", timezone_id="America/Sao_Paulo",
+                                      viewport={"width": 1366, "height": 900})
+            await ctx.add_init_script(STEALTH_JS)
+            page = await ctx.new_page()
+            page.on("request", lambda rq: out["appcheck"].append(
+                rq.headers.get("x-firebase-appcheck", "")[:3] or "-") if "/data/v2/" in rq.url else None)
+            await page.goto("https://portal.uiclap.com/", wait_until="domcontentloaded", timeout=90000)
+            await page.wait_for_timeout(3000)
+            await page.evaluate("""(reg) => new Promise((res, rej) => {
+                const o = indexedDB.open('firebaseLocalStorageDb', 1);
+                o.onupgradeneeded = () => o.result.createObjectStore('firebaseLocalStorage', {keyPath: 'fbase_key'});
+                o.onsuccess = () => { const tx = o.result.transaction('firebaseLocalStorage', 'readwrite');
+                    tx.objectStore('firebaseLocalStorage').put(reg); tx.oncomplete = () => res(true);
+                    tx.onerror = () => rej(tx.error); };
+                o.onerror = () => rej(o.error); })""", reg)
+            await page.goto("https://portal.uiclap.com/conta", wait_until="domcontentloaded", timeout=90000)
+            await page.wait_for_timeout(12000)
+            out["appcheck"] = out["appcheck"][:6]
+            if not any(x == "eyJ" for x in out["appcheck"]):
+                out["erro"] = "anti-robô recusou este navegador"
+                return out
+            await page.evaluate("(u) => { const s = document.createElement('script'); s.src = u; "
+                                "document.body.appendChild(s); }", src)
+            for _ in range(max(10, espera_s // 3)):
+                await page.wait_for_timeout(3000)
+                out["caixa"] = await page.evaluate(
+                    "() => { const d = [...document.querySelectorAll('div')].find(x => "
+                    "x.textContent.startsWith('📚 Orbe')); return d ? d.innerText : ''; }")
+                if any(m in out["caixa"] for m in ("TESTE OK", "PUBLICADO", "Parou", "F5", "Nenhum livro", "Abra o")):
+                    break
+            out["ok"] = "TESTE OK" in out["caixa"] or "PUBLICADO" in out["caixa"]
+            return out
+        finally:
+            await b.close()

@@ -451,6 +451,17 @@ text-decoration:none;font-size:18px}} li{{margin:6px 0}} code{{background:#eee;p
     return HTMLResponse(pagina)
 
 
+@app.post("/api/uiclap/publicar-servidor")
+async def uiclap_publicar_servidor(request: Request, proxy: str = "") -> dict[str, Any]:
+    """O próprio servidor abre o portal e roda o favorito (sem o dono). Publica o 1º kit 'pronto' da fila."""
+    import uiclap
+
+    try:
+        return await uiclap.publicar_no_servidor(_origem_publica(request), proxy or None)
+    except uiclap.UiclapErro as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/uiclap/kit-teste")
 async def uiclap_kit_teste() -> dict[str, Any]:
     """Kit de TESTE: o favorito sobe miolo+capa e APAGA o rascunho (não publica)."""
