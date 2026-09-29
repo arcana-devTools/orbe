@@ -35,13 +35,15 @@ GAP_BUSCA_S = 3 * 3600          # 8 buscas/dia: vaga nova tem menos concorrênci
 MAX_PROPOSTAS_DIA = 3
 
 _FORA = re.compile(
-    r"\b(tcc|monografia|disserta[çc][ãa]o|tese|artigo cient[íi]fico|trabalho acad[êe]mic|escrita acad[êe]mica|"
-    r"faculdade|resenha acad|abnt|transcri[çc][ãa]o|transcrever|[áa]udio|v[íi]deo|locu[çc][ãa]o|narra[çc][ãa]o|"
-    r"podcast|design|logo|canva|photoshop|ilustra|edi[çc][ãa]o de v|reuni[ãa]o|chamada|presencial|"
-    r"telefone|atendimento|call center|instagram ao vivo|gerenciar redes|social media manager|"
-    r"ghost ?writer de livro inteiro|revis[ãa]o de livro de \d{3}|"
-    r"reviews?\b|avalia[çc](?:ão|ões) (?:de|sobre) produtos|opini(?:ão|ões) sobre produtos|"
-    r"coment[áa]rios? (?:positivos|em massa)|seguidores|curtidas|google meu neg[óo]cio.{0,20}avalia)", re.I)
+    r"\b(?:tcc|monografia|disserta[çc][ãa]o|teses?|artigo cient[íi]fico|acad[êe]mic[oa]s?|escrita acad[êe]mica|"
+    r"faculdade|resenha acad[êe]mica|abnt|transcri[çc][ãa]o|transcrever|[áa]udios?|v[íi]deos?|reels|shorts|youtube|"
+    r"locu[çc][ãa]o|narra[çc][ãa]o|podcasts?|design|designer|logotipo|canva|photoshop|ilustra[çc][ãa]o|"
+    r"reuni[ãa]o|reuni[õo]es|chamadas?|presencial|telefone|atendimento|atendente|call center|ao vivo|"
+    r"simult[âa]nea|int[ée]rprete|interpreta[çc][ãa]o|juramentada|"
+    r"franc[êe]s|alem[ãa]o|espanhol|italiano|japon[êe]s|chin[êe]s|mandarim|russo|coreano|[áa]rabe|"
+    r"gerenciar redes|social media manager|ghost ?writer de livro inteiro|"
+    r"reviews?|avalia[çc](?:ão|ões) (?:de|sobre) produtos|opini(?:ão|ões) sobre produtos|"
+    r"coment[áa]rios? (?:positivos|em massa)|seguidores|curtidas)\b", re.I)
 
 
 # ------------------------------------------------------------------ sessão
@@ -179,7 +181,7 @@ async def escolher(max_escolhas: int = 3) -> list[dict]:
     cands = [v for v in itens if v["status"] == "candidata"][-12:]
     if not cands:
         return []
-    lista = "\n".join(f"{i}. {v['titulo']} | {v['orcamento']} | {v['propostas']} propostas | "
+    lista = "\n".join(f"{i}. [{v.get('plataforma', 'workana')}] {v['titulo']} | {v['orcamento']} | {v['propostas']} propostas | "
                       f"{v['descricao'][:350]}" for i, v in enumerate(cands))
     user = ("Vagas de freelance (Workana). Nossa equipe entrega SÓ TEXTO feito por IA com revisão: artigos, "
             "revisão/correção, tradução PT↔EN, descrições de produto, copy de anúncio, posts, e-mails, roteiros "
@@ -209,7 +211,8 @@ async def escolher(max_escolhas: int = 3) -> list[dict]:
         v["motivo_ia"] = str(n.get("motivo", ""))[:160]
         v["prazo_dias"] = _num(n.get("prazo_dias")) or 3
         v["preco_sugerido"] = _num(str(n.get("preco_sugerido", "")).replace(".", "")) or v["minimo"]
-        v["status"] = "escolhida" if v["nota"] >= 7 else "descartada"
+        corte = 8 if v.get("plataforma") == "99freelas" else 7        # 99: cada proposta custa 3 conexões
+        v["status"] = "escolhida" if v["nota"] >= corte else "descartada"
         if v["status"] == "descartada":
             v["motivo"] = f"IA deu nota {v['nota']:.0f}: {v['motivo_ia']}"
     for v in cands:   # a IA não citou → não serve
@@ -274,10 +277,22 @@ async def checar_liberacao() -> bool | None:
 
 async def ciclo() -> dict[str, Any]:
     """1 rodada: busca → filtra → escolhe → escreve propostas. Respeita o intervalo entre buscas."""
-    if not cookie():
-        return {"ok": False, "motivo": "sem sessão do Workana"}
-    await checar_liberacao()
-    novas = await buscar()
+    import freelas99
+
+    if not cookie() and not freelas99.cookie():
+        return {"ok": False, "motivo": "sem sessão do Workana nem do 99Freelas"}
+    novas, erros = [], []
+    if cookie():
+        await checar_liberacao()
+        try:
+            novas += await buscar()
+        except Exception as exc:
+            erros.append(f"Workana: {exc}")
+    if freelas99.cookie():
+        try:
+            novas += await freelas99.buscar()
+        except Exception as exc:
+            erros.append(f"99Freelas: {exc}")
     feitas = sum(1 for v in ler() if v.get("proposta") and time.time() - v.get("proposta_em", 0) < 86400)
     try:
         esc = await escolher(max(0, MAX_PROPOSTAS_DIA - feitas)) if feitas < MAX_PROPOSTAS_DIA else []
@@ -295,7 +310,7 @@ async def ciclo() -> dict[str, Any]:
     itens = [por_slug.get(v["slug"], v) for v in itens]
     _salvar(itens)
     return {"ok": True, "novas": len(novas), "descartadas": sum(1 for v in novas if v["status"] == "descartada"),
-            "propostas": len([v for v in esc if v.get("proposta")])}
+            "propostas": len([v for v in esc if v.get("proposta")]), "erros": erros}
 
 
 def sem_emoji(txt: str) -> str:

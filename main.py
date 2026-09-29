@@ -344,6 +344,23 @@ async def sessao_workana(payload: SessaoIn) -> dict[str, Any]:
     return {"ok": True, "logado": await freelas.sessao_ok()}
 
 
+@app.post("/api/sessoes/99freelas")
+async def sessao_99freelas(payload: SessaoIn) -> dict[str, Any]:
+    import freelas99
+
+    if "JSESSIONID" not in payload.cookie:
+        raise HTTPException(400, "cookie sem JSESSIONID")
+    freelas99.salvar_cookie(payload.cookie)
+    return {"ok": True, **(await freelas99.painel())}
+
+
+@app.post("/api/freelas/perfil99")
+async def freelas_perfil99() -> dict[str, Any]:
+    import freelas99
+
+    return await freelas99.completar_perfil()
+
+
 @app.get("/api/freelas")
 async def freelas_status() -> dict[str, Any]:
     import freelas

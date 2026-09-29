@@ -200,7 +200,18 @@ async def enviar_proposta(v: dict) -> bool:
     if not tok or not chat:
         return False
     chave = v["slug"][:48]
-    texto = (f"💼 FREELA: {v['titulo']}\n💵 {v['orcamento']} • {v['propostas']} propostas • {v['publicado']}\n"
+    eh99 = v.get("plataforma") == "99freelas"
+    extra = ""
+    if eh99:
+        try:
+            import freelas99
+
+            con = (await freelas99.painel()).get("conexoes")
+            extra = f"🎟️ enviar custa {freelas99.CUSTO_CONEXOES} conexões (você tem {con})\n"
+        except Exception:
+            extra = "🎟️ enviar custa 3 conexões\n"
+    texto = (f"💼 FREELA ({'99Freelas' if eh99 else 'Workana'}): {v['titulo']}\n"
+             f"💵 {v['orcamento']} • {v['propostas']} propostas {v['publicado']}\n" + extra
              + ("✅ cliente com pagamento verificado\n" if v.get("pagamento_verificado") else "")
              + f"🧐 chance (IA): {v.get('nota', '?')}/10 — {v.get('motivo_ia', '')}\n"
              f"💰 preço sugerido: {v.get('preco_sugerido', '?')} • prazo {v.get('prazo_dias', '?')} dia(s)\n"
@@ -215,7 +226,7 @@ async def enviar_proposta(v: dict) -> bool:
         return False
 
 
-def _decidir_freela(chave: str, enviar: bool) -> str:
+async def _decidir_freela(chave: str, enviar: bool) -> str:
     import freelas
 
     v = freelas.marcar(chave, "aprovada" if enviar else "pulada")
@@ -223,6 +234,19 @@ def _decidir_freela(chave: str, enviar: bool) -> str:
         return "vaga não encontrada"
     if not enviar:
         return f"❌ Pulei: {html.escape(v['titulo'][:80])}"
+    if v.get("plataforma") == "99freelas":          # aqui dá pra enviar de verdade, na hora
+        import freelas99
+
+        try:
+            r = await freelas99.enviar(v)
+        except Exception as exc:
+            r = {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        freelas.marcar(chave, "enviada" if r.get("ok") else "falhou_envio")
+        if r.get("ok"):
+            return (f"📨 Proposta ENVIADA no 99Freelas: {html.escape(v['titulo'][:80])}\n"
+                    f"Oferta R$ {r['oferta']:.2f}. Se o cliente responder, te aviso no resumo.")
+        return (f"⚠️ Não consegui enviar no 99Freelas: {html.escape(str(r.get('motivo') or r.get('resposta'))[:200])}\n"
+                f"Link: {v['url']}")
     return (f"✅ Aprovada: {html.escape(v['titulo'][:80])}\n"
             "O Workana ainda não liberou seu perfil para enviar propostas; assim que liberar, "
             "a colônia envia as aprovadas sozinha.")
@@ -384,7 +408,7 @@ async def _tratar(update: dict) -> None:
         elif data.startswith("pok_") or data.startswith("prf_"):
             texto = _decidir_produto(data[4:], data.startswith("pok_"))
         elif data.startswith("fok_") or data.startswith("fno_"):
-            texto = _decidir_freela(data[4:], data.startswith("fok_"))
+            texto = await _decidir_freela(data[4:], data.startswith("fok_"))
         elif data.startswith("pvd_"):
             texto = _pagina_de_vendas(data[4:])
         await _tg("answerCallbackQuery", callback_query_id=cb.get("id"))

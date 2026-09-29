@@ -88,3 +88,6 @@ def _freelas_isolado(tmp_path, monkeypatch):
     monkeypatch.setattr(freelas, "VAGAS", tmp_path / "_freelas.json")
     monkeypatch.setattr(freelas, "SESSAO", tmp_path / "_workana_sessao.txt")
     monkeypatch.setattr(freelas, "ESTADO", tmp_path / "_workana_estado.json")
+    import freelas99
+
+    monkeypatch.setattr(freelas99, "SESSAO", tmp_path / "_99_sessao.txt")
