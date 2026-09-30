@@ -192,6 +192,12 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     asyncio.create_task(_memory_watchdog())
+    try:
+        import conciencia
+
+        asyncio.create_task(conciencia.laco())
+    except Exception:
+        pass
     asyncio.create_task(_restore_logins_on_boot())
     import state_backup
 
@@ -658,9 +664,36 @@ async def estado_salvar() -> dict[str, Any]:
 
 
 @app.get("/api/ping", include_in_schema=False)
-async def api_ping() -> dict[str, Any]:
+async def api_ping(request: Request) -> dict[str, Any]:
+    """Coração: a aba do /desktop avisa que o dono está por perto (a colônia usa isso)."""
     _touch()
+    if "/desktop" in (request.headers.get("referer") or ""):
+        try:
+            import conciencia
+
+            conciencia.bater_coracao()
+        except Exception:
+            pass
     return {"ok": True}
+
+
+@app.get("/api/conciencia")
+async def conciencia_estado() -> dict[str, Any]:
+    """O que a colônia percebeu, decidiu e fez (diário)."""
+    import conciencia
+
+    _touch()
+    return {"ultimo": conciencia.ultimo(), "diario": conciencia.diario(15),
+            "humano_aqui": conciencia.humano_no_desktop()}
+
+
+@app.post("/api/conciencia/ciclo")
+async def conciencia_ciclo() -> dict[str, Any]:
+    """Força um passo: perceber → decidir → agir → registrar."""
+    import conciencia
+
+    _touch()
+    return await conciencia.ciclo(forcar=True)
 
 
 # ----------------------------------------------------------------- rotas --

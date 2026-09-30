@@ -172,6 +172,22 @@ async def resumo_diario(forcar: bool = False) -> bool:
         if propostas:
             partes.append(f"💼 {len(propostas)} proposta(s) de freela no Workana esperando seu OK (abaixo).")
         partes.append(f"(últimas 24h: {pesq} pesquisa(s) de mercado, {reprov} produto(s) barrado(s) pelo crítico)")
+        try:
+            import pendencias
+
+            pen = pendencias.txt()
+            if pen:
+                partes.append(pen)
+        except Exception:
+            pass
+        try:
+            import conciencia
+
+            cab = conciencia.txt_curto()
+            if cab:
+                partes.append(cab)
+        except Exception:
+            pass
         if apr:
             partes.append(apr)
         await _tg("sendMessage", chat_id=chat, text="\n".join(partes))
