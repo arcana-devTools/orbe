@@ -219,7 +219,8 @@ app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
 _ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado",
-             "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1"}
+             "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
+             "/mao/instalar-pc.ps1"}
 
 
 @app.middleware("http")
@@ -618,6 +619,12 @@ async def mao_pc_ps1() -> FileResponse:
                         headers={"Cache-Control": "no-store"})
 
 
+@app.get("/mao/instalar-pc.ps1")
+async def mao_instalar_pc() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "instalar-pc.ps1", media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
 def _mao_token(request: Request, aparelho: str) -> None:
     import mao
 
@@ -683,7 +690,12 @@ async def mao_print(nome: str) -> FileResponse:
     arq = Path("data/mao_prints") / nome
     if not arq.exists():
         raise HTTPException(404, "print ainda não chegou")
-    return FileResponse(arq)
+    bruto = arq.read_bytes()
+    try:
+        arq.unlink()
+    except Exception:
+        pass
+    return Response(bruto, media_type="image/jpeg" if nome.endswith(".jpg") else "image/png")
 
 
 @app.get("/api/mao/estado")
@@ -923,7 +935,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.15",
+        "versao": "0.27.16",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

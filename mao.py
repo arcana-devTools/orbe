@@ -232,7 +232,14 @@ def resultado(aparelho: str, oid: str, ok: bool, resumo: str, imagem: str = "") 
             ext = "png" if bruto[:8] == b"\x89PNG\r\n\x1a\n" else "jpg"
             (PRINTS / f"{oid}.{ext}").write_bytes(bruto)
             achou["print"] = f"{oid}.{ext}"
-            _salvar(d, importante=True)
+            _salvar(d, importante=False)
+            # olhada, não arquivo. some em 10 min e não entra no backup.
+            for velho in PRINTS.glob("*"):
+                try:
+                    if time.time() - velho.stat().st_mtime > 600:
+                        velho.unlink()
+                except Exception:
+                    pass
         except Exception:
             pass
     try:

@@ -1,13 +1,20 @@
 # Mao do Orbe no PC Windows. So abre aba/app, print, clique e tecla. Sem shell da rede.
 param(
-  [Parameter(Mandatory = $true)][string]$Token,
+  [string]$Token = "",
   [string]$Base = "https://orbe-xfzn.onrender.com",
   [string]$Apelido = "pc"
 )
 $ErrorActionPreference = "Stop"
-# Windows PowerShell 5.1 nasce em TLS 1.0 e o Render recusa. Sem isto, irm e o poll quebram.
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {}
 $ProgressPreference = "SilentlyContinue"
+if (-not $Token) {
+  $tf = Join-Path $env:LOCALAPPDATA "OrbeMao\token.txt"
+  if (Test-Path $tf) { $Token = (Get-Content $tf -Raw).Trim() }
+}
+if (-not $Token) { throw "falta o token" }
+$criado = $false
+$mutex = New-Object System.Threading.Mutex($true, "OrbeMaoPc", [ref]$criado)
+if (-not $criado) { exit 0 }
 $Base = $Base.TrimEnd("/")
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
