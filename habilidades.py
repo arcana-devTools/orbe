@@ -59,8 +59,11 @@ def salvar(acao: str, corpo: str) -> Path | None:
         return None
     PASTA.mkdir(parents=True, exist_ok=True)
     p = PASTA / (_slug(acao) + ".md")
+    # mesmo padrão aberto do Hermes (agentskills.io): as habilidades são portáveis
+    desc = (corpo.strip().splitlines()[0] if corpo.strip() else acao)[:120]
+    frente = f"---\nname: {_slug(acao)}\ndescription: {desc}\nversion: 1\n---\n\n"
     cabeca = f"# {acao}\n\n> escrito por mim em {time.strftime('%d/%m/%Y %H:%M')}\n\n"
-    p.write_text(cabeca + corpo.strip() + "\n", encoding="utf-8")
+    p.write_text(frente + cabeca + corpo.strip() + "\n", encoding="utf-8")
     try:
         __import__("state_backup").sujo()
     except Exception:
