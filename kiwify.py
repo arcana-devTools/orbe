@@ -226,12 +226,16 @@ def webhooks() -> list[dict]:
     return _linhas(api("webhooks"))
 
 
-def webhook_criar(url: str, nome: str = "Orbe", gatilhos: list[str] | None = None) -> dict[str, Any]:
+def webhook_criar(url: str, nome: str = "Orbe", gatilhos: list[str] | None = None,
+                  token: str = "") -> dict[str, Any]:
     """Cria um webhook pra Kiwify avisar a venda na hora (o Orbe recebe e confere)."""
+    import secrets
+
     c = cred()
     if not c:
         raise KiwifyErro("sem credenciais da Kiwify")
-    corpo = {"name": nome, "url": url, "products": "all",
+    token = token or secrets.token_urlsafe(18)
+    corpo = {"name": nome, "url": url, "products": "all", "token": token,
              "triggers": gatilhos or ["compra_aprovada", "compra_reembolsada", "chargeback"]}
     r = httpx.post(f"{BASE}/webhooks", headers={**_cabecalho(), "Content-Type": "application/json"},
                    json=corpo, timeout=TIMEOUT)
@@ -242,9 +246,12 @@ def webhook_criar(url: str, nome: str = "Orbe", gatilhos: list[str] | None = Non
     if r.status_code not in (200, 201):
         raise KiwifyErro(f"webhook HTTP {r.status_code}: {r.text[:200]}")
     try:
-        return r.json()
+        saida = r.json()
     except Exception:
-        return {"ok": True, "texto": r.text[:160]}
+        saida = {"ok": True, "texto": r.text[:160]}
+    if isinstance(saida, dict):
+        saida.setdefault("token", token)
+    return saida
 
 
 def venda(order_id: str) -> dict[str, Any]:
