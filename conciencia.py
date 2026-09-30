@@ -139,7 +139,7 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
     # primeiro ela se arruma: o que depende DELA, não do dono
     if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
         return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
-    if p.get("kiwify_login") and not p.get("sessao_kiwify"):
+    if p.get("kiwify_login") and not p.get("sessao_kiwify") and p.get("humano_aqui"):
         return d("entrar", "tenho login/senha da Kiwify e nenhuma sessão: entrar sozinha", alvo="kiwify")
     if p.get("kiwify_ok") and not p.get("webhook_ok"):
         return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")

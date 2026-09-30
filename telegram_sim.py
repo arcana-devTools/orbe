@@ -494,6 +494,14 @@ async def _tratar(update: dict) -> None:
                 texto = _aprovar(int(cmd.split()[1]))
             except Exception:
                 texto = "uso: /sim <número> (ver /radar)"
+        elif cmd.startswith("/entrar"):
+            try:
+                import kiwify_painel
+
+                r = await kiwify_painel.entrar()
+                texto = ("✅ " + r["resumo"]) if r.get("ok") else ("⚠️ " + str(r.get("motivo")))
+            except Exception as exc:
+                texto = f"⚠️ {type(exc).__name__}: {str(exc)[:160]}"
         elif cmd.startswith("/produtos"):
             texto = await _produtos_lista()
         elif cmd.startswith("/vendas"):

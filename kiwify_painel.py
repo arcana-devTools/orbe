@@ -265,6 +265,11 @@ async def _dump(page, nome: str) -> str:
 # ------------------------------------------------------------------ entrada
 def _segredo(campo: str) -> str:
     """Login/senha que o DONO entregou pra ela (nunca aparecem em resposta)."""
+    import os
+
+    env = {"login": "ORBE_KIWIFY_LOGIN", "senha": "ORBE_KIWIFY_SENHA"}.get(campo, "")
+    if env and os.environ.get(env, "").strip():
+        return os.environ[env].strip()
     v = VAULT.get("kiwify") or {}
     return str((v.get("extra") or {}).get(campo) or "")
 
