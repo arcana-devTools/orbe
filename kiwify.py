@@ -181,6 +181,35 @@ def resumo(dias: int = 7) -> dict[str, Any]:
     }
 
 
+async def conector(dias: int = 30) -> list[dict[str, Any]]:
+    """Conector do livro-caixa (vendas.py): puxa as vendas PAGAS da Kiwify.
+
+    Sem credenciais não faz nada (e não derruba a colônia) — é só silêncio.
+    Cada venda entra com a prova = id do pedido, então nunca duplica.
+    """
+    if not cred():
+        return []
+    import asyncio
+
+    vs = await asyncio.to_thread(vendas, dias, "paid", True)
+    out: list[dict[str, Any]] = []
+    for v in vs:
+        pag = v.get("payment") or {}
+        prod = v.get("product") or {}
+        liquido = _reais(pag.get("net_amount") or v.get("net_amount") or 0)
+        if liquido <= 0:
+            continue
+        out.append({
+            "loja": "kiwify",
+            "valor": liquido,
+            "moeda": str(v.get("currency") or "BRL").upper(),
+            "prova": str(v.get("id") or v.get("reference") or ""),
+            "produto_id": str(prod.get("id") or ""),
+            "titulo": str(prod.get("name") or ""),
+        })
+    return out
+
+
 def saldo() -> dict[str, Any]:
     try:
         d = api("balance")

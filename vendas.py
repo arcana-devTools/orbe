@@ -100,9 +100,24 @@ def resumo_txt(desde_ts: float) -> str:
     return "\n".join(linhas)
 
 
+def _conectores_padrao() -> None:
+    """Conectores conhecidos se registram sozinhos (sem credencial, devolvem vazio)."""
+    for mod in ("kiwify", "uiclap"):
+        if any(getattr(c, "__module__", "") == mod for c in CONECTORES):
+            continue
+        try:
+            m = __import__(mod)
+            f = getattr(m, "conector", None)
+            if callable(f):
+                CONECTORES.append(f)
+        except Exception:
+            continue
+
+
 async def sincronizar() -> int:
     """Roda os conectores das lojas e grava o que for novo. Devolve quantas vendas novas."""
     n = 0
+    _conectores_padrao()
     for con in CONECTORES:
         try:
             for v in await con():
@@ -114,7 +129,20 @@ async def sincronizar() -> int:
     return n
 
 
+def lojas() -> dict[str, Any]:
+    """Saúde de cada loja com conector (sem credencial aparece como pendente)."""
+    saida: dict[str, Any] = {}
+    try:
+        import kiwify
+
+        saida["kiwify"] = kiwify.estado()
+    except Exception as exc:
+        saida["kiwify"] = {"ok": False, "motivo": f"{type(exc).__name__}"}
+    return saida
+
+
 def status() -> dict[str, Any]:
     todas = ler()
+    _conectores_padrao()
     return {"vendas": len(todas), "total": totais(todas), "total_txt": fmt_totais(totais(todas)),
-            "conectores": len(CONECTORES), "ultimas": todas[-10:]}
+            "conectores": len(CONECTORES), "lojas": lojas(), "ultimas": todas[-10:]}

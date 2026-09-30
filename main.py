@@ -558,6 +558,42 @@ class MlIrIn(BaseModel):
     url: str = ""
 
 
+@app.get("/api/kiwify/estado")
+async def kiwify_estado() -> dict[str, Any]:
+    """Kiwify: saúde da conexão + vendas reais dos últimos 7 dias."""
+    import kiwify
+
+    _touch()
+    return {**kiwify.estado(), "resumo_7d": kiwify.resumo(7)}
+
+
+@app.post("/api/kiwify/abrir")
+async def kiwify_abrir() -> dict[str, Any]:
+    """Abre o painel da Kiwify no Chrome do /desktop (o dono loga lá, 1x)."""
+    import kiwify_painel
+
+    _touch()
+    try:
+        return await kiwify_painel.abrir()
+    except Exception as exc:
+        raise HTTPException(500, f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+@app.post("/api/kiwify/apikey")
+async def kiwify_apikey() -> dict[str, Any]:
+    """Cria a API Key no painel (com a sessão do dono) e guarda no cofre."""
+    import kiwify_painel
+
+    _touch()
+    try:
+        d = await kiwify_painel.criar_api_key()
+    except Exception as exc:
+        raise HTTPException(500, f"{type(exc).__name__}: {str(exc)[:200]}")
+    if not d.get("ok"):
+        raise HTTPException(400, d)
+    return d
+
+
 @app.post("/api/afiliados/ml/abrir")
 async def ml_abrir(payload: MlIrIn | None = None) -> dict[str, Any]:
     """Abre o portal de afiliados no Chrome do /desktop (dono loga lá, 1x)."""
