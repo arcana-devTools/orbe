@@ -96,8 +96,28 @@ def perceber() -> dict[str, Any]:
         p["pendencias"] = pendencias.lista()
     except Exception:
         p["pendencias"] = []
+    # auto-cuidado: o que falta EM MIM (não no dono)
+    p["kiwify_ok"] = bool(p.get("lojas", {}).get("kiwify", {}).get("ok"))
+    p["sessao_kiwify"] = Path("data/kiwify_sessao.json").exists()
+    p["webhook_ok"] = False
+    if p["kiwify_ok"]:
+        try:
+            import kiwify
+
+            alvo = base_publica().rstrip("/") + "/kiwify/webhook"
+            p["webhook_ok"] = any(str(w.get("url", "")).rstrip("/") == alvo for w in kiwify.webhooks())
+        except Exception:
+            p["webhook_ok"] = False
     p["humano_aqui"] = humano_no_desktop()
     return p
+
+
+def base_publica() -> str:
+    """Meu próprio endereço na internet (o Render entrega RENDER_EXTERNAL_URL)."""
+    import os
+
+    return (os.environ.get("ORBE_BASE") or os.environ.get("RENDER_EXTERNAL_URL")
+            or "https://orbe-xfzn.onrender.com").rstrip("/")
 
 
 # ------------------------------------------------------------------ decisão
@@ -125,6 +145,11 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         if "Mercado Livre" in onde and p.get("humano_aqui"):
             return d("abrir_login", "Mercado Livre sem sessão e o dono está no desktop: abrir o portal de afiliados",
                      alvo="ml", humano=True)
+    # primeiro ela se arruma: o que depende DELA, não do dono
+    if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
+        return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
+    if p.get("kiwify_ok") and not p.get("webhook_ok"):
+        return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("briefs_novos", 0) == 0 and p.get("produtos", 0) == 0:
         return d("pesquisar", "sem demanda mapeada ainda — precisa pesquisar antes de escrever")
     if p.get("produtos", 0) == 0:
@@ -149,6 +174,23 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
 
                 d = await afiliados_ml.abrir()
                 return {"feito": True, "resumo": f"Mercado Livre aberto: {str(d.get('titulo'))[:60]}"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "criar_api_key":
+        try:
+            import kiwify_painel
+
+            r = await kiwify_painel.criar_api_key()
+            return {"feito": bool(r.get("ok")), "resumo": r.get("motivo") or "API Key criada e guardada no cofre"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "configurar_webhook":
+        try:
+            import kiwify
+
+            url = base_publica() + "/kiwify/webhook"
+            r = kiwify.webhook_criar(url, nome="Orbe")
+            return {"feito": True, "resumo": f"webhook registrado em {url}"}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "reviver":
