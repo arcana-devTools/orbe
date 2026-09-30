@@ -68,8 +68,16 @@ def perceber() -> dict[str, Any]:
         p["aguardando_dono"] = sum(1 for m in metas if m.get("status") == "aguardando_dono")
         p["aprovados"] = sum(1 for m in metas if m.get("status") in ("aprovado", "publicado"))
         p["reprovados"] = sum(1 for m in metas if m.get("status") == "reprovado")
+        try:
+            import uiclap
+
+            prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
+            p["aprovados_sem_kit"] = sum(
+                1 for m in metas if m.get("status") == "aprovado" and str(m.get("id")) not in prontos)
+        except Exception:
+            p["aprovados_sem_kit"] = 0
     except Exception:
-        p.update(produtos=0, aguardando_dono=0, aprovados=0, reprovados=0)
+        p.update(produtos=0, aguardando_dono=0, aprovados=0, reprovados=0, aprovados_sem_kit=0)
     # pesquisa de mercado
     try:
         import mercado
@@ -143,6 +151,8 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         return d("entrar", "tenho login/senha da Kiwify e nenhuma sessão: entrar sozinha", alvo="kiwify")
     if p.get("kiwify_ok") and not p.get("webhook_ok"):
         return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
+    if p.get("aprovados_sem_kit", 0) > 0:
+        return d("embalar", f"{p['aprovados_sem_kit']} produto(s) aprovado(s) ainda não virou livro: embalar")
     if p.get("aguardando_dono", 0) > 0:
         return d("avisar", f"{p['aguardando_dono']} produto(s) esperando o dono decidir", humano=True)
     # correntes humanas: ela mesma prepara a tela se o dono estiver por perto
@@ -190,6 +200,23 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
 
             r = await kiwify_painel.criar_api_key()
             return {"feito": bool(r.get("ok")), "resumo": r.get("motivo") or "API Key criada e guardada no cofre"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "embalar":
+        try:
+            import acabamento
+            import uiclap
+
+            feitos = []
+            prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
+            for m in acabamento._metas():
+                if m.get("status") == "aprovado" and str(m.get("id")) not in prontos:
+                    try:
+                        r = uiclap.kit_de_produto(str(m.get("id")))
+                        feitos.append(str((r or {}).get("kid") or m.get("id"))[:24])
+                    except Exception as exc:
+                        return {"feito": False, "resumo": f"falhou em {m.get('titulo')}: {str(exc)[:90]}"}
+            return {"feito": bool(feitos), "resumo": f"embalei {len(feitos)} livro(s): " + ", ".join(feitos)}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "avisar":
