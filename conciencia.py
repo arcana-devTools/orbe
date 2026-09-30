@@ -255,6 +255,20 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
             import kiwify_painel
 
             r = await kiwify_painel.entrar()
+            if not r.get("ok") and r.get("esperando") == "captcha":
+                # travou no anti-robo: ela aluga maos (Hermes) com IP residencial
+                try:
+                    import hermes
+
+                    if hermes.disponivel():
+                        h = await hermes.pedir(
+                            "Abra https://dashboard.kiwify.com.br/ no Chrome, faca login com as "
+                            "credenciais dos secrets (ORBE_KIWIFY_LOGIN / ORBE_KIWIFY_SENHA), "
+                            "resolva o captcha se aparecer (voce esta em IP residencial) e, ao "
+                            "entrar, envie os cookies para a Orbe. Nada de alterar dados da conta.")
+                        return {"feito": bool(h.get("ok")), "resumo": h.get("resumo") or h.get("motivo", "")}
+                except Exception as exc:
+                    return {"feito": False, "resumo": f"Hermes falhou: {str(exc)[:100]}"}
             return {"feito": bool(r.get("ok")), "resumo": r.get("resumo") or r.get("motivo", "")}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}

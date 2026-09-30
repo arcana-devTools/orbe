@@ -564,6 +564,34 @@ class MlIrIn(BaseModel):
     url: str = ""
 
 
+@app.post("/api/hermes/resultado")
+async def hermes_resultado(request: Request) -> dict[str, Any]:
+    """O Hermes devolve aqui o resultado da tarefa que a colônia encomendou."""
+    import hermes
+
+    _touch()
+    if _s.auth_token:
+        auth = request.headers.get("x-orbe-token", "")
+        import hmac
+
+        if not hmac.compare_digest(auth, os.environ.get("ORBE_HERMES_TOKEN", "")):
+            raise HTTPException(401, "token do Hermes inválido")
+    try:
+        d = await request.json()
+    except Exception:
+        d = {"texto": (await request.body()).decode("utf-8", "replace")[:4000]}
+    return hermes.anotar_resultado(d if isinstance(d, dict) else {"dado": d})
+
+
+@app.post("/api/hermes/pedir")
+async def hermes_pedir(payload: dict[str, Any]) -> dict[str, Any]:
+    """A colônia encomenda uma tarefa ao Hermes (mãos)."""
+    import hermes
+
+    _touch()
+    return await hermes.pedir(str(payload.get("tarefa", ""))[:1800])
+
+
 @app.get("/api/kiwify/estado")
 async def kiwify_estado() -> dict[str, Any]:
     """Kiwify: saúde da conexão + vendas reais dos últimos 7 dias."""
