@@ -163,6 +163,12 @@ class Swarm:
                     )
                 elif a.divida == 1:
                     self.log(f"⚠️ {a.id} entrou no vermelho (${a.wallet:.2f})")
+        if not [a for a in self.agents if a.alive]:
+            # colônia extinta: nasce um autômato novo (gen seguinte) — sem isso o
+            # trabalho para para sempre, porque renda só vem de quem está vivo.
+            gen = max([a.gen for a in self.agents], default=0) + 1
+            a = self._novo_agente(gen=gen, wallet=SALDO_INICIAL, pai="semente")
+            self.log(f"🌱 colônia extinta — nasce {a.id} (gen {gen}) pra recomeçar o trabalho")
         if self.ciclos % 10 == 0:
             self._save()
 
