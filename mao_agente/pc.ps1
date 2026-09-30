@@ -75,7 +75,7 @@ function Executa($cmd) {
 Write-Host "mao pc ligada em $Base"
 while ($true) {
   try {
-    $fila = Invoke-Orbe GET "$Base/api/mao/fila?apelido=$Apelido" $null
+    $fila = Invoke-Orbe GET "$Base/api/mao/fila?aparelho=$Apelido" $null
     if ($fila.comando) {
       $ok, $resumo, $img = Executa $fila.comando
       $corpo = @{ id = $fila.comando.id; ok = [bool]$ok; resumo = [string]$resumo; aparelho = $Apelido }

@@ -194,7 +194,7 @@ def main() -> None:
         subprocess.run(["termux-wake-lock"], capture_output=True)
     while True:
         try:
-            fila = _http(f"{base}/api/mao/fila?apelido={args.apelido}", args.token, timeout=40)
+            fila = _http(f"{base}/api/mao/fila?aparelho={args.apelido}", args.token, timeout=40)
         except Exception as exc:
             print("sem ligação:", type(exc).__name__, flush=True)
             time.sleep(5)

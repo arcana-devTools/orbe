@@ -627,10 +627,11 @@ def _mao_token(request: Request, aparelho: str) -> None:
 
 
 @app.get("/api/mao/fila")
-async def mao_fila(request: Request, aparelho: str = "") -> dict[str, Any]:
+async def mao_fila(request: Request, aparelho: str = "", apelido: str = "") -> dict[str, Any]:
     """O aparelho do dono pergunta se tem ordem. Espera até 20s."""
     import mao
 
+    aparelho = aparelho or apelido
     if aparelho not in mao.APARELHOS:
         raise HTTPException(400, "aparelho")
     _mao_token(request, aparelho)
@@ -899,7 +900,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.12",
+        "versao": "0.27.13",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
