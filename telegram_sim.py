@@ -418,6 +418,48 @@ def _offset_salvar(v: int) -> None:
         pass
 
 
+# chaves que a colônia reconhece quando o dono manda "chave: valor" no Telegram
+_CHAVES = {
+    "kiwify_account_id": ("kiwify", "account_id"),
+    "kiwify_client_id": ("kiwify", "client_id"),
+    "kiwify_client_secret": ("kiwify", "client_secret"),
+    "hotmart_client_id": ("hotmart", "client_id"),
+    "hotmart_client_secret": ("hotmart", "client_secret"),
+    "hotmart_basic": ("hotmart", "basic"),
+    "shopee_cookie": ("shopee", "cookie"),
+}
+
+
+def _guardar_segredos(texto: str) -> str:
+    """O dono manda 'chave: valor' no Telegram e a COLÔNIA guarda no próprio cofre.
+
+    Nada de segredo em arquivo, nada no git, e o valor nunca volta na resposta.
+    É dela: eu (o agente de fora) não preciso ver nada disso.
+    """
+    from secrets_vault import VAULT
+
+    guardados: list[str] = []
+    for linha in (texto or "").splitlines():
+        if ":" not in linha:
+            continue
+        k, v = linha.split(":", 1)
+        k, v = k.strip().lower(), v.strip()
+        if not v or len(v) > 4000 or " " in k or k not in _CHAVES:
+            continue
+        conta, campo = _CHAVES[k]
+        reg = VAULT.get(conta) or {}
+        ex = dict(reg.get("extra") or {})
+        ex[campo] = v
+        ex["guardado_em"] = time.time()
+        VAULT.put(conta, username=reg.get("username", ""), password=reg.get("password", ""), extra=ex)
+        guardados.append(f"{campo} → conta '{conta}'")
+    if not guardados:
+        return ""
+    return ("🔒 Guardei no meu cofre (não devolvo o valor pra ninguém):\n"
+            + "\n".join(f"  • {g}" for g in guardados)
+            + "\n\nJá vou me reconfigurar sozinha com isso.")
+
+
 async def _tratar(update: dict) -> None:
     _, chat = _cfg()
     msg = update.get("message") or {}
@@ -462,9 +504,27 @@ async def _tratar(update: dict) -> None:
                      "/status — colônia\n\n"
                      "/produtos — produtos prontos\n"
                      "/vendas — vendas REAIS (dinheiro de verdade)\n\n"
+                     "Mande 'chave: valor' (ex.: kiwify_client_secret: ...) que eu "
+                     "guardo no meu cofre, apago a mensagem e me configuro sozinha.\n\n"
                      f"Só mando 1 mensagem por dia ({HORA_RESUMO}h), e só se tiver produto aprovado pelo crítico.")
         else:
-            return
+            bruto = str(msg.get("text", ""))
+            texto = _guardar_segredos(bruto)
+            if not texto:
+                return
+            try:                      # apaga a mensagem com o segredo do histórico
+                await _tg("deleteMessage", chat_id=str(msg.get("chat", {}).get("id") or chat),
+                          message_id=msg.get("message_id"))
+            except Exception:
+                pass
+            try:                      # e se reconfigura na hora (webhook, chaves, etc.)
+                import asyncio
+
+                import conciencia
+
+                asyncio.create_task(conciencia.ciclo(forcar=True))
+            except Exception:
+                pass
     if texto:
         await _tg("sendMessage", chat_id=alvo_chat, text=texto, parse_mode="HTML")
 
