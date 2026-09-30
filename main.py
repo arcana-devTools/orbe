@@ -609,17 +609,23 @@ async def kiwify_webhook(request: Request) -> dict[str, Any]:
     """
     import kiwify
 
-    try:
-        bruto = await request.body()
+    d: dict = {}
+    try:                                    # JSON (o normal da Kiwify)
+        j = await request.json()
+        if isinstance(j, dict):
+            d = j
     except Exception:
-        bruto = b""
-    try:
-        d = json.loads(bruto)
-    except Exception:
+        d = {}
+    if not d:                               # form-urlencoded
         try:
-            d = dict(
-                p.split("=", 1) for p in bruto.decode("utf-8", "replace").split("&") if "=" in p
-            )
+            f = await request.form()
+            d = {k: str(v) for k, v in f.items()}
+        except Exception:
+            d = {}
+    if not d:                               # último recurso: corpo cru
+        try:
+            bruto = (await request.body()).decode("utf-8", "replace")
+            d = dict(p.split("=", 1) for p in bruto.split("&") if "=" in p)
         except Exception:
             d = {}
     try:
