@@ -130,6 +130,11 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         return d("reviver", "a colônia está extinta — sem agente vivo ninguém trabalha")
     if not p.get("ia"):
         return d("esperar", "sem IA disponível (Groq/OpenRouter) — não gasto o resto à toa")
+    # primeiro ela se arruma: o que depende DELA, não do dono
+    if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
+        return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
+    if p.get("kiwify_ok") and not p.get("webhook_ok"):
+        return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("aguardando_dono", 0) > 0:
         return d("avisar", f"{p['aguardando_dono']} produto(s) esperando o dono decidir", humano=True)
     # correntes humanas: ela mesma prepara a tela se o dono estiver por perto
@@ -145,11 +150,6 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         if "Mercado Livre" in onde and p.get("humano_aqui"):
             return d("abrir_login", "Mercado Livre sem sessão e o dono está no desktop: abrir o portal de afiliados",
                      alvo="ml", humano=True)
-    # primeiro ela se arruma: o que depende DELA, não do dono
-    if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
-        return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
-    if p.get("kiwify_ok") and not p.get("webhook_ok"):
-        return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("briefs_novos", 0) == 0 and p.get("produtos", 0) == 0:
         return d("pesquisar", "sem demanda mapeada ainda — precisa pesquisar antes de escrever")
     if p.get("produtos", 0) == 0:
