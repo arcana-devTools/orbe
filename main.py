@@ -217,7 +217,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
-_ABERTOS = {"/health", "/favicon.ico"}
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook"}   # o webhook vem sem senha: o valor é conferido na API
 
 
 @app.middleware("http")
