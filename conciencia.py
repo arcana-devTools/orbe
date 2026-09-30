@@ -208,8 +208,9 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
             import uiclap
 
             feitos = []
-            prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
             for m in acabamento._metas():
+                # relê a cada volta: duas execuções ao mesmo tempo já criaram kit duplicado uma vez
+                prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
                 if m.get("status") == "aprovado" and str(m.get("id")) not in prontos:
                     try:
                         r = uiclap.kit_de_produto(str(m.get("id")))
