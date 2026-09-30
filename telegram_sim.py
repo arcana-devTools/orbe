@@ -454,7 +454,8 @@ def _mao_texto(cmd: str) -> str:
     tc, tp = mao.token_de("celular"), mao.token_de("pc")
     if not tc:
         return "⚠️ Sem senha do painel eu não gero a mão."
-    cel = (f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
+    cel = (f"(command -v python >/dev/null || pkg install -y python) && "
+           f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
            f"python ~/orbe-mao.py --apelido celular --token {tc} --base {base_url}")
     win = (f"$t='{tp}'; irm {base_url}/mao/pc.ps1 -OutFile $env:TEMP\\orbe-mao.ps1; "
            f"powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\\orbe-mao.ps1 -Token $t -Base '{base_url}' -Apelido pc")
@@ -631,6 +632,35 @@ async def _capturar_dono() -> bool:
     return False
 
 
+_mao_avisou = False
+
+
+async def _avisar_mao_uma_vez() -> None:
+    """Uma vez: manda no Telegram o comando pra ligar a mão. O token não sai deste chat."""
+    global _mao_avisou
+    if _mao_avisou:
+        return
+    import mao
+
+    d = mao._carregar()
+    if time.time() - float(d.get("aviso_em") or 0) < 7 * 86400:
+        _mao_avisou = True
+        return
+    _, chat = _cfg()
+    if not chat:
+        return
+    txt = _mao_texto("/mao")
+    r = await _tg("sendMessage", chat_id=chat, text=txt, parse_mode="HTML")
+    if not r.get("ok"):
+        r = await _tg("sendMessage", chat_id=chat, text=txt.replace("<code>", "").replace("</code>", ""))
+    if not r.get("ok"):
+        return
+    _mao_avisou = True
+    d = mao._carregar()
+    d["aviso_em"] = time.time()
+    mao._salvar(d, importante=True)
+
+
 async def _poller() -> None:
     while True:
         tok, chat = _cfg()
@@ -641,6 +671,10 @@ async def _poller() -> None:
             if not await _capturar_dono():
                 await asyncio.sleep(5)
             continue
+        try:
+            await _avisar_mao_uma_vez()
+        except Exception:
+            pass
         res = (await _tg("getUpdates", offset=_offset(), timeout=25)).get("result", [])
         for u in res:
             _offset_salvar(int(u.get("update_id", 0)) + 1)
