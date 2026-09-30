@@ -122,6 +122,14 @@ def perceber() -> dict[str, Any]:
             p["webhook_ok"] = any(str(w.get("url", "")).rstrip("/") == alvo for w in kiwify.webhooks())
         except Exception:
             p["webhook_ok"] = False
+    try:
+        import habilidades
+
+        p["habilidades"] = len(habilidades.lista())
+        p["habilidades_txt"] = habilidades.resumo_txt()
+    except Exception:
+        p["habilidades"] = 0
+        p["habilidades_txt"] = ""
     p["humano_aqui"] = humano_no_desktop()
     return p
 
@@ -179,6 +187,19 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
 async def agir(dec: dict[str, Any]) -> dict[str, Any]:
     """Executa só o que é seguro e reversível. Senha/termos: nunca."""
     acao = dec.get("acao")
+    try:
+        import habilidades
+
+        receita = habilidades.ler(str(acao))
+        if receita:
+            try:
+                from conciencia import anotar
+
+                anotar(f"vou seguir minha habilidade de '{acao}'")
+            except Exception:
+                pass
+    except Exception:
+        pass
     if acao == "abrir_login":
         alvo = dec.get("alvo")
         try:
@@ -312,6 +333,12 @@ async def ciclo(forcar: bool = False) -> dict[str, Any]:
     p = perceber()
     dec = decidir(p)
     r = await agir(dec)
+    try:
+        import habilidades
+
+        p["habilidade_nova"] = await habilidades.tentar_aprender(dec, r) or ""
+    except Exception:
+        p["habilidade_nova"] = ""
     linha = _escrever(p, dec, r)
     return {"percebido": p, "decidido": dec, "resultado": r, "linha": linha}
 
