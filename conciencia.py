@@ -71,9 +71,13 @@ def perceber() -> dict[str, Any]:
         try:
             import uiclap
 
-            prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
+            # o kit guarda o produto em "origem" (e "produto_id" se existir)
+            ks = uiclap.kits()
+            prontos = {str(k.get("produto_id") or k.get("origem") or "") for k in ks}
+            titulos = {str((k.get("info") or {}).get("titulo") or "").strip().lower() for k in ks}
             p["aprovados_sem_kit"] = sum(
-                1 for m in metas if m.get("status") == "aprovado" and str(m.get("id")) not in prontos)
+                1 for m in metas if m.get("status") == "aprovado" and str(m.get("id")) not in prontos
+            and str(m.get("titulo", "")).strip().lower() not in titulos)
         except Exception:
             p["aprovados_sem_kit"] = 0
     except Exception:
@@ -230,9 +234,13 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
 
             feitos = []
             for m in acabamento._metas():
-                # relê a cada volta: duas execuções ao mesmo tempo já criaram kit duplicado uma vez
-                prontos = {str(k.get("produto_id") or "") for k in uiclap.kits()}
-                if m.get("status") == "aprovado" and str(m.get("id")) not in prontos:
+                # relê a cada volta: duas execuções juntas já criaram kit duplicado uma vez
+                ks = uiclap.kits()
+                # o kit guarda o produto em "origem" (e em "produto_id" se existir)
+                prontos = {str(k.get("produto_id") or k.get("origem") or "") for k in ks}
+                titulos = {str((k.get("info") or {}).get("titulo") or "").strip().lower() for k in ks}
+                if (m.get("status") == "aprovado" and str(m.get("id")) not in prontos
+                        and str(m.get("titulo", "")).strip().lower() not in titulos):
                     try:
                         r = uiclap.kit_de_produto(str(m.get("id")))
                         feitos.append(str((r or {}).get("kid") or m.get("id"))[:24])

@@ -564,6 +564,18 @@ class MlIrIn(BaseModel):
     url: str = ""
 
 
+@app.get("/api/uiclap/kits")
+async def uiclap_kits() -> dict[str, Any]:
+    """Kits de livro na fila (pra enxergar duplicata antes do publicador)."""
+    import uiclap
+
+    _touch()
+    ks = [{"kid": k.get("kid"), "titulo": (k.get("info") or {}).get("titulo"), "status": k.get("status"),
+           "origem": k.get("origem") or k.get("produto_id"), "criado": k.get("criado"),
+           "teste": bool(k.get("teste"))} for k in uiclap.kits()]
+    return {"kits": ks, "n": len(ks)}
+
+
 @app.post("/api/hermes/resultado")
 async def hermes_resultado(request: Request) -> dict[str, Any]:
     """O Hermes devolve aqui o resultado da tarefa que a colônia encomendou."""
