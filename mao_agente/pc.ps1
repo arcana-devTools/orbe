@@ -5,6 +5,9 @@ param(
   [string]$Apelido = "pc"
 )
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1 nasce em TLS 1.0 e o Render recusa. Sem isto, irm e o poll quebram.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {}
+$ProgressPreference = "SilentlyContinue"
 $Base = $Base.TrimEnd("/")
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing

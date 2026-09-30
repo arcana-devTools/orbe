@@ -457,14 +457,18 @@ def _mao_texto(cmd: str) -> str:
     cel = (f"(command -v python >/dev/null || pkg install -y python) && "
            f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
            f"python ~/orbe-mao.py --apelido celular --token {tc} --base {base_url}")
-    win = (f"$t='{tp}'; irm {base_url}/mao/pc.ps1 -OutFile $env:TEMP\\orbe-mao.ps1; "
-           f"powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\\orbe-mao.ps1 -Token $t -Base '{base_url}' -Apelido pc")
+    win = ("[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072; "
+           "$ProgressPreference='SilentlyContinue'; $t='" + tp + "'; "
+           "irm " + base_url + "/mao/pc.ps1 -OutFile \"$env:TEMP\\orbe-mao.ps1\"; "
+           "powershell -NoProfile -ExecutionPolicy Bypass -File \"$env:TEMP\\orbe-mao.ps1\" "
+           "-Token $t -Base '" + base_url + "' -Apelido pc")
     mac = (f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
            f"python3 ~/orbe-mao.py --apelido pc --token {tp} --base {base_url}")
-    return (base + "\n\nDeixa a janela aberta. Se fechar, a mão para.\n\n"
-            "📱 Celular (Termux):\n<code>" + html.escape(cel) + "</code>\n\n"
-            "💻 PC Windows (PowerShell):\n<code>" + html.escape(win) + "</code>\n\n"
-            "💻 Mac ou Linux:\n<code>" + html.escape(mac) + "</code>")
+    return (base + "\n\nDeixa a janela aberta. Se fechar, a mão para.\n"
+            "No PC, o comando antigo quebra no SSL. Usa este.\n\n"
+            "📱 Celular (Termux):\n<code>" + html.escape(cel, quote=False) + "</code>\n\n"
+            "💻 PC Windows (PowerShell):\n<code>" + html.escape(win, quote=False) + "</code>\n\n"
+            "💻 Mac ou Linux:\n<code>" + html.escape(mac, quote=False) + "</code>")
 
 
 def _mao_frase(texto: str) -> str:
@@ -643,7 +647,7 @@ async def _avisar_mao_uma_vez() -> None:
     import mao
 
     d = mao._carregar()
-    if time.time() - float(d.get("aviso_em") or 0) < 7 * 86400:
+    if d.get("aviso_ver") == "tls12" and time.time() - float(d.get("aviso_em") or 0) < 7 * 86400:
         _mao_avisou = True
         return
     _, chat = _cfg()
@@ -658,6 +662,7 @@ async def _avisar_mao_uma_vez() -> None:
     _mao_avisou = True
     d = mao._carregar()
     d["aviso_em"] = time.time()
+    d["aviso_ver"] = "tls12"
     mao._salvar(d, importante=True)
 
 
