@@ -317,6 +317,23 @@ async def aceitar_termos(page) -> bool:
     return achou
 
 
+async def pedir_ajuda(texto: str) -> bool:
+    """Ela chama o dono no Telegram quando trava em algo que só ele resolve."""
+    try:
+        import os
+
+        import telegram_sim
+
+        tok, chat = telegram_sim._cfg()
+        if not (tok and chat):
+            return False
+        await telegram_sim._tg("sendMessage", chat_id=chat,
+                               text="⚠️ " + texto + "\n\n/desktop (ou pelo painel) e depois /entrar")
+        return True
+    except Exception:
+        return False
+
+
 async def entrar() -> dict[str, Any]:
     """A COLÔNIA entra na Kiwify com o login e a senha que o dono entregou a ela.
 
@@ -369,11 +386,11 @@ async def entrar() -> dict[str, Any]:
     except Exception:
         txt = ""
     if re.search(r"captcha|recaptcha|não sou um robô|robot", txt, re.I):
-        return {"ok": False, "motivo": "captcha na tela — isso eu não resolvo; "
-                                       "está aberto no /desktop, é um toque seu"}
+        await pedir_ajuda("Apareceu um captcha da Kiwify na tela. É só um toque seu e eu continuo sozinha depois.")
+        return {"ok": False, "motivo": "captcha na tela — chamei o dono no Telegram", "esperando": "captcha"}
     if re.search(r"c[oó]digo|verifica|2fa|autentica|sms|whatsapp", txt, re.I):
-        return {"ok": False, "motivo": "pediu 2FA: manda o código no Telegram que eu digito",
-                "esperando": "2fa"}
+        await pedir_ajuda("A Kiwify pediu o código de verificação. Manda só os números aqui que eu digito.")
+        return {"ok": False, "motivo": "pediu 2FA: chamei o dono no Telegram", "esperando": "2fa"}
     await _dump(page, "login-duvida")
     return {"ok": False, "motivo": f"não deu certo e não sei dizer por quê (dump salvo): {txt[:160]}"}
 

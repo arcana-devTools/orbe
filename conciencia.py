@@ -192,6 +192,15 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
             return {"feito": bool(r.get("ok")), "resumo": r.get("motivo") or "API Key criada e guardada no cofre"}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "avisar":
+        try:
+            import telegram_sim
+
+            ok = await telegram_sim.resumo_diario(forcar=True)
+            return {"feito": bool(ok), "resumo": "mandei o resumo com os produtos pro Telegram"
+                    if ok else "não tinha nada novo pra avisar"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "entrar":
         try:
             import kiwify_painel
