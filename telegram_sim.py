@@ -401,7 +401,8 @@ async def _status() -> str:
     s = SWARM.state()
     return (f"🤖 <b>ORBE AUTÔNOMO</b>\n"
             f"viv@s: {s['vivos']} • clones: {s['clones']} • ciclos: {s['ciclos']}\n"
-            f"💼 entregas reais: {s.get('entregas_total', 0)} (receita interna R$ {s.get('receita_total', 0)})")
+            f"💼 entregas reais: {s.get('entregas_total', 0)} (receita interna R$ {s.get('receita_total', 0)})\n"
+            f"{_mao_texto('/status').splitlines()[0]}")
 
 
 def _offset() -> int:
@@ -433,6 +434,53 @@ _CHAVES = {
 import re as _re
 
 _GENERICO = _re.compile(r"^([a-z0-9_]{3,24})_(login|senha|email|senha2)$")
+
+
+def _mao_texto(cmd: str) -> str:
+    """/mao mostra se a mão está viva. /mao ligar manda o comando de instalação (só neste chat)."""
+    import mao
+
+    e = mao.estado()
+    linhas = []
+    for nome in mao.APARELHOS:
+        info = e["aparelhos"].get(nome) or {}
+        linhas.append(("🟢 " if info.get("online") else "⚪ ") + nome)
+    base = "Mão: " + " · ".join(linhas)
+    if not (cmd.startswith("/mao") or cmd.startswith("/tela")):
+        return base
+    if "ligar" not in cmd and all((e["aparelhos"].get(n) or {}).get("online") for n in mao.APARELHOS):
+        return base + "\nPede: abre o WhatsApp no celular / abre uma aba do Gmail no pc."
+    base_url = os.environ.get("ORBE_PUBLIC_URL", "https://orbe-xfzn.onrender.com").rstrip("/")
+    tc, tp = mao.token_de("celular"), mao.token_de("pc")
+    if not tc:
+        return "⚠️ Sem senha do painel eu não gero a mão."
+    cel = (f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
+           f"python ~/orbe-mao.py --apelido celular --token {tc} --base {base_url}")
+    win = (f"$t='{tp}'; irm {base_url}/mao/pc.ps1 -OutFile $env:TEMP\\orbe-mao.ps1; "
+           f"powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\\orbe-mao.ps1 -Token $t -Base '{base_url}' -Apelido pc")
+    mac = (f"curl -fsSL {base_url}/mao/agente.py -o ~/orbe-mao.py && "
+           f"python3 ~/orbe-mao.py --apelido pc --token {tp} --base {base_url}")
+    return (base + "\n\nDeixa a janela aberta. Se fechar, a mão para.\n\n"
+            "📱 Celular (Termux):\n<code>" + html.escape(cel) + "</code>\n\n"
+            "💻 PC Windows (PowerShell):\n<code>" + html.escape(win) + "</code>\n\n"
+            "💻 Mac ou Linux:\n<code>" + html.escape(mac) + "</code>")
+
+
+def _mao_frase(texto: str) -> str:
+    import mao
+
+    try:
+        r = mao.pedir_texto(texto, origem="telegram")
+    except ValueError as exc:
+        return f"⚠️ {html.escape(str(exc))}"
+    if not r:
+        return ""
+    alvo = html.escape(str(r.get("acao") or ""))
+    ap = html.escape(str(r.get("aparelho") or ""))
+    if r.get("online"):
+        return f"📱 Mandei pro {ap}: {alvo}. Ele responde aqui quando fizer."
+    return (f"📋 Enfileirei no {ap}, mas ele está fechado. "
+            "Manda /mao que eu te passo o comando. Deixa a janela aberta.")
 
 
 def _guardar_segredos(texto: str) -> str:
@@ -510,13 +558,16 @@ async def _tratar(update: dict) -> None:
             texto = html.escape(vendas.resumo_txt(time.time() - 86400))
         elif cmd.startswith("/status"):
             texto = await _status()
+        elif cmd.startswith("/mao") or cmd.startswith("/tela"):
+            texto = _mao_texto(cmd)
         elif cmd.startswith("/start"):
             texto = ("🤖 Orbe Autônomo na escuta!\n\n"
                      "/radar — ver ideias caçadas\n"
                      "/sim <nº> — aprovar ideia\n"
                      "/status — colônia\n\n"
                      "/produtos — produtos prontos\n"
-                     "/vendas — vendas REAIS (dinheiro de verdade)\n\n"
+                     "/vendas — vendas REAIS (dinheiro de verdade)\n"
+                     "/mao — ligar a mão no celular e no PC\n\n"
                      "Mande 'chave: valor' (ex.: kiwify_client_secret: ...) que eu "
                      "guardo no meu cofre, apago a mensagem e me configuro sozinha.\n\n"
                      f"Só mando 1 mensagem por dia ({HORA_RESUMO}h), e só se tiver produto aprovado pelo crítico.")
@@ -537,7 +588,7 @@ async def _tratar(update: dict) -> None:
                 pass
         else:
             bruto = str(msg.get("text", ""))
-            texto = _guardar_segredos(bruto)
+            texto = _mao_frase(bruto) or _guardar_segredos(bruto)
             if not texto:
                 return
             try:                      # apaga a mensagem com o segredo do histórico

@@ -31,7 +31,8 @@ DATA = Path("data")
 ARQUIVOS = ["uiclap_login.json", "autonomous.json", "autonomo_jobs.json", "renda_radar.json",
             "autopilot.json", "tg_offset.txt", "prefs.json", "briefs.json",
             "ml_sessao.json", "afiliados_ml.json", "vendas.json", "aprendizado.json",
-            "tg_resumo.json", "workana_sessao.txt", "freelas.json", "workana_perfil.json", "workana_estado.json", "99_sessao.txt"]
+            "tg_resumo.json", "workana_sessao.txt", "freelas.json", "workana_perfil.json", "workana_estado.json", "99_sessao.txt",
+            "mao.json"]
 MAX_RESULTADOS = 60           # últimas entregas (.md) que viajam junto
 BRANCH = "orbe-estado"
 CAMINHO = "estado/orbe-state.enc"

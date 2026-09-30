@@ -218,7 +218,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
-_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado"}
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado",
+             "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1"}
 
 
 @app.middleware("http")
@@ -605,6 +606,90 @@ async def hermes_pedir(payload: dict[str, Any]) -> dict[str, Any]:
     return await hermes.pedir(str(payload.get("tarefa", ""))[:1800])
 
 
+@app.get("/mao/agente.py")
+async def mao_agente_py() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "agente.py", media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/mao/pc.ps1")
+async def mao_pc_ps1() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "pc.ps1", media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
+def _mao_token(request: Request, aparelho: str) -> None:
+    import mao
+
+    dado = request.headers.get("x-orbe-mao", "") or request.query_params.get("t", "")
+    if not mao.token_ok(aparelho, dado):
+        raise HTTPException(401, "mão sem token")
+
+
+@app.get("/api/mao/fila")
+async def mao_fila(request: Request, aparelho: str = "") -> dict[str, Any]:
+    """O aparelho do dono pergunta se tem ordem. Espera até 20s."""
+    import mao
+
+    if aparelho not in mao.APARELHOS:
+        raise HTTPException(400, "aparelho")
+    _mao_token(request, aparelho)
+    cmd = mao.pegar(aparelho)
+    if cmd:
+        return {"comando": cmd}
+    for _ in range(20):
+        await asyncio.sleep(1)
+        cmd = mao.pegar(aparelho)
+        if cmd:
+            return {"comando": cmd}
+    mao.bater(aparelho)
+    return {"comando": None}
+
+
+@app.post("/api/mao/resultado")
+async def mao_resultado(request: Request) -> dict[str, Any]:
+    import mao
+
+    try:
+        d = await request.json()
+    except Exception:
+        raise HTTPException(400, "json")
+    aparelho = str(d.get("aparelho") or "")
+    if aparelho not in mao.APARELHOS:
+        raise HTTPException(400, "aparelho")
+    _mao_token(request, aparelho)
+    return mao.resultado(aparelho, str(d.get("id") or ""), bool(d.get("ok")),
+                         str(d.get("resumo") or "")[:300], str(d.get("imagem") or ""))
+
+
+@app.get("/api/mao/estado")
+async def mao_estado() -> dict[str, Any]:
+    import mao
+
+    _touch()
+    return mao.estado()
+
+
+@app.post("/api/mao/pedir")
+async def mao_pedir(payload: dict[str, Any]) -> dict[str, Any]:
+    """Hen ou o painel pedem uma ordem. A colônia também aceita a frase no Telegram."""
+    import mao
+
+    _touch()
+    frase = str(payload.get("frase") or "").strip()
+    if frase:
+        r = mao.pedir_texto(frase, origem="api")
+        if not r:
+            raise HTTPException(400, "não entendi como pedido de tela")
+        return r
+    try:
+        return mao.pedir(str(payload.get("aparelho") or ""), str(payload.get("acao") or ""),
+                         str(payload.get("alvo") or ""), payload.get("extra") if isinstance(payload.get("extra"), dict) else None,
+                         origem="api")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/api/kiwify/estado")
 async def kiwify_estado() -> dict[str, Any]:
     """Kiwify: saúde da conexão + vendas reais dos últimos 7 dias."""
@@ -814,7 +899,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.11",
+        "versao": "0.27.12",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
