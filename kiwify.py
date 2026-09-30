@@ -226,12 +226,13 @@ def webhooks() -> list[dict]:
     return _linhas(api("webhooks"))
 
 
-def webhook_criar(url: str, eventos: list[str] | None = None) -> dict[str, Any]:
-    """Cria um webhook pra Kiwify avisar a venda na hora (o Orbe recebe e conta)."""
+def webhook_criar(url: str, nome: str = "Orbe", gatilhos: list[str] | None = None) -> dict[str, Any]:
+    """Cria um webhook pra Kiwify avisar a venda na hora (o Orbe recebe e confere)."""
     c = cred()
     if not c:
         raise KiwifyErro("sem credenciais da Kiwify")
-    corpo = {"url": url, "events": eventos or ["order.approved", "order.refunded"]}
+    corpo = {"name": nome, "url": url, "products": "all",
+             "triggers": gatilhos or ["compra_aprovada", "compra_reembolsada", "chargeback"]}
     r = httpx.post(f"{BASE}/webhooks", headers={**_cabecalho(), "Content-Type": "application/json"},
                    json=corpo, timeout=TIMEOUT)
     if r.status_code in (401, 403):
@@ -244,6 +245,55 @@ def webhook_criar(url: str, eventos: list[str] | None = None) -> dict[str, Any]:
         return r.json()
     except Exception:
         return {"ok": True, "texto": r.text[:160]}
+
+
+def venda(order_id: str) -> dict[str, Any]:
+    """Uma venda pelo id (a fonte da verdade do valor — o corpo do webhook não vale)."""
+    d = api(f"sales/{order_id}", view_full_sale_details="true")
+    if isinstance(d.get("data"), dict):
+        return d["data"]
+    return d
+
+
+def lancar_webhook(d: dict[str, Any]) -> dict[str, Any]:
+    """Webhook da Kiwify → venda REAL no livro-caixa.
+
+    O valor nunca vem do corpo do aviso: a gente busca a venda na API pelo id e
+    lança o líquido de lá. Reembolso/chargeback/recusa não entra como venda.
+    """
+    def achar(*chaves: str) -> Any:
+        for fonte in (d, d.get("data") if isinstance(d.get("data"), dict) else {}):
+            for c in chaves:
+                v = fonte.get(c)
+                if v:
+                    return v
+        return ""
+
+    oid = str(achar("order_id", "id", "sale_id", "orderId") or "")[:64]
+    status = str(achar("order_status", "status", "webhook_type", "event") or "").lower()
+    if not oid:
+        return {"ok": False, "motivo": "aviso sem order_id"}
+    if any(x in status for x in ("reembols", "refund", "chargeback", "recusad", "cancel", "expirad")):
+        return {"ok": False, "motivo": f"ignorado ({status})", "order_id": oid}
+    titulo = str(achar("product_name", "product_title") or "")
+    try:
+        v = venda(oid)
+        pag = v.get("payment") or {}
+        liquido = _reais(pag.get("net_amount") or v.get("net_amount") or 0)
+        titulo = str((v.get("product") or {}).get("name") or titulo)
+        prod_id = str((v.get("product") or {}).get("id") or "")
+        moeda = str(v.get("currency") or "BRL").upper()
+        aprovado = str(v.get("status") or "").lower()
+    except Exception as exc:
+        return {"ok": False, "motivo": f"não consegui conferir na API: {str(exc)[:80]}", "order_id": oid}
+    if aprovado and aprovado not in ("paid", "approved", "aprovada", "aprovado"):
+        return {"ok": False, "motivo": f"venda {oid} ainda não está paga ({aprovado})"}
+    if liquido <= 0:
+        return {"ok": False, "motivo": "valor líquido zero", "order_id": oid}
+    import vendas
+
+    v2 = vendas.registrar("kiwify", liquido, moeda, prova=oid, produto_id=prod_id, titulo=titulo)
+    return {"ok": True, "nova": bool(v2), "valor": liquido, "moeda": moeda, "produto": titulo, "order_id": oid}
 
 
 # ------------------------------------------------------------------ CLI
@@ -266,6 +316,8 @@ def main() -> None:
         print(json.dumps(webhooks(), ensure_ascii=False)[:600])
     elif cmd == "webhook":
         print(json.dumps(webhook_criar(sys.argv[2]), ensure_ascii=False)[:400])
+    elif cmd == "venda":
+        print(json.dumps(venda(sys.argv[2]), ensure_ascii=False)[:800])
     else:
         print("comandos: estado | produtos | vendas [dias] | saldo | webhooks | webhook <url>")
 

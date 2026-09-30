@@ -600,6 +600,36 @@ async def kiwify_apikey() -> dict[str, Any]:
     return d
 
 
+@app.post("/kiwify/webhook", include_in_schema=False)
+async def kiwify_webhook(request: Request) -> dict[str, Any]:
+    """A Kiwify avisa aqui na hora em que uma venda é aprovada.
+
+    Não confiamos no corpo do aviso: o valor é conferido na API pelo id do pedido
+    e só então lançado no livro-caixa de vendas REAIS.
+    """
+    import kiwify
+
+    try:
+        bruto = await request.body()
+    except Exception:
+        bruto = b""
+    try:
+        d = json.loads(bruto)
+    except Exception:
+        try:
+            d = dict(
+                p.split("=", 1) for p in bruto.decode("utf-8", "replace").split("&") if "=" in p
+            )
+        except Exception:
+            d = {}
+    try:
+        r = kiwify.lancar_webhook(d or {})
+        await BUS.info(f"🥝 webhook Kiwify: {str(r)[:150]}")
+        return r
+    except Exception as exc:
+        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:150]}"}
+
+
 @app.post("/api/afiliados/ml/abrir")
 async def ml_abrir(payload: MlIrIn | None = None) -> dict[str, Any]:
     """Abre o portal de afiliados no Chrome do /desktop (dono loga lá, 1x)."""
