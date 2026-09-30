@@ -429,6 +429,11 @@ _CHAVES = {
     "shopee_cookie": ("shopee", "cookie"),
 }
 
+# genérico: qualquer "<loja>_login" / "<loja>_senha" / "<loja>_email" que o dono mandar
+import re as _re
+
+_GENERICO = _re.compile(r"^([a-z0-9_]{3,24})_(login|senha|email|senha2)$")
+
 
 def _guardar_segredos(texto: str) -> str:
     """O dono manda 'chave: valor' no Telegram e a COLÔNIA guarda no próprio cofre.
@@ -507,6 +512,21 @@ async def _tratar(update: dict) -> None:
                      "Mande 'chave: valor' (ex.: kiwify_client_secret: ...) que eu "
                      "guardo no meu cofre, apago a mensagem e me configuro sozinha.\n\n"
                      f"Só mando 1 mensagem por dia ({HORA_RESUMO}h), e só se tiver produto aprovado pelo crítico.")
+        elif _re.fullmatch(r"/?2fa\s*[: ]?\s*\d{4,8}", str(msg.get("text", "")).strip()) or \
+                _re.fullmatch(r"\d{4,8}", str(msg.get("text", "")).strip()):
+            codigo = _re.sub(r"\D", "", str(msg.get("text", "")))
+            try:
+                import kiwify_painel
+
+                r = await kiwify_painel.digitar(codigo)
+                texto = ("✅ " + r["resumo"]) if r.get("ok") else ("⚠️ " + str(r.get("motivo")))
+            except Exception as exc:
+                texto = f"⚠️ {type(exc).__name__}: {str(exc)[:120]}"
+            try:
+                await _tg("deleteMessage", chat_id=str(msg.get("chat", {}).get("id") or chat),
+                          message_id=msg.get("message_id"))
+            except Exception:
+                pass
         else:
             bruto = str(msg.get("text", ""))
             texto = _guardar_segredos(bruto)

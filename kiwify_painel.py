@@ -260,3 +260,131 @@ async def _dump(page, nome: str) -> str:
     except Exception:
         pass
     return str(arq)
+
+
+# ------------------------------------------------------------------ entrada
+def _segredo(campo: str) -> str:
+    """Login/senha que o DONO entregou pra ela (nunca aparecem em resposta)."""
+    v = VAULT.get("kiwify") or {}
+    return str((v.get("extra") or {}).get(campo) or "")
+
+
+async def aceitar_termos(page) -> bool:
+    """Marca 'li e aceito os termos' EM NOME DO DONO (autorizado por ele).
+
+    Não é um clique invisível: fica registrado no diário da consciência, com data.
+    """
+    import re as _re
+
+    try:
+        from conciencia import anotar
+    except Exception:
+        anotar = None  # type: ignore
+    achou = False
+    for rotulo in (r"aceito os termos", r"li e aceito", r"li e concordo", r"concordo com",
+                   r"termos de uso", r"termos e condi"):
+        try:
+            alvo = page.get_by_text(_re.compile(rotulo, _re.I)).first
+            if await alvo.count() == 0:
+                continue
+            try:                                   # clicar no texto às vezes marca o checkbox
+                await alvo.click(timeout=3000)
+                achou = True
+            except Exception:
+                pass
+            break
+        except Exception:
+            continue
+    try:                                           # qualquer checkbox não marcado da aba
+        boxes = page.locator("input[type=checkbox]")
+        for i in range(await boxes.count()):
+            try:
+                if not await boxes.nth(i).is_checked():
+                    await boxes.nth(i).check(timeout=2500)
+                    achou = True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    if achou and anotar:
+        anotar(f"aceitei os termos/checkboxes da Kiwify em nome do dono (autorizado) — {page.url}",
+               acao="termos")
+    return achou
+
+
+async def entrar() -> dict[str, Any]:
+    """A COLÔNIA entra na Kiwify com o login e a senha que o dono entregou a ela.
+
+    Regras dela:
+    - só roda se o dono mandou 'kiwify_login' e 'kiwify_senha' (pelo Telegram);
+    - digita no painel da Kiwify e em lugar nenhum mais;
+    - 2FA: ela para e pede o código no Telegram (não inventa);
+    - captcha: ela NÃO resolve — deixa na tela pro dono (um toque);
+    - tudo o que ela fizer fica no diário.
+    """
+    import re
+
+    login, senha = _segredo("login"), _segredo("senha")
+    if not (login and senha):
+        return {"ok": False, "motivo": "não tenho login/senha — o dono precisa mandar "
+                                       "'kiwify_login: ...' e 'kiwify_senha: ...' no Telegram"}
+    ctx, page = await _pagina()
+    await page.goto(PAINEL, wait_until="domcontentloaded", timeout=60000)
+    await page.wait_for_timeout(3000)
+    if await logado(page):
+        salvar_sessao(await ctx.cookies())
+        return {"ok": True, "resumo": "já estava logada"}
+    # campos de login
+    try:
+        for seletor in ("input[type=email]", "input[name*=email i]", "input[name*=user i]",
+                        "input[type=text]"):
+            try:
+                await page.locator(seletor).first.fill(login, timeout=4000)
+                break
+            except Exception:
+                continue
+        await page.locator("input[type=password]").first.fill(senha, timeout=6000)
+        await page.locator("input[type=password]").first.press("Enter")
+        await page.wait_for_timeout(6000)
+    except Exception as exc:
+        await _dump(page, "login-erro")
+        return {"ok": False, "motivo": f"não consegui preencher o login: {str(exc)[:120]}"}
+    if await logado(page):
+        salvar_sessao(await ctx.cookies())
+        try:
+            from conciencia import anotar
+
+            anotar("entrei na Kiwify sozinha com o login/senha que o dono me entregou", acao="login")
+        except Exception:
+            pass
+        return {"ok": True, "resumo": "entrei e guardei a sessão"}
+    # o que sobrou na tela?
+    try:
+        txt = (await page.inner_text("body"))[:600]
+    except Exception:
+        txt = ""
+    if re.search(r"captcha|recaptcha|não sou um robô|robot", txt, re.I):
+        return {"ok": False, "motivo": "captcha na tela — isso eu não resolvo; "
+                                       "está aberto no /desktop, é um toque seu"}
+    if re.search(r"c[oó]digo|verifica|2fa|autentica|sms|whatsapp", txt, re.I):
+        return {"ok": False, "motivo": "pediu 2FA: manda o código no Telegram que eu digito",
+                "esperando": "2fa"}
+    await _dump(page, "login-duvida")
+    return {"ok": False, "motivo": f"não deu certo e não sei dizer por quê (dump salvo): {txt[:160]}"}
+
+
+async def digitar(texto: str) -> dict[str, Any]:
+    """Digita o que o dono mandou na página aberta (ex.: código 2FA do SMS)."""
+    _, page = await _pagina()
+    try:
+        await page.keyboard.type(str(texto).strip(), delay=60)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(5000)
+    except Exception as exc:
+        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if await logado(page):
+        from conciencia import anotar
+
+        anotar("completei o 2FA com o código que o dono mandou e guardei a sessão", acao="2fa")
+        return {"ok": True, "resumo": "entrei (2FA ok) e guardei a sessão"}
+    return {"ok": False, "motivo": "digitei, mas ainda não consta como logada — olha o /desktop"}

@@ -99,6 +99,12 @@ def perceber() -> dict[str, Any]:
     # auto-cuidado: o que falta EM MIM (não no dono)
     p["kiwify_ok"] = bool(p.get("lojas", {}).get("kiwify", {}).get("ok"))
     p["sessao_kiwify"] = Path("data/kiwify_sessao.json").exists()
+    try:
+        import kiwify_painel
+
+        p["kiwify_login"] = bool(kiwify_painel._segredo("login") and kiwify_painel._segredo("senha"))
+    except Exception:
+        p["kiwify_login"] = False
     p["webhook_ok"] = False
     if p["kiwify_ok"]:
         try:
@@ -133,6 +139,8 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
     # primeiro ela se arruma: o que depende DELA, não do dono
     if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
         return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
+    if p.get("kiwify_login") and not p.get("sessao_kiwify"):
+        return d("entrar", "tenho login/senha da Kiwify e nenhuma sessão: entrar sozinha", alvo="kiwify")
     if p.get("kiwify_ok") and not p.get("webhook_ok"):
         return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("aguardando_dono", 0) > 0:
@@ -184,6 +192,14 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
             return {"feito": bool(r.get("ok")), "resumo": r.get("motivo") or "API Key criada e guardada no cofre"}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "entrar":
+        try:
+            import kiwify_painel
+
+            r = await kiwify_painel.entrar()
+            return {"feito": bool(r.get("ok")), "resumo": r.get("resumo") or r.get("motivo", "")}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "configurar_webhook":
         try:
             import kiwify
@@ -215,6 +231,12 @@ def _escrever(p: dict[str, Any], dec: dict[str, Any], r: dict[str, Any]) -> dict
     except Exception:
         pass
     return linha
+
+
+def anotar(texto: str, acao: str = "nota") -> None:
+    """Ela escreve no próprio diário — inclusive quando age em nome do dono."""
+    _escrever({"vivos": -1, "vendas": -1, "total_txt": ""}, {"acao": acao, "porque": texto},
+              {"resumo": "registrado"})
 
 
 def diario(n: int = 12) -> list[dict]:
