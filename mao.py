@@ -245,6 +245,15 @@ def resultado(aparelho: str, oid: str, ok: bool, resumo: str, imagem: str = "") 
     return {"ok": True}
 
 
+def consultar(oid: str) -> dict[str, Any]:
+    for o in _carregar().get("ordens") or []:
+        if o.get("id") == oid:
+            return {"id": o.get("id"), "aparelho": o.get("aparelho"), "acao": o.get("acao"),
+                    "estado": o.get("estado"), "ok": o.get("ok"), "resumo": o.get("resumo") or "",
+                    "print": o.get("print") or ""}
+    return {}
+
+
 def _avisar_telegram(ordem: dict) -> None:
     try:
         import telegram_sim

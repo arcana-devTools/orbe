@@ -663,6 +663,29 @@ async def mao_resultado(request: Request) -> dict[str, Any]:
                          str(d.get("resumo") or "")[:300], str(d.get("imagem") or ""))
 
 
+@app.get("/api/mao/ordem/{oid}")
+async def mao_ordem(oid: str) -> dict[str, Any]:
+    import mao
+
+    _touch()
+    achou = mao.consultar(oid)
+    if not achou:
+        raise HTTPException(404, "ordem não encontrada")
+    return achou
+
+
+@app.get("/api/mao/print/{nome}")
+async def mao_print(nome: str) -> FileResponse:
+    import re
+
+    if not re.fullmatch(r"[a-f0-9]{12}\.(jpg|png)", nome or ""):
+        raise HTTPException(400, "print inválido")
+    arq = Path("data/mao_prints") / nome
+    if not arq.exists():
+        raise HTTPException(404, "print ainda não chegou")
+    return FileResponse(arq)
+
+
 @app.get("/api/mao/estado")
 async def mao_estado() -> dict[str, Any]:
     import mao
@@ -900,7 +923,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.14",
+        "versao": "0.27.15",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
