@@ -67,7 +67,8 @@ async def pedir(tarefa: str, voltar: str = "orbe") -> dict[str, Any]:
 
 def anotar_resultado(dado: dict[str, Any]) -> dict[str, Any]:
     """Guarda o que o Hermes devolveu e registra no diário da colônia."""
-    reg = {"ts": time.time(), "status": "recebido", "dado": json.loads(json.dumps(dado))[:6000]}
+    reg = {"ts": time.time(), "status": "recebido",
+           "dado": json.loads(json.dumps(dado, ensure_ascii=False)[:6000])}
     try:
         ULTIMO.write_text(json.dumps(reg, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
