@@ -38,6 +38,12 @@ class UiclapErro(RuntimeError):
     pass
 
 
+# Faixa etária do portal (select do documento, NÃO é "idade em anos"):
+# 1 = sem classificação · 7 = Adulto. Adulto liga a trava de 18+ na loja
+# (faixa_etaria === 7) e marca o livro como adult no Google. Planner não é isso.
+IDADE_LIVRE = 1
+
+
 LOGIN_ARQ = Path("data/uiclap_login.json")   # no Render: vai no backup criptografado (como a sessão do 99)
 
 
@@ -149,7 +155,7 @@ async def exigir_contrato() -> None:
 async def criar_rascunho(info: dict) -> int:
     await exigir_contrato()
     base = await api("doc/0", ref="https://portal.uiclap.com/documento/0")
-    doc = {**base["info"], "idioma": "pt_BR", "productType": "BOOK", "idade": 7, **info}
+    doc = {**base["info"], "idioma": "pt_BR", "productType": "BOOK", "idade": IDADE_LIVRE, **info}
     return _ok(await api("doc/info/0", "POST", doc, "https://portal.uiclap.com/documento/0"), "info")
 
 
@@ -457,7 +463,8 @@ def criar_kit(titulo: str, subtitulo: str, autor: str, corpo_md: str, sinopse: s
             "info": {"titulo": titulo[:250], "subtitulo": subtitulo[:250], "autor": autor, "descricao": sinopse,
                      "pessoas": [{"tipo": "A", "nome": autor}],
                      "categorias": [_categoria(f"{titulo} {subtitulo} {sinopse}")],
-                     "palavrasChave": [str(p)[:40] for p in palavras][:7]}}
+                     "palavrasChave": [str(p)[:40] for p in palavras][:7],
+                     "idade": IDADE_LIVRE}}
     _kit_salvar(meta)
     try:
         __import__("state_backup").sujo()
@@ -637,7 +644,7 @@ try {
   k = f.kit; log((k.teste ? "🧪 TESTE (não publica): " : "Livro: ") + k.info.titulo);
   etapa = "informações";
   const base = await api("doc/0");
-  doc = ok(await api("doc/info/0", "POST", Object.assign({}, base.info, { idioma: "pt_BR", productType: "BOOK", idade: 7 }, k.info)), "informações");
+  doc = ok(await api("doc/info/0", "POST", Object.assign({}, base.info, { idioma: "pt_BR", productType: "BOOK", idade: 1 }, k.info)), "informações");
   log("✓ rascunho criado (" + doc + ")");
   etapa = "miolo";
   const tk = await api("uploadticket/m/" + doc); ok(tk, "ticket do miolo");

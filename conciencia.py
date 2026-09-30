@@ -66,6 +66,9 @@ def perceber() -> dict[str, Any]:
         metas = acabamento._metas()
         p["produtos"] = len(metas)
         p["aguardando_dono"] = sum(1 for m in metas if m.get("status") == "aguardando_dono")
+        # já avisados não travam o laço: o dono viu, o resto do trabalho segue
+        p["aguardando_sem_aviso"] = sum(
+            1 for m in metas if m.get("status") == "aguardando_dono" and not m.get("notificado"))
         p["aprovados"] = sum(1 for m in metas if m.get("status") in ("aprovado", "publicado"))
         p["reprovados"] = sum(1 for m in metas if m.get("status") == "reprovado")
         try:
@@ -81,7 +84,7 @@ def perceber() -> dict[str, Any]:
         except Exception:
             p["aprovados_sem_kit"] = 0
     except Exception:
-        p.update(produtos=0, aguardando_dono=0, aprovados=0, reprovados=0, aprovados_sem_kit=0)
+        p.update(produtos=0, aguardando_dono=0, aguardando_sem_aviso=0, aprovados=0, reprovados=0, aprovados_sem_kit=0)
     # pesquisa de mercado
     try:
         import mercado
@@ -165,8 +168,11 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("aprovados_sem_kit", 0) > 0:
         return d("embalar", f"{p['aprovados_sem_kit']} produto(s) aprovado(s) ainda não virou livro: embalar")
-    if p.get("aguardando_dono", 0) > 0:
-        return d("avisar", f"{p['aguardando_dono']} produto(s) esperando o dono decidir", humano=True)
+    sem_aviso = p.get("aguardando_sem_aviso")
+    if sem_aviso is None:
+        sem_aviso = p.get("aguardando_dono", 0)
+    if sem_aviso:
+        return d("avisar", f"{sem_aviso} produto(s) novo(s) esperando o dono decidir", humano=True)
     # correntes humanas: ela mesma prepara a tela se o dono estiver por perto
     for i in p.get("pendencias", []):
         onde = str(i.get("onde", ""))
