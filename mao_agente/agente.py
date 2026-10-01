@@ -58,17 +58,37 @@ _URLS_APP = {
                      "https://www.mercadolivre.com.br/l/afiliados-portal-do-afiliado"),
 }
 _TELA = {
+    "com.google.android.gm": (
+        "com.google.android.gm/.ConversationListActivityGmail",
+        "com.google.android.gm/.ui.MailActivityGmail",
+    ),
     "com.shopee.br": (
         "com.shopee.br/com.shopee.app.ui.home.HomeActivity_",
         "com.shopee.br/com.shopee.app.ui.home.HomeActivity",
     ),
     "com.mercadolibre": (
-        "com.mercadolibre/com.mercadolibre.activities.SplashActivity",
-        "com.mercadolibre/com.mercadolibre.activities.MainActivity",
+        "com.mercadolibre/.activities.SplashActivity",
+        "com.mercadolibre/.activities.MainActivity",
     ),
     "com.whatsapp": (
-        "com.whatsapp/.HomeActivity",
         "com.whatsapp/.Main",
+        "com.whatsapp/.HomeActivity",
+        "com.whatsapp/.home.ui.HomeActivity",
+    ),
+    "com.google.android.youtube": (
+        "com.google.android.youtube/com.google.android.apps.youtube.app.honeycomb.Shell$HomeActivity",
+    ),
+    "com.instagram.android": (
+        "com.instagram.android/.activity.MainTabActivity",
+    ),
+    "org.telegram.messenger": (
+        "org.telegram.messenger/.ui.LaunchActivity",
+    ),
+    "com.google.android.apps.maps": (
+        "com.google.android.apps.maps/com.google.android.maps.MapsActivity",
+    ),
+    "com.android.chrome": (
+        "com.android.chrome/com.google.android.apps.chrome.Main",
     ),
 }
 
@@ -149,15 +169,40 @@ def _componente(pkg: str) -> str:
     return ""
 
 
+def _erro_abertura(msg: str) -> bool:
+    baixo = (msg or "").lower()
+    return any(x in baixo for x in ("error:", "error type", "exception", "unable to resolve", "does not exist", "not started"))
+
+
+def _foco(pkg: str) -> str:
+    """A tela da frente. Sem isso, exit 0 não conta."""
+    for binario in ("dumpsys", "/system/bin/dumpsys"):
+        for args in (("window",), ("activity", "activities")):
+            try:
+                proc = subprocess.run([binario, *args], capture_output=True, text=True, timeout=8)
+            except Exception:
+                continue
+            texto = (proc.stdout or "") + "\n" + (proc.stderr or "")
+            if "permission denial" in texto.lower():
+                return "dumpsys negado"
+            for linha in texto.splitlines():
+                baixo = linha.lower()
+                if pkg.lower() in baixo and any(k in baixo for k in (
+                    "mcurrentfocus", "mfocusedapp", "mresumedactivity", "topresumedactivity", "mfocusedwindow",
+                )):
+                    return " ".join(linha.split())[:140]
+    return ""
+
+
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if acao == "abrir_url" or (acao == "abrir_app" and alvo.startswith("http")):
         url = alvo if acao == "abrir_url" else alvo
         _run(["input", "keyevent", "224"], 5)
         ok, msg = _saida(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
                           "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"], 25, 400)
-        if _abriu(ok, msg):
+        if ok and not _erro_abertura(msg) and _foco("com.android.chrome"):
             return True, "abri no Chrome"
-        return False, (msg or "não abri o Chrome")[:160]
+        return False, (msg or "não abri o Chrome")[:240]
     pkg = APPS.get(alvo, "")
     if pkg.startswith("http"):
         return _abrir_android("abrir_url", pkg)
@@ -167,18 +212,6 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
     falhas = []
-    abridor = shutil.which("termux-open-url")
-    if abridor:
-        for url in _ESQUEMA.get(pkg, ()):
-            if not url.startswith("https://"):
-                continue
-            ok, msg = _saida([abridor, url], 20, 300)
-            if ok and "error" not in (msg or "").lower() and "not installed" not in (msg or "").lower():
-                return True, f"abri {alvo}"
-            if msg:
-                falhas.append(" ".join(msg.split())[:70])
-    else:
-        falhas.append("sem termux-open-url")
     comp = _componente(pkg)
     candidatos = ((comp,) if comp else ()) + _TELA.get(pkg, ())
     vistos = set()
@@ -186,19 +219,16 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         if not nome or nome in vistos:
             continue
         vistos.add(nome)
-        ok, msg = _saida(["am", "start", "-W", "--user", "0", "-n", nome], 25, 500)
-        if _abriu(ok, msg, pkg):
-            return True, f"abri {alvo}"
+        ok, msg = _saida(["am", "start", "--user", "0", "-n", nome], 25, 500)
+        if ok and not _erro_abertura(msg):
+            time.sleep(0.8)
+            foco = _foco(pkg)
+            if foco and pkg in foco and "negado" not in foco:
+                return True, f"abri {alvo}"
+            falhas.append(foco or "sem foco")
         if msg and msg not in ("OSError", "FileNotFoundError"):
-            falhas.append(" ".join(msg.split())[:70])
-    for url in _ESQUEMA.get(pkg, ()):
-        ok, msg = _saida(["am", "start", "-W", "--user", "0", "-a", "android.intent.action.VIEW",
-                          "-d", url, "-p", pkg], 25, 500)
-        if _abriu(ok, msg, pkg):
-            return True, f"abri {alvo}"
-        if msg and msg not in ("OSError", "FileNotFoundError"):
-            falhas.append(" ".join(msg.split())[:70])
-    return False, ("; ".join(falhas) or "o Android não deixou abrir o app")[:160]
+            falhas.append(" ".join(msg.split())[:90])
+    return False, ("; ".join(falhas) or "o Android não deixou abrir o app")[:240]
 
 
 def _abrir_pc(acao: str, alvo: str) -> tuple[bool, str]:
