@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mão do Orbe</string>
+    <string name="olho_desc">Lê o texto da tela que está na frente e toca botões visíveis, só quando a colônia pede. Não lê senha. Não lê app escondido. Não aceita termo nem captcha.</string>
+</resources>

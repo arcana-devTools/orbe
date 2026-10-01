@@ -220,7 +220,7 @@ app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
 _ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
-             "/mao/instalar-pc.ps1"}
+             "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
 
 
 @app.middleware("http")
@@ -627,6 +627,14 @@ async def mao_instalar_pc() -> FileResponse:
                         headers={"Cache-Control": "no-store"})
 
 
+@app.get("/mao/orbe-mao.apk")
+async def mao_apk() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "orbe-mao.apk",
+                        media_type="application/vnd.android.package-archive",
+                        filename="orbe-mao.apk",
+                        headers={"Cache-Control": "no-store"})
+
+
 def _mao_token(request: Request, aparelho: str) -> None:
     import mao
 
@@ -969,7 +977,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.26",
+        "versao": "0.27.27",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
