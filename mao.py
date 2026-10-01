@@ -163,11 +163,18 @@ def pedir(aparelho: str, acao: str, alvo: str = "", extra: dict | None = None,
         raise ValueError("ação não permitida")
     if acao == "clicar":
         ex = extra or {}
-        x, y = int(ex.get("x", -1)), int(ex.get("y", -1))
-        if not (0 <= x <= 4000 and 0 <= y <= 4000):
-            raise ValueError("clique fora da tela")
-        extra = {"x": x, "y": y}
-        alvo = ""
+        texto = str(ex.get("texto") or alvo or "").strip()
+        if texto:
+            if len(texto) > 80 or any(c in texto for c in "\n\r"):
+                raise ValueError("texto do botão inválido")
+            extra = {"texto": texto}
+            alvo = texto
+        else:
+            x, y = int(ex.get("x", -1)), int(ex.get("y", -1))
+            if not (0 <= x <= 4000 and 0 <= y <= 4000):
+                raise ValueError("clique fora da tela")
+            extra = {"x": x, "y": y}
+            alvo = ""
     else:
         alvo = _alvo_limpo(acao, alvo)
         extra = {}

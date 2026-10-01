@@ -157,7 +157,7 @@ public final class Olho extends AccessibilityService {
     private static AccessibilityNodeInfo acharTexto(AccessibilityNodeInfo n, String needle) {
         if (n == null) return null;
         String s = textoDe(n).toLowerCase(Locale.ROOT);
-        if (s.length() > 0 && s.contains(needle) && (n.isClickable() || n.isEnabled())) {
+        if (s.length() > 0 && s.contains(needle) && !proibido(s)) {
             return AccessibilityNodeInfo.obtain(n);
         }
         for (int i = 0; i < n.getChildCount(); i++) {
@@ -197,7 +197,6 @@ public final class Olho extends AccessibilityService {
         String s = texto.toLowerCase(Locale.ROOT);
         return s.contains("senha") || s.contains("login") || s.contains("captcha")
                 || s.contains("não sou um robô") || s.contains("nao sou um robo")
-                || s.contains("aceitar termo") || s.contains("aceito os termos")
-                || s.contains("concordo");
+                || s.contains("termo") || s.contains("concordo");
     }
 }

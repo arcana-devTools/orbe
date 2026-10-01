@@ -119,9 +119,15 @@ public final class MaoService extends Service {
             return new Resultado(true, "li a tela da frente", TelaTexto.png(tela));
         }
         if ("clicar".equals(acao)) {
-            int x = extra == null ? -1 : extra.optInt("x", -1);
-            int y = extra == null ? -1 : extra.optInt("y", -1);
-            String msg = Olho.clicarPonto(x, y);
+            String texto = extra == null ? "" : extra.optString("texto", "");
+            if (texto.length() == 0 && alvo != null) texto = alvo;
+            String msg;
+            if (texto.length() > 0) msg = Olho.clicarTexto(texto);
+            else {
+                int x = extra == null ? -1 : extra.optInt("x", -1);
+                int y = extra == null ? -1 : extra.optInt("y", -1);
+                msg = Olho.clicarPonto(x, y);
+            }
             return new Resultado("cliquei".equals(msg), msg, null);
         }
         if ("digitar".equals(acao)) {
