@@ -42,14 +42,28 @@ def _http(url: str, token: str, corpo: dict | None = None, timeout: int = 40) ->
         return json.loads(r.read().decode() or "{}")
 
 
-def _run(cmd: list[str], timeout: int = 20) -> tuple[bool, str]:
+def _run(cmd: list[str], timeout: int = 20, limite: int = 160) -> tuple[bool, str]:
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except Exception as exc:
         return False, type(exc).__name__
     if p.returncode != 0:
-        return False, (p.stderr or p.stdout or "falhou")[:160]
-    return True, (p.stdout or "ok")[:160]
+        return False, (p.stderr or p.stdout or "falhou")[:limite]
+    return True, (p.stdout or "ok")[:limite]
+
+
+def _componente(pkg: str) -> str:
+    """Acha a tela inicial. O atalho MAIN/LAUNCHER sozinho falha nesses apps."""
+    ok, msg = _run(["cmd", "package", "resolve-activity", "--brief",
+                    "-a", "android.intent.action.MAIN",
+                    "-c", "android.intent.category.LAUNCHER", pkg], 15, 800)
+    if not ok:
+        return ""
+    for linha in msg.splitlines():
+        linha = linha.strip()
+        if linha.startswith(pkg + "/"):
+            return linha
+    return ""
 
 
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
@@ -67,9 +81,21 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         return _abrir_android("abrir_url", pkg)
     if not pkg:
         return False, "não conheço esse app"
-    ok, msg = _run(["am", "start", "-a", "android.intent.action.MAIN",
-                    "-c", "android.intent.category.LAUNCHER", "-p", pkg])
-    return (True, f"abri {alvo}") if ok else (False, msg)
+    _run(["input", "keyevent", "224"], 5)
+    comp = _componente(pkg)
+    if comp:
+        ok, msg = _run(["am", "start", "-n", comp])
+        if ok:
+            return True, f"abri {alvo}"
+    # último recurso: o monkey abre pelo atalho, sem injetar toque
+    monkey = shutil.which("monkey") or "/system/bin/monkey"
+    ok, msg = _run([monkey, "-p", pkg, "-c", "android.intent.category.LAUNCHER",
+                    "--pct-touch", "0", "--pct-motion", "0", "--pct-trackball", "0",
+                    "--pct-nav", "0", "--pct-majornav", "0", "--pct-syskeys", "0",
+                    "--pct-appswitch", "100", "--pct-anyevent", "0", "1"], 20, 400)
+    if ok and "aborted" not in msg.lower() and "no activities" not in msg.lower():
+        return True, f"abri {alvo}"
+    return False, msg or "o Android não deixou abrir o app"
 
 
 def _abrir_pc(acao: str, alvo: str) -> tuple[bool, str]:
