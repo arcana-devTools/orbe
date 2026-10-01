@@ -66,6 +66,9 @@ public final class Olho extends AccessibilityService {
 
     private static int rank(AccessibilityNodeInfo r) {
         String pkg = r.getPackageName() == null ? "" : r.getPackageName().toString();
+        Rect b = new Rect();
+        r.getBoundsInScreen(b);
+        if (b.width() < 200 || b.height() < 200) return 0;
         if ("com.mercadolibre".equals(pkg) || "com.shopee.br".equals(pkg)) return 50;
         if ("com.android.chrome".equals(pkg) || "dev.orbe.mao".equals(pkg)) return 1;
         if (pkg.startsWith("com.android.systemui") || pkg.startsWith("com.samsung.android.app.cocktailbarservice")) return 0;
@@ -109,8 +112,7 @@ public final class Olho extends AccessibilityService {
                 achou.recycle();
                 return "não mexo nisso";
             }
-            boolean ok = achou.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            if (!ok && achou.getParent() != null) ok = achou.getParent().performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            boolean ok = tocar(achou);
             achou.recycle();
             return ok ? "cliquei" : "o botão não aceitou";
         } finally {
@@ -183,7 +185,11 @@ public final class Olho extends AccessibilityService {
             if (t == null || t.length() == 0) t = n.getContentDescription();
             if (t != null && t.length() > 0) {
                 String s = t.toString().replace('\n', ' ').trim();
-                if (s.length() > 0) sb.append(s).append('\n');
+                if (s.length() > 0) {
+                    Rect r = new Rect();
+                    n.getBoundsInScreen(r);
+                    sb.append(s).append(" @").append(r.centerX()).append(",").append(r.centerY()).append('\n');
+                }
             }
         }
         for (int i = 0; i < n.getChildCount(); i++) {
@@ -192,6 +198,20 @@ public final class Olho extends AccessibilityService {
             juntar(f, sb, fundo + 1);
             f.recycle();
         }
+    }
+
+    private static boolean tocar(AccessibilityNodeInfo n) {
+        AccessibilityNodeInfo cur = n;
+        for (int i = 0; i < 8 && cur != null; i++) {
+            if (!proibido(textoDe(cur))) {
+                if (cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true;
+            }
+            AccessibilityNodeInfo pai = cur.getParent();
+            if (cur != n) cur.recycle();
+            cur = pai;
+        }
+        if (cur != null && cur != n) cur.recycle();
+        return false;
     }
 
     private static AccessibilityNodeInfo acharTexto(AccessibilityNodeInfo n, String needle) {
