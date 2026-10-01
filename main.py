@@ -849,6 +849,27 @@ async def ml_estado() -> dict[str, Any]:
     return {**afiliados_ml.status(), **(await afiliados_ml.estado())}
 
 
+@app.get("/api/consultas/estado")
+async def consultas_estado() -> dict[str, Any]:
+    import consultas
+
+    _touch()
+    return consultas.estado()
+
+
+@app.post("/api/consultas")
+async def consultas_fazer(payload: dict[str, Any]) -> dict[str, Any]:
+    import consultas
+
+    _touch()
+    try:
+        return consultas.consultar(str(payload.get("site") or ""), str(payload.get("alvo") or ""))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:160]}")
+
+
 class MlPrepIn(BaseModel):
     acao: str = "entrar"
 
@@ -977,7 +998,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.31",
+        "versao": "0.27.32",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

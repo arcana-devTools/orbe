@@ -29,3 +29,13 @@ Canal @ai.ghost29. Capafy: marketplace de skill de agente. Publica uma skill e g
 @gabrieladamuchi, @falamelo_, @closertech, @franciscodicas1, @minutotechpro, @ai.ghost29.
 
 A Shopee já gera link oficial. O Mercado Livre chegou na folha "Compartilhe como afiliado" e não escreve o link na tela. Não enviar WhatsApp, Stories nem Feed no escuro.
+
+## Sites liberados
+
+O dono liberou o uso. Não é caça a máquina nem busca de senha.
+
+- VirusTotal: conferir um link ou arquivo antes de abrir. https://www.virustotal.com/
+- Shodan: consultar um endereço que a colônia já tem. https://www.shodan.io/
+- IntelX: consultar um termo que a colônia já tem. https://intelx.io/
+
+Sem chave no cofre, abrir a página. Com chave, usar `/api/consultas`. Não colar a chave no chat.
