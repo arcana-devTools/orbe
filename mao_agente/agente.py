@@ -82,8 +82,39 @@ def _abriu(ok: bool, msg: str, pkg: str = "") -> bool:
     return (not pkg) or pkg.lower() in baixo
 
 
+_ESQUEMA = {
+    "com.google.android.gm": ("https://mail.google.com/", "mailto:orbe@dev.local"),
+    "com.whatsapp": ("https://wa.me/",),
+    "com.mercadolibre": ("https://www.mercadolivre.com.br/",),
+    "com.shopee.br": ("https://shopee.com.br/",),
+    "com.google.android.youtube": ("https://www.youtube.com/",),
+    "com.instagram.android": ("https://www.instagram.com/",),
+    "org.telegram.messenger": ("https://t.me/",),
+    "com.google.android.apps.maps": ("geo:0,0?q=Palhoca",),
+    "com.android.chrome": ("https://www.google.com/",),
+}
+
+
+def _saida(cmd: list[str], timeout: int = 20, limite: int = 500) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except Exception as exc:
+        return False, type(exc).__name__
+    texto = " ".join(((proc.stdout or "") + " " + (proc.stderr or "")).split())
+    if proc.returncode != 0:
+        return False, (texto or "falhou")[:limite]
+    return True, (texto or "ok")[:limite]
+
+
+def _token_pkg(linha: str, pkg: str) -> str:
+    for pedaco in linha.replace(":", " ").split():
+        if pedaco.startswith(pkg + "/"):
+            return pedaco
+    return ""
+
+
 def _componente(pkg: str) -> str:
-    """Pergunta ao Android a tela inicial. O nome chutado falha."""
+    """Pergunta ao Android a tela inicial. Vale para qualquer pacote."""
     cmds = []
     if shutil.which("cmd"):
         cmds.append("cmd")
@@ -91,30 +122,47 @@ def _componente(pkg: str) -> str:
     if prefixo not in cmds:
         cmds.append(prefixo)
     for binario in cmds:
-        ok, msg = _run([binario, "package", "resolve-activity", "--brief",
-                        "-a", "android.intent.action.MAIN",
-                        "-c", "android.intent.category.LAUNCHER", pkg], 15, 800)
+        ok, msg = _saida([binario, "package", "resolve-activity", "--brief",
+                          "-a", "android.intent.action.MAIN",
+                          "-c", "android.intent.category.LAUNCHER", pkg], 15, 800)
         if not ok:
             continue
         for linha in msg.splitlines():
-            linha = linha.strip()
-            if linha.startswith(pkg + "/"):
-                return linha
+            achou = _token_pkg(linha.strip(), pkg)
+            if achou:
+                return achou
+    for binario in ("dumpsys", "/system/bin/dumpsys"):
+        try:
+            proc = subprocess.run([binario, "package", pkg], capture_output=True, text=True, timeout=20)
+        except Exception:
+            continue
+        linhas = ((proc.stdout or "") + "\n" + (proc.stderr or "")).splitlines()
+        for i, linha in enumerate(linhas):
+            if pkg not in linha or "/" not in linha:
+                continue
+            janela = "\n".join(linhas[i:i + 18])
+            if "category.LAUNCHER" not in janela:
+                continue
+            achou = _token_pkg(linha, pkg)
+            if achou:
+                return achou
     return ""
 
 
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if acao == "abrir_url" or (acao == "abrir_app" and alvo.startswith("http")):
         url = alvo if acao == "abrir_url" else alvo
-        _run(["input", "keyevent", "224"], 5)  # acorda a tela
-        ok, msg = _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
-                        "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"], 25, 400)
+        _run(["input", "keyevent", "224"], 5)
+        ok, msg = _saida(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
+                          "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"], 25, 400)
         if _abriu(ok, msg):
             return True, "abri no Chrome"
         return False, (msg or "não abri o Chrome")[:160]
     pkg = APPS.get(alvo, "")
     if pkg.startswith("http"):
         return _abrir_android("abrir_url", pkg)
+    if not pkg and "." in alvo and " " not in alvo and alvo.replace(".", "").replace("_", "").isalnum():
+        pkg = alvo
     if not pkg:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
@@ -126,11 +174,18 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         if not nome or nome in vistos:
             continue
         vistos.add(nome)
-        ok, msg = _run(["am", "start", "-W", "--user", "0", "-n", nome], 25, 500)
+        ok, msg = _saida(["am", "start", "-W", "--user", "0", "-n", nome], 25, 500)
         if _abriu(ok, msg, pkg):
             return True, f"abri {alvo}"
         if msg and msg not in ("OSError", "FileNotFoundError"):
-            falhas.append(msg.replace("\n", " ")[:80])
+            falhas.append(" ".join(msg.split())[:70])
+    for url in _ESQUEMA.get(pkg, ()):
+        ok, msg = _saida(["am", "start", "-W", "--user", "0", "-a", "android.intent.action.VIEW",
+                          "-d", url, "-p", pkg], 25, 500)
+        if _abriu(ok, msg, pkg):
+            return True, f"abri {alvo}"
+        if msg and msg not in ("OSError", "FileNotFoundError"):
+            falhas.append(" ".join(msg.split())[:70])
     return False, ("; ".join(falhas) or "o Android não deixou abrir o app")[:160]
 
 

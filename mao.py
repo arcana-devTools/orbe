@@ -132,7 +132,10 @@ def _alvo_limpo(acao: str, alvo: str) -> str:
     if acao == "abrir_app":
         if re.search(r"[;&|`$<>\\]", alvo):
             raise ValueError("app inválido")
-        nome = re.sub(r"[^a-z0-9 ]", "", alvo.lower()).strip()
+        bruto = alvo.lower().strip()
+        if re.match(r"^[a-z][a-z0-9_.]{2,80}$", bruto) and "." in bruto:
+            return bruto
+        nome = re.sub(r"[^a-z0-9 ]", "", bruto).strip()
         if not nome or len(nome) > 40:
             raise ValueError("app inválido")
         return nome
