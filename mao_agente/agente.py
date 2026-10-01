@@ -167,6 +167,18 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
     falhas = []
+    abridor = shutil.which("termux-open-url")
+    if abridor:
+        for url in _ESQUEMA.get(pkg, ()):
+            if not url.startswith("https://"):
+                continue
+            ok, msg = _saida([abridor, url], 20, 300)
+            if ok and "error" not in (msg or "").lower() and "not installed" not in (msg or "").lower():
+                return True, f"abri {alvo}"
+            if msg:
+                falhas.append(" ".join(msg.split())[:70])
+    else:
+        falhas.append("sem termux-open-url")
     comp = _componente(pkg)
     candidatos = ((comp,) if comp else ()) + _TELA.get(pkg, ())
     vistos = set()
