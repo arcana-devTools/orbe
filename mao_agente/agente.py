@@ -64,13 +64,21 @@ _TELA = {
     ),
     "com.mercadolibre": (
         "com.mercadolibre/com.mercadolibre.activities.SplashActivity",
+        "com.mercadolibre/com.mercadolibre.activities.MainActivity",
+    ),
+    "com.whatsapp": (
+        "com.whatsapp/.HomeActivity",
+        "com.whatsapp/.Main",
     ),
 }
 
 
 def _abriu(ok: bool, msg: str) -> bool:
     baixo = (msg or "").lower()
-    return ok and "error:" not in baixo and "exception" not in baixo
+    if (not ok) or "error:" in baixo or "exception" in baixo or "unable to resolve" in baixo or "does not exist" in baixo:
+        return False
+    # sem "Status: ok" o am mente: devolve sucesso e a tela não muda
+    return "status: ok" in baixo
 
 
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
@@ -79,10 +87,10 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         _run(["input", "keyevent", "224"], 5)  # acorda a tela
         # sem o pacote, o Chrome que já está aberto não troca a aba
         ok, msg = _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
-                        "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"])
+                        "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"], 25, 400)
         if _abriu(ok, msg):
             return True, "abri no Chrome"
-        return _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url])
+        return False, (msg or "não abri o Chrome")[:160]
     pkg = APPS.get(alvo, "")
     if pkg.startswith("http"):
         return _abrir_android("abrir_url", pkg)
@@ -90,20 +98,12 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
     ultimo = "o Android não deixou abrir o app"
-    # o atalho MAIN/LAUNCHER desses apps não tem DEFAULT; o link sim
-    for url in _URLS_APP.get(alvo, ()):
-        ok, msg = _run(["am", "start", "--user", "0", "-a", "android.intent.action.VIEW",
-                        "-d", url, "-p", pkg], 20, 300)
-        if _abriu(ok, msg):
-            return True, f"abri {alvo}"
-        if msg and msg not in ("OSError", "FileNotFoundError"):
-            ultimo = msg
     for comp in _TELA.get(pkg, ()):
-        ok, msg = _run(["am", "start", "--user", "0", "-n", comp], 20, 300)
+        ok, msg = _run(["am", "start", "-W", "--user", "0", "-n", comp], 25, 500)
         if _abriu(ok, msg):
             return True, f"abri {alvo}"
         if msg and msg not in ("OSError", "FileNotFoundError"):
-            ultimo = msg
+            ultimo = msg.replace("\n", " ")
     return False, ultimo[:160]
 
 
