@@ -112,8 +112,9 @@ def _shodan(alvo: str, chave: str) -> dict[str, Any]:
 
 
 def _intelx(alvo: str, chave: str) -> dict[str, Any]:
+    base = os.environ.get("ORBE_INTELX_URL", "https://free.intelx.io").rstrip("/")
     r = httpx.post(
-        "https://2.intelx.io/intelligent/search",
+        f"{base}/intelligent/search",
         headers={"x-key": chave, "Content-Type": "application/json"},
         json={"term": alvo, "maxresults": 5, "media": 0, "sort": 4, "terminate": []},
         timeout=30,
@@ -124,7 +125,7 @@ def _intelx(alvo: str, chave: str) -> dict[str, Any]:
     if not ident:
         return {"ok": False, "site": "intelx", "motivo": "sem id"}
     g = httpx.get(
-        "https://2.intelx.io/intelligent/search/result",
+        f"{base}/intelligent/search/result",
         headers={"x-key": chave},
         params={"id": ident, "limit": 5},
         timeout=30,
