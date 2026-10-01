@@ -73,19 +73,40 @@ _TELA = {
 }
 
 
-def _abriu(ok: bool, msg: str) -> bool:
+def _abriu(ok: bool, msg: str, pkg: str = "") -> bool:
     baixo = (msg or "").lower()
     if (not ok) or "error:" in baixo or "exception" in baixo or "unable to resolve" in baixo or "does not exist" in baixo:
         return False
-    # sem "Status: ok" o am mente: devolve sucesso e a tela não muda
-    return "status: ok" in baixo
+    if "status: ok" not in baixo:
+        return False
+    return (not pkg) or pkg.lower() in baixo
+
+
+def _componente(pkg: str) -> str:
+    """Pergunta ao Android a tela inicial. O nome chutado falha."""
+    cmds = []
+    if shutil.which("cmd"):
+        cmds.append("cmd")
+    prefixo = "/data/data/com.termux/files/usr/bin/cmd"
+    if prefixo not in cmds:
+        cmds.append(prefixo)
+    for binario in cmds:
+        ok, msg = _run([binario, "package", "resolve-activity", "--brief",
+                        "-a", "android.intent.action.MAIN",
+                        "-c", "android.intent.category.LAUNCHER", pkg], 15, 800)
+        if not ok:
+            continue
+        for linha in msg.splitlines():
+            linha = linha.strip()
+            if linha.startswith(pkg + "/"):
+                return linha
+    return ""
 
 
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if acao == "abrir_url" or (acao == "abrir_app" and alvo.startswith("http")):
         url = alvo if acao == "abrir_url" else alvo
         _run(["input", "keyevent", "224"], 5)  # acorda a tela
-        # sem o pacote, o Chrome que já está aberto não troca a aba
         ok, msg = _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
                         "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"], 25, 400)
         if _abriu(ok, msg):
@@ -97,14 +118,20 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if not pkg:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
-    ultimo = "o Android não deixou abrir o app"
-    for comp in _TELA.get(pkg, ()):
-        ok, msg = _run(["am", "start", "-W", "--user", "0", "-n", comp], 25, 500)
-        if _abriu(ok, msg):
+    falhas = []
+    comp = _componente(pkg)
+    candidatos = ((comp,) if comp else ()) + _TELA.get(pkg, ())
+    vistos = set()
+    for nome in candidatos:
+        if not nome or nome in vistos:
+            continue
+        vistos.add(nome)
+        ok, msg = _run(["am", "start", "-W", "--user", "0", "-n", nome], 25, 500)
+        if _abriu(ok, msg, pkg):
             return True, f"abri {alvo}"
         if msg and msg not in ("OSError", "FileNotFoundError"):
-            ultimo = msg.replace("\n", " ")
-    return False, ultimo[:160]
+            falhas.append(msg.replace("\n", " ")[:80])
+    return False, ("; ".join(falhas) or "o Android não deixou abrir o app")[:160]
 
 
 def _abrir_pc(acao: str, alvo: str) -> tuple[bool, str]:
