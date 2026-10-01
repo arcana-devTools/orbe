@@ -71,9 +71,17 @@ async def logado(page) -> bool:
         return False
 
 
+async def _clicar_texto(page, texto: str) -> bool:
+    alvo = page.get_by_text(texto, exact=False)
+    if not await alvo.count():
+        return False
+    await alvo.first.click(timeout=8000, force=True)
+    return True
+
+
 async def preparar(acao: str) -> dict[str, Any]:
     """O toque do celular no VNC erra o botão. A colônia clica o que o dono pediu.
-    Nunca digita senha. Nunca aceita termo sozinha — cookies só se ele apertar."""
+    Nunca digita senha. Cookies só se ele apertar o botão da barra."""
     _, page = await _pagina()
     try:
         await page.bring_to_front()
@@ -82,25 +90,27 @@ async def preparar(acao: str) -> dict[str, Any]:
     acao = (acao or "").strip().lower()
     if acao not in ("entrar", "cookies"):
         return {"ok": False, "motivo": "ação inválida"}
+    if not page.url or page.url.startswith("about:"):
+        await page.goto(PORTAL, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(1500)
+    clicou = False
     try:
         if acao == "cookies":
-            btn = page.get_by_role("button", name="Aceitar cookies")
-            if await btn.count():
-                await btn.first.click(timeout=8000)
+            clicou = await _clicar_texto(page, "Aceitar cookies")
         else:
-            alvo = page.get_by_text("Já tenho conta", exact=False)
-            if await alvo.count():
-                await alvo.first.click(timeout=8000)
-        await page.wait_for_timeout(1200)
+            clicou = await _clicar_texto(page, "Já tenho conta")
+        await page.wait_for_timeout(1000)
     except Exception as exc:
-        return {"ok": False, "motivo": type(exc).__name__}
+        return {"ok": False, "clicou": False, "motivo": type(exc).__name__}
+    if not clicou:
+        return {"ok": False, "clicou": False, "motivo": "não achei o botão nessa tela", "url": page.url}
     tem_senha = False
     try:
         tem_senha = await page.locator("input[type='password']").count() > 0
     except Exception:
         pass
-    return {"ok": True, "url": page.url, "titulo": await page.title(), "tem_senha": tem_senha,
-            "logado": await logado(page)}
+    return {"ok": True, "clicou": True, "url": page.url, "titulo": await page.title(),
+            "tem_senha": tem_senha, "logado": await logado(page)}
 
 
 async def abrir(url: str = PORTAL) -> dict[str, Any]:

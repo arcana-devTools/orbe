@@ -261,6 +261,8 @@ async def _senha_do_painel(request, call_next):
         if not ok:
             ok = hmac.compare_digest(request.cookies.get("orbe_s", ""), _selo(senha))
         if not ok:
+            ok = hmac.compare_digest(request.headers.get("x-orbe-selo", ""), _selo(senha))
+        if not ok:
             from starlette.responses import Response
 
             return Response("senha do Orbe necessária", status_code=401,
@@ -948,7 +950,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.17",
+        "versao": "0.27.18",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -1734,7 +1736,8 @@ DESKTOP_HTML = """<!DOCTYPE html>
  #bar a{color:#22d3ee;text-decoration:none}
  #kbd{flex:1;min-width:120px;background:#171b25;color:#e6e9f0;border:1px solid #232838;border-radius:8px;padding:10px;font-size:16px}
  #bar button{background:#7c5cff;color:#fff;border:0;border-radius:8px;padding:10px 12px;font-size:14px}
- #screen{position:absolute;inset:0;top:52px}
+ #screen{position:absolute;inset:0;top:118px}
+ #aviso{position:absolute;left:8px;right:8px;bottom:8px;background:#12151d;color:#e6e9f0;padding:8px 10px;border-radius:8px;display:none}
  @media (max-height:500px){ #screen{top:96px} }
 </style></head><body>
 <div id="bar">
@@ -1746,6 +1749,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
   <button id="bEnter" type="button">⏎</button>
 </div>
 <div id="screen"></div>
+<div id="aviso"></div>
 <script type="module">
 import RFB from "/vnc/core/rfb.js";
 const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -1753,21 +1757,28 @@ const rfb = new RFB(document.getElementById("screen"), proto + "//" + location.h
 rfb.scaleViewport = true;
 rfb.resizeSession = false;
 window.rfb = rfb;
+const SELO = "SELO_AQUI";
+const aviso = document.getElementById("aviso");
+function mostrar(t){ aviso.textContent = t; aviso.style.display = "block"; }
 async function preparar(acao){
-  await fetch("/api/afiliados/ml/preparar", {method:"POST", headers:{"Content-Type":"application/json"},
+  mostrar("clicando…");
+  const r = await fetch("/api/afiliados/ml/preparar", {method:"POST",
+    headers:{"Content-Type":"application/json", "x-orbe-selo": SELO},
     body: JSON.stringify({acao})});
+  const d = await r.json().catch(() => ({}));
+  mostrar(d.clicou ? "clicou" : (d.motivo || "não clicou"));
 }
 document.getElementById("bConta").onclick = () => preparar("entrar");
 document.getElementById("bCookies").onclick = () => preparar("cookies");
 async function sendText(s){
   if (!s) return;
-  await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json"},
+  await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json", "x-orbe-selo": SELO},
     body: JSON.stringify({text: s})});
 }
 const kbd = document.getElementById("kbd");
 document.getElementById("bSend").onclick = async () => { await sendText(kbd.value); kbd.value = ""; kbd.focus(); };
 document.getElementById("bEnter").onclick = async () => {
-  await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key:"Return"})});
+  await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json", "x-orbe-selo": SELO}, body: JSON.stringify({key:"Return"})});
   kbd.focus();
 };
 kbd.addEventListener("keydown", async e => { if (e.key === "Enter") { e.preventDefault(); await sendText(kbd.value); kbd.value = ""; } });
@@ -1782,7 +1793,9 @@ fetch("/api/ping");
 async def desktop_page(token: str = ""):
     if _s.auth_token and not _ok_token(token):
         raise HTTPException(401, "token inválido")
-    return HTMLResponse(DESKTOP_HTML, headers={"Cache-Control": "no-store"})
+    senha = os.environ.get("ORBE_PANEL_PASSWORD", "")
+    html = DESKTOP_HTML.replace("SELO_AQUI", _selo(senha) if senha else "")
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 class DesktopTypeIn(BaseModel):
