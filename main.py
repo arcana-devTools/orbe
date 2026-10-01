@@ -977,7 +977,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.28",
+        "versao": "0.27.29",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

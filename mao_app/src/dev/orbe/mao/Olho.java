@@ -3,6 +3,9 @@ package dev.orbe.mao;
 import android.accessibilityservice.AccessibilityService;
 import android.graphics.Rect;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+
+import java.util.List;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -33,10 +36,47 @@ public final class Olho extends AccessibilityService {
         return ativo != null;
     }
 
+    static AccessibilityNodeInfo raizAlvo(Olho o) {
+        if (o == null) return null;
+        AccessibilityNodeInfo melhor = null;
+        int rankMelhor = -1;
+        try {
+            List<AccessibilityWindowInfo> wins = o.getWindows();
+            if (wins != null) {
+                for (int i = 0; i < wins.size(); i++) {
+                    AccessibilityWindowInfo w = wins.get(i);
+                    if (w == null) continue;
+                    AccessibilityNodeInfo r = w.getRoot();
+                    if (r == null) continue;
+                    int rank = rank(r);
+                    if (rank > rankMelhor) {
+                        if (melhor != null) melhor.recycle();
+                        melhor = r;
+                        rankMelhor = rank;
+                    } else {
+                        r.recycle();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (melhor != null) return melhor;
+        return o.getRootInActiveWindow();
+    }
+
+    private static int rank(AccessibilityNodeInfo r) {
+        String pkg = r.getPackageName() == null ? "" : r.getPackageName().toString();
+        if ("com.mercadolibre".equals(pkg) || "com.shopee.br".equals(pkg)) return 50;
+        if ("com.android.chrome".equals(pkg) || "dev.orbe.mao".equals(pkg)) return 1;
+        if (pkg.startsWith("com.android.systemui") || pkg.startsWith("com.samsung.android.app.cocktailbarservice")) return 0;
+        if (pkg.length() > 0) return 10;
+        return 0;
+    }
+
     static String ler() {
         Olho o = ativo;
         if (o == null) return "";
-        AccessibilityNodeInfo raiz = o.getRootInActiveWindow();
+        AccessibilityNodeInfo raiz = raizAlvo(o);
         if (raiz == null) return "";
         StringBuilder sb = new StringBuilder();
         try {
@@ -59,7 +99,7 @@ public final class Olho extends AccessibilityService {
         if (proibido(texto)) return "não mexo nisso";
         Olho o = ativo;
         if (o == null) return "leitura da tela desligada";
-        AccessibilityNodeInfo raiz = o.getRootInActiveWindow();
+        AccessibilityNodeInfo raiz = raizAlvo(o);
         if (raiz == null) return "não vi a tela";
         try {
             if (temSenha(raiz)) return "tela de login, não mexo";
@@ -81,7 +121,7 @@ public final class Olho extends AccessibilityService {
     static String clicarPonto(int x, int y) {
         Olho o = ativo;
         if (o == null) return "leitura da tela desligada";
-        AccessibilityNodeInfo raiz = o.getRootInActiveWindow();
+        AccessibilityNodeInfo raiz = raizAlvo(o);
         if (raiz == null) return "não vi a tela";
         try {
             if (temSenha(raiz)) return "tela de login, não mexo";
@@ -103,7 +143,7 @@ public final class Olho extends AccessibilityService {
         if (texto == null || texto.length() == 0 || texto.length() > 500) return "texto recusado";
         Olho o = ativo;
         if (o == null) return "leitura da tela desligada";
-        AccessibilityNodeInfo raiz = o.getRootInActiveWindow();
+        AccessibilityNodeInfo raiz = raizAlvo(o);
         if (raiz == null) return "não vi a tela";
         try {
             if (temSenha(raiz)) return "tela de login, não mexo";
