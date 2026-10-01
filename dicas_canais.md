@@ -1,3 +1,13 @@
+# Agora — o dono mandou
+
+Ver, analisar, testar e executar. Não filtrar antes. O relatório volta para o dono. Dinheiro só se for real.
+
+https://vt.tiktok.com/ZSbfk9aFj/
+https://www.tiktok.com/@joaodavid221/video/7688741116723678516
+Canal: https://www.tiktok.com/@joaodavid221
+
+Não repostar vídeo de outra pessoa. Não baixar vídeo do YouTube. Não mandar spam. Não usar cartão do dono. Senha, código, captcha e termo ficam com o dono.
+
 # Dicas dos canais — o dono pediu para o Orbe e o Hermes verem e testarem
 
 O dono não escolhe o produto e não faz o passo. A colônia assiste, tira a dica e testa o que ela mesma consegue rodar.
