@@ -55,7 +55,13 @@ def _run(cmd: list[str], timeout: int = 20) -> tuple[bool, str]:
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if acao == "abrir_url" or (acao == "abrir_app" and alvo.startswith("http")):
         url = alvo if acao == "abrir_url" else alvo
-        return _run(["am", "start", "-a", "android.intent.action.VIEW", "-d", url])
+        _run(["input", "keyevent", "224"], 5)  # acorda a tela
+        # sem o pacote, o Chrome que já está aberto não troca a aba
+        ok, msg = _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
+                        "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"])
+        if ok:
+            return True, "abri no Chrome"
+        return _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url])
     pkg = APPS.get(alvo, "")
     if pkg.startswith("http"):
         return _abrir_android("abrir_url", pkg)
