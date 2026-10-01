@@ -52,18 +52,25 @@ def _run(cmd: list[str], timeout: int = 20, limite: int = 160) -> tuple[bool, st
     return True, (p.stdout or "ok")[:limite]
 
 
-def _componente(pkg: str) -> str:
-    """Acha a tela inicial. O atalho MAIN/LAUNCHER sozinho falha nesses apps."""
-    ok, msg = _run(["cmd", "package", "resolve-activity", "--brief",
-                    "-a", "android.intent.action.MAIN",
-                    "-c", "android.intent.category.LAUNCHER", pkg], 15, 800)
-    if not ok:
-        return ""
-    for linha in msg.splitlines():
-        linha = linha.strip()
-        if linha.startswith(pkg + "/"):
-            return linha
-    return ""
+_URLS_APP = {
+    "shopee": ("https://shopee.com.br/", "https://affiliate.shopee.com.br/"),
+    "mercadolivre": ("https://www.mercadolivre.com.br/",
+                     "https://www.mercadolivre.com.br/l/afiliados-portal-do-afiliado"),
+}
+_TELA = {
+    "com.shopee.br": (
+        "com.shopee.br/com.shopee.app.ui.home.HomeActivity_",
+        "com.shopee.br/com.shopee.app.ui.home.HomeActivity",
+    ),
+    "com.mercadolibre": (
+        "com.mercadolibre/com.mercadolibre.activities.SplashActivity",
+    ),
+}
+
+
+def _abriu(ok: bool, msg: str) -> bool:
+    baixo = (msg or "").lower()
+    return ok and "error:" not in baixo and "exception" not in baixo
 
 
 def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
@@ -73,7 +80,7 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
         # sem o pacote, o Chrome que já está aberto não troca a aba
         ok, msg = _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url,
                         "-p", "com.android.chrome", "--activity-clear-top", "--activity-single-top"])
-        if ok:
+        if _abriu(ok, msg):
             return True, "abri no Chrome"
         return _run(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url])
     pkg = APPS.get(alvo, "")
@@ -82,20 +89,22 @@ def _abrir_android(acao: str, alvo: str) -> tuple[bool, str]:
     if not pkg:
         return False, "não conheço esse app"
     _run(["input", "keyevent", "224"], 5)
-    comp = _componente(pkg)
-    if comp:
-        ok, msg = _run(["am", "start", "-n", comp])
-        if ok:
+    ultimo = "o Android não deixou abrir o app"
+    # o atalho MAIN/LAUNCHER desses apps não tem DEFAULT; o link sim
+    for url in _URLS_APP.get(alvo, ()):
+        ok, msg = _run(["am", "start", "--user", "0", "-a", "android.intent.action.VIEW",
+                        "-d", url, "-p", pkg], 20, 300)
+        if _abriu(ok, msg):
             return True, f"abri {alvo}"
-    # último recurso: o monkey abre pelo atalho, sem injetar toque
-    monkey = shutil.which("monkey") or "/system/bin/monkey"
-    ok, msg = _run([monkey, "-p", pkg, "-c", "android.intent.category.LAUNCHER",
-                    "--pct-touch", "0", "--pct-motion", "0", "--pct-trackball", "0",
-                    "--pct-nav", "0", "--pct-majornav", "0", "--pct-syskeys", "0",
-                    "--pct-appswitch", "100", "--pct-anyevent", "0", "1"], 20, 400)
-    if ok and "aborted" not in msg.lower() and "no activities" not in msg.lower():
-        return True, f"abri {alvo}"
-    return False, msg or "o Android não deixou abrir o app"
+        if msg and msg not in ("OSError", "FileNotFoundError"):
+            ultimo = msg
+    for comp in _TELA.get(pkg, ()):
+        ok, msg = _run(["am", "start", "--user", "0", "-n", comp], 20, 300)
+        if _abriu(ok, msg):
+            return True, f"abri {alvo}"
+        if msg and msg not in ("OSError", "FileNotFoundError"):
+            ultimo = msg
+    return False, ultimo[:160]
 
 
 def _abrir_pc(acao: str, alvo: str) -> tuple[bool, str]:
