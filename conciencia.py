@@ -138,6 +138,11 @@ def perceber() -> dict[str, Any]:
         p["habilidades"] = 0
         p["habilidades_txt"] = ""
     p["humano_aqui"] = humano_no_desktop()
+    try:
+        dicas = Path("dicas_canais.md").read_text(encoding="utf-8")
+        p["dicas_canais"] = dicas[:1800]
+    except Exception:
+        p["dicas_canais"] = ""
     return p
 
 
