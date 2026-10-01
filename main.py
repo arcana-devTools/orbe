@@ -800,6 +800,25 @@ async def kiwify_webhook(request: Request) -> dict[str, Any]:
         return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:150]}"}
 
 
+@app.post("/api/afiliados/shopee/abrir")
+async def shopee_abrir() -> dict[str, Any]:
+    """Abre o portal da Shopee no desktop. O dono digita a senha. A colônia não."""
+    from browser import MANAGER, garantir_tela
+
+    _touch()
+    garantir_tela()
+    if not await MANAGER.ensure_alive():
+        raise HTTPException(503, MANAGER.disabled_reason[:300] or "navegador fora")
+    ctx = await MANAGER.context_for("shopee-afiliados")
+    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+    await page.goto("https://affiliate.shopee.com.br/", wait_until="domcontentloaded", timeout=60000)
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
+    return {"ok": True, "url": page.url, "titulo": await page.title()}
+
+
 @app.post("/api/afiliados/ml/abrir")
 async def ml_abrir(payload: MlIrIn | None = None) -> dict[str, Any]:
     """Abre o portal de afiliados no Chrome do /desktop (dono loga lá, 1x)."""
@@ -950,7 +969,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.18",
+        "versao": "0.27.19",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

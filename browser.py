@@ -40,7 +40,7 @@ STEALTH_JS = """
 }
 """
 
-PERFIS_CELULAR = {"mercadolivre-afiliados"}
+PERFIS_CELULAR = {"mercadolivre-afiliados", "shopee-afiliados"}
 
 BASE_ARGS = [
     "--no-first-run",
@@ -69,6 +69,44 @@ BASE_ARGS = [
 IGNORE_ARGS = ["--enable-automation"]
 
 
+def garantir_tela() -> None:
+    """O /desktop fica preto se o Chrome sobe sem o X. Sobe a tela se faltar."""
+    import shutil
+    import socket
+    import subprocess
+    import time
+    from pathlib import Path
+
+    os.environ["DISPLAY"] = ":99"
+    sock = Path("/tmp/.X11-unix/X99")
+    if not sock.exists() and shutil.which("Xvfb"):
+        tela = os.environ.get("ORBE_TELA", "430x940")
+        subprocess.Popen(
+            ["Xvfb", ":99", "-screen", "0", f"{tela}x24", "-ac", "+extension", "RANDR"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        for _ in range(20):
+            if sock.exists():
+                break
+            time.sleep(0.15)
+    if not shutil.which("x11vnc"):
+        return
+    porta = socket.socket()
+    try:
+        porta.connect(("127.0.0.1", 5900))
+        viva = True
+    except OSError:
+        viva = False
+    finally:
+        porta.close()
+    if not viva:
+        subprocess.Popen(
+            ["x11vnc", "-display", ":99", "-forever", "-shared", "-nopw",
+             "-rfbport", "5900", "-listen", "127.0.0.1", "-noxdamage", "-bg"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+
 class BrowserManager:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.s = settings or get_settings()
@@ -82,6 +120,7 @@ class BrowserManager:
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
+        garantir_tela()
         try:
             if self._pw:  # revive limpo: larga o playwright morto anterior
                 try:
