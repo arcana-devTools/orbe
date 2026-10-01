@@ -71,6 +71,38 @@ async def logado(page) -> bool:
         return False
 
 
+async def preparar(acao: str) -> dict[str, Any]:
+    """O toque do celular no VNC erra o botão. A colônia clica o que o dono pediu.
+    Nunca digita senha. Nunca aceita termo sozinha — cookies só se ele apertar."""
+    _, page = await _pagina()
+    try:
+        await page.bring_to_front()
+    except Exception:
+        pass
+    acao = (acao or "").strip().lower()
+    if acao not in ("entrar", "cookies"):
+        return {"ok": False, "motivo": "ação inválida"}
+    try:
+        if acao == "cookies":
+            btn = page.get_by_role("button", name="Aceitar cookies")
+            if await btn.count():
+                await btn.first.click(timeout=8000)
+        else:
+            alvo = page.get_by_text("Já tenho conta", exact=False)
+            if await alvo.count():
+                await alvo.first.click(timeout=8000)
+        await page.wait_for_timeout(1200)
+    except Exception as exc:
+        return {"ok": False, "motivo": type(exc).__name__}
+    tem_senha = False
+    try:
+        tem_senha = await page.locator("input[type='password']").count() > 0
+    except Exception:
+        pass
+    return {"ok": True, "url": page.url, "titulo": await page.title(), "tem_senha": tem_senha,
+            "logado": await logado(page)}
+
+
 async def abrir(url: str = PORTAL) -> dict[str, Any]:
     """Abre o portal no Chrome do desktop virtual (o dono loga por /desktop se preciso)."""
     _, page = await _pagina()

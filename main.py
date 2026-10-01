@@ -820,6 +820,19 @@ async def ml_estado() -> dict[str, Any]:
     return {**afiliados_ml.status(), **(await afiliados_ml.estado())}
 
 
+class MlPrepIn(BaseModel):
+    acao: str = "entrar"
+
+
+@app.post("/api/afiliados/ml/preparar")
+async def ml_preparar(payload: MlPrepIn) -> dict[str, Any]:
+    """Botão da barra do /desktop. O dono aperta. A colônia não inventa senha."""
+    import afiliados_ml
+
+    _touch()
+    return await afiliados_ml.preparar(payload.acao)
+
+
 @app.post("/api/afiliados/ml/salvar")
 async def ml_salvar() -> dict[str, Any]:
     import afiliados_ml
@@ -935,7 +948,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.16",
+        "versao": "0.27.17",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
@@ -1726,10 +1739,11 @@ DESKTOP_HTML = """<!DOCTYPE html>
 </style></head><body>
 <div id="bar">
   <a href="/">← painel</a>
-  <input id="kbd" placeholder="digite aqui e envie pro desktop (celere ok)"/>
-  <button id="bSend">➤</button>
-  <button id="bEnter">⏎</button>
-  <button id="bPaste">📋</button>
+  <button id="bConta" type="button">Já tenho conta</button>
+  <button id="bCookies" type="button">Aceitar cookies</button>
+  <input id="kbd" placeholder="senha e e-mail entram AQUI, depois ➤"/>
+  <button id="bSend" type="button">➤</button>
+  <button id="bEnter" type="button">⏎</button>
 </div>
 <div id="screen"></div>
 <script type="module">
@@ -1737,8 +1751,14 @@ import RFB from "/vnc/core/rfb.js";
 const proto = location.protocol === "https:" ? "wss:" : "ws:";
 const rfb = new RFB(document.getElementById("screen"), proto + "//" + location.host + "/vnc/ws");
 rfb.scaleViewport = true;
-rfb.resizeSession = true;
+rfb.resizeSession = false;
 window.rfb = rfb;
+async function preparar(acao){
+  await fetch("/api/afiliados/ml/preparar", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({acao})});
+}
+document.getElementById("bConta").onclick = () => preparar("entrar");
+document.getElementById("bCookies").onclick = () => preparar("cookies");
 async function sendText(s){
   if (!s) return;
   await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json"},
@@ -1749,9 +1769,6 @@ document.getElementById("bSend").onclick = async () => { await sendText(kbd.valu
 document.getElementById("bEnter").onclick = async () => {
   await fetch("/api/desktop/type", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key:"Return"})});
   kbd.focus();
-};
-document.getElementById("bPaste").onclick = async () => {
-  try { const t = await navigator.clipboard.readText(); await sendText(t); } catch (e) { alert("cole manualmente: " + e); }
 };
 kbd.addEventListener("keydown", async e => { if (e.key === "Enter") { e.preventDefault(); await sendText(kbd.value); kbd.value = ""; } });
 // heartbeat: enquanto esta aba estiver aberta, o watchdog não libera a RAM
@@ -1788,6 +1805,9 @@ async def desktop_type(payload: DesktopTypeIn, token: str = "") -> dict[str, Any
         raise HTTPException(503, "xdotool não instalado no servidor")
     env = dict(os.environ, DISPLAY=":99")
     try:
+        for classe in ("Chromium", "chrome", "Google-chrome"):
+            subprocess.run([xdt, "search", "--class", classe, "windowactivate"],
+                           env=env, timeout=5, check=False)
         if payload.text:
             subprocess.run([xdt, "type", "--clearmodifiers", "--delay", "12", payload.text],
                            env=env, timeout=20, check=False)
