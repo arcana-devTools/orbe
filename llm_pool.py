@@ -105,13 +105,14 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
             except ValueError:
                 ra = 60.0
             corpo = r.text.lower()
-            # "per day" aparece até em limite de minuto. Só trava longo se for cota do dia de verdade.
             diario = ("tokens per day" in corpo or "tpd:" in corpo) and ra > 120
-            if not diario and ra <= 40 and tentativa < 2:
+            if ra <= 45 and tentativa < 2:
                 await asyncio.sleep(ra + 1)
                 continue
-            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + (max(ra, 180) if diario else max(ra, 15))
-            return "", "429" + (" (cota diária)" if diario else "")
+            # trava curta: o plano grátis volta em seguida; trava longa impedia a colônia de gravar
+            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + min(max(ra, 12), 45)
+            trecho = " ".join(r.text.split())[:80]
+            return "", ("429 cota diária " if diario else "429 ") + trecho
         if r.status_code in (401, 403):
             return "", "chave"
         if r.status_code != 200:
@@ -141,9 +142,13 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
             else:
                 modelos = await _modelos_openrouter(cx, _chave(prov))
             for modelo in modelos:
-                if time.time() < _pausa_modelo.get(f"{prov}:{modelo}", 0):
-                    erros.append(f"{prov}/{modelo}: em pausa (cota)")
-                    continue
+                falta = _pausa_modelo.get(f"{prov}:{modelo}", 0) - time.time()
+                if falta > 0:
+                    if falta <= 50:
+                        await asyncio.sleep(falta + 1)
+                    else:
+                        erros.append(f"{prov}/{modelo}: em pausa (cota)")
+                        continue
                 espera = GAP_MIN_S - (time.time() - st["ultimo"])
                 if espera > 0:
                     await asyncio.sleep(espera)
