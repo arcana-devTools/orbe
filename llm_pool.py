@@ -104,12 +104,13 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
                 ra = float(r.headers.get("retry-after", "60"))
             except ValueError:
                 ra = 60.0
-            diario = "per day" in r.text
-            if not diario and ra <= 30 and tentativa < 2:
+            corpo = r.text.lower()
+            # "per day" aparece até em limite de minuto. Só trava longo se for cota do dia de verdade.
+            diario = ("tokens per day" in corpo or "tpd:" in corpo) and ra > 120
+            if not diario and ra <= 40 and tentativa < 2:
                 await asyncio.sleep(ra + 1)
                 continue
-            # Groq: cota é POR MODELO (ex.: 200k tokens/dia no 120b) → pausa só esse modelo
-            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + (max(ra, 600) if diario else max(ra, 20))
+            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + (max(ra, 180) if diario else max(ra, 15))
             return "", "429" + (" (cota diária)" if diario else "")
         if r.status_code in (401, 403):
             return "", "chave"

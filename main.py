@@ -664,7 +664,10 @@ async def hermes_aprender(request: Request) -> dict[str, Any]:
     material = str(d.get("material") or "")[:4000]
     if not acao or len(material.strip()) < 40:
         raise HTTPException(400, "sem material")
-    caminho = await habilidades.aprender_material(acao, porque, material)
+    try:
+        caminho = await habilidades.aprender_material(acao, porque, material)
+    except Exception as exc:
+        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:180]}")
     if not caminho:
         raise HTTPException(502, "não escreveu a habilidade")
     try:
@@ -1082,7 +1085,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.39",
+        "versao": "0.27.40",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
