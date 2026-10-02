@@ -65,10 +65,45 @@ async def pedir(tarefa: str, voltar: str = "orbe") -> dict[str, Any]:
     return {"ok": True, "resumo": f"chamei o Hermes: {tarefa[:70]}"}
 
 
+def _seguir_varredura(dado: dict[str, Any]) -> None:
+    """Se o Hermes parou no meio, a colônia chama o próximo trecho. Sem loop."""
+    saida = str((dado or {}).get("saida") or "")
+    marca = "PROXIMO varredura tiktok"
+    i = saida.rfind(marca)
+    if i < 0:
+        return
+    tarefa = saida[i + len("PROXIMO "):].strip()[:1800]
+    if len(tarefa) < 24:
+        return
+    marca_arq = Path("data/hermes_seguir.txt")
+    hoje = time.strftime("%Y-%m-%d")
+    n = 0
+    try:
+        linha = marca_arq.read_text(encoding="utf-8").splitlines()
+        if linha and linha[0] == hoje:
+            n = int(linha[1]) if len(linha) > 1 else 0
+            if len(linha) > 2 and linha[2].strip() == tarefa[:180]:
+                return
+    except Exception:
+        n = 0
+    if n >= 8:
+        return
+    try:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        loop.create_task(pedir(tarefa))
+        marca_arq.parent.mkdir(parents=True, exist_ok=True)
+        marca_arq.write_text(f"{hoje}\n{n + 1}\n{tarefa[:180]}\n", encoding="utf-8")
+    except Exception:
+        return
+
+
 def anotar_resultado(dado: dict[str, Any]) -> dict[str, Any]:
     """Guarda o que o Hermes devolveu e registra no diário da colônia."""
     reg = {"ts": time.time(), "status": "recebido",
            "dado": json.loads(json.dumps(dado, ensure_ascii=False)[:6000])}
+    _seguir_varredura(dado if isinstance(dado, dict) else {})
     try:
         ULTIMO.write_text(json.dumps(reg, ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:

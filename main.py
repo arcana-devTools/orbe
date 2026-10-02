@@ -630,9 +630,12 @@ async def hermes_pensar(request: Request) -> dict[str, Any]:
     )
     user = tarefa + ("\n\nTexto publico:\n" + publico if publico else "")
     try:
-        texto, origem = await llm_pool.chat(system, user, max_tokens=1200, web=False)
+        if d.get("reserva"):
+            texto, origem = await llm_pool.chat_reserva(system, user, max_tokens=700)
+        else:
+            texto, origem = await llm_pool.chat(system, user, max_tokens=1200, web=False)
     except Exception as exc:
-        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:180]}")
+        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:240]}")
     return {"ok": True, "origem": origem, "texto": texto[:4000]}
 
 
@@ -1085,7 +1088,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.41",
+        "versao": "0.27.42",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

@@ -3,10 +3,11 @@
 Ordem de tentativa (o primeiro que responder ganha):
   1. Groq       — grátis, sem cartão, rápido (gpt-oss-120b → qwen → gpt-oss-20b)
   2. OpenRouter — reserva: modelos ":free" descobertos na hora via /models
-  (3. Arena pelo navegador fica como último recurso, fora deste módulo)
+  3. GitHub Models — reserva com o PAT que a colônia já tem, sem cartão
+  (Arena pelo navegador fica como último recurso, fora deste módulo)
 
-Chaves: cofre (data/secrets, criptografado) em "llm_groq"/"llm_openrouter",
-ou variáveis ORBE_GROQ_API_KEY / ORBE_OPENROUTER_API_KEY (Render).
+Chaves: cofre em "llm_groq"/"llm_openrouter", ORBE_GROQ_API_KEY /
+ORBE_OPENROUTER_API_KEY, e ORBE_GITHUB_PAT para a reserva.
 Respeita limites do plano grátis: espaçamento mínimo + pausa ao levar 429.
 """
 from __future__ import annotations
@@ -19,16 +20,30 @@ import httpx
 
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
+GITHUB_URL = "https://models.github.ai/inference"
 GROQ_MODELOS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+GITHUB_MODELOS = ["openai/gpt-4.1-mini", "openai/gpt-4o-mini"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
 GAP_MIN_S = 20          # espaçamento mínimo entre chamadas no mesmo provedor
+GAP_GITHUB_S = 5
 _estado: dict[str, dict[str, Any]] = {}
 _pausa_modelo: dict[str, float] = {}      # "groq:modelo" -> até quando evitar   # provedor -> {ultimo, pausa_ate, erro}
 _or_free_cache: dict[str, Any] = {"ts": 0.0, "ids": []}
 
 
 def _chave(nome: str) -> str:
+    if nome == "github":
+        env = (os.environ.get("ORBE_GITHUB_PAT", "") or os.environ.get("ORBE_GITHUB_API_KEY", "")).strip()
+        if env:
+            return env
+        try:
+            from secrets_vault import VAULT
+
+            extra = (VAULT.get("github") or {}).get("extra") or {}
+            return str(extra.get("pat") or extra.get("key") or "").strip()
+        except Exception:
+            return ""
     env = os.environ.get(f"ORBE_{nome.upper()}_API_KEY", "").strip()
     if env:
         return env
@@ -48,7 +63,7 @@ def salvar_chave(nome: str, chave: str) -> None:
 
 
 def provedores() -> list[str]:
-    return [p for p in ("groq", "openrouter") if _chave(p)]
+    return [p for p in ("groq", "openrouter", "github") if _chave(p)]
 
 
 def disponivel() -> bool:
@@ -57,7 +72,7 @@ def disponivel() -> bool:
 
 def status() -> dict[str, Any]:
     out = {}
-    for p in ("groq", "openrouter"):
+    for p in ("groq", "openrouter", "github"):
         k = _chave(p)
         st = _estado.get(p, {})
         out[p] = {"configurada": bool(k), "hint": ("…" + k[-4:]) if k else "",
@@ -86,10 +101,12 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
     import asyncio
 
     chave = _chave(prov)
-    base = GROQ_URL if prov == "groq" else OPENROUTER_URL
-    hdr = {"Authorization": f"Bearer {chave}"}
+    base = {"groq": GROQ_URL, "github": GITHUB_URL}.get(prov, OPENROUTER_URL)
+    hdr = {"Authorization": f"Bearer {chave}", "Content-Type": "application/json"}
     if prov == "openrouter":
         hdr.update({"HTTP-Referer": "https://github.com/arcana-devTools/orbe", "X-Title": "Orbe"})
+    if prov == "github":
+        hdr.update({"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"})
     corpo = {"model": modelo, "temperature": temperature, "max_tokens": max_tokens,
              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if web:
@@ -104,13 +121,14 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
                 ra = float(r.headers.get("retry-after", "60"))
             except ValueError:
                 ra = 60.0
-            corpo = r.text.lower()
-            diario = ("tokens per day" in corpo or "tpd:" in corpo) and ra > 120
-            if ra <= 45 and tentativa < 2:
+            corpo_txt = r.text.lower()
+            diario = ("tokens per day" in corpo_txt or "tpd:" in corpo_txt) and ra > 90
+            if not diario and ra <= 45 and tentativa < 2:
                 await asyncio.sleep(ra + 1)
                 continue
-            # trava curta: o plano grátis volta em seguida; trava longa impedia a colônia de gravar
-            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + min(max(ra, 12), 45)
+            # cota do dia: pula este modelo e deixa a reserva atender. Minuto: trava curta.
+            espera_pausa = min(max(ra, 120), 1800) if diario else min(max(ra, 12), 45)
+            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + espera_pausa
             trecho = " ".join(r.text.split())[:80]
             return "", ("429 cota diária " if diario else "429 ") + trecho
         if r.status_code in (401, 403):
@@ -139,17 +157,19 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
             st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
             if prov == "groq":
                 modelos = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
+            elif prov == "github":
+                modelos = GITHUB_MODELOS
             else:
                 modelos = await _modelos_openrouter(cx, _chave(prov))
             for modelo in modelos:
                 falta = _pausa_modelo.get(f"{prov}:{modelo}", 0) - time.time()
+                if falta > 20:
+                    erros.append(f"{prov}/{modelo}: em pausa (cota)")
+                    continue
                 if falta > 0:
-                    if falta <= 50:
-                        await asyncio.sleep(falta + 1)
-                    else:
-                        erros.append(f"{prov}/{modelo}: em pausa (cota)")
-                        continue
-                espera = GAP_MIN_S - (time.time() - st["ultimo"])
+                    await asyncio.sleep(falta + 1)
+                gap = GAP_GITHUB_S if prov == "github" else GAP_MIN_S
+                espera = gap - (time.time() - st["ultimo"])
                 if espera > 0:
                     await asyncio.sleep(espera)
                 st["ultimo"] = time.time()
@@ -163,3 +183,30 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
                     break
     raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
                                              else "nenhuma chave de IA configurada"))
+
+
+async def chat_reserva(system: str, user: str, max_tokens: int = 700,
+                        temperature: float = 0.3) -> tuple[str, str]:
+    """Só a reserva (GitHub Models). A colônia usa quando o Groq não responde."""
+    if not _chave("github"):
+        raise RuntimeError("sem PAT do GitHub para a reserva")
+    import asyncio
+
+    erros = []
+    async with httpx.AsyncClient(timeout=90) as cx:
+        st = _estado.setdefault("github", {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
+        for modelo in GITHUB_MODELOS:
+            falta = _pausa_modelo.get(f"github:{modelo}", 0) - time.time()
+            if falta > 20:
+                erros.append(f"github/{modelo}: em pausa (cota)")
+                continue
+            txt, motivo = await _uma_chamada(cx, "github", modelo, system, user, max_tokens, temperature, False)
+            st["ultimo"] = time.time()
+            if txt:
+                st["erro"] = ""
+                return txt, f"github:{modelo}"
+            st["erro"] = f"{modelo}: {motivo}"
+            erros.append(f"github/{modelo}: {motivo}")
+            if motivo == "chave":
+                break
+    raise RuntimeError("; ".join(erros) or "reserva sem resposta")
