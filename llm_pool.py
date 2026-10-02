@@ -116,7 +116,8 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
         if r.status_code != 200:
             return "", f"HTTP {r.status_code}"
         try:
-            txt = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            msg = r.json()["choices"][0]["message"]
+            txt = (msg.get("content") or msg.get("reasoning") or msg.get("reasoning_content") or "").strip()
         except Exception:
             txt = ""
         return (txt, "") if txt else ("", "resposta vazia")
