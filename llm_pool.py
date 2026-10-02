@@ -3,11 +3,11 @@
 Ordem de tentativa (o primeiro que responder ganha):
   1. Groq       — grátis, sem cartão, rápido (gpt-oss-120b → qwen → gpt-oss-20b)
   2. OpenRouter — reserva: modelos ":free" descobertos na hora via /models
-  3. GitHub Models — reserva com o PAT que a colônia já tem, sem cartão
+  3. Cloudflare — reserva grátis, sem cartão, quando o Groq estoura
   (Arena pelo navegador fica como último recurso, fora deste módulo)
 
 Chaves: cofre em "llm_groq"/"llm_openrouter", ORBE_GROQ_API_KEY /
-ORBE_OPENROUTER_API_KEY, e ORBE_GITHUB_PAT para a reserva.
+ORBE_OPENROUTER_API_KEY, e ORBE_CF_AI_TOKEN + ORBE_CF_ACCOUNT para a reserva.
 Respeita limites do plano grátis: espaçamento mínimo + pausa ao levar 429.
 """
 from __future__ import annotations
@@ -20,30 +20,21 @@ import httpx
 
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
-GITHUB_URL = "https://models.github.ai/inference"
+CF_URL = "https://api.cloudflare.com/client/v4/accounts"
 GROQ_MODELOS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
-GITHUB_MODELOS = ["openai/gpt-4.1-mini", "openai/gpt-4o-mini"]
+CF_MODELOS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
 GAP_MIN_S = 20          # espaçamento mínimo entre chamadas no mesmo provedor
-GAP_GITHUB_S = 5
+GAP_CF_S = 2
 _estado: dict[str, dict[str, Any]] = {}
 _pausa_modelo: dict[str, float] = {}      # "groq:modelo" -> até quando evitar   # provedor -> {ultimo, pausa_ate, erro}
 _or_free_cache: dict[str, Any] = {"ts": 0.0, "ids": []}
 
 
 def _chave(nome: str) -> str:
-    if nome == "github":
-        env = (os.environ.get("ORBE_GITHUB_PAT", "") or os.environ.get("ORBE_GITHUB_API_KEY", "")).strip()
-        if env:
-            return env
-        try:
-            from secrets_vault import VAULT
-
-            extra = (VAULT.get("github") or {}).get("extra") or {}
-            return str(extra.get("pat") or extra.get("key") or "").strip()
-        except Exception:
-            return ""
+    if nome == "cf":
+        return (os.environ.get("ORBE_CF_AI_TOKEN", "") or os.environ.get("ORBE_CF_API_TOKEN", "")).strip()
     env = os.environ.get(f"ORBE_{nome.upper()}_API_KEY", "").strip()
     if env:
         return env
@@ -63,7 +54,7 @@ def salvar_chave(nome: str, chave: str) -> None:
 
 
 def provedores() -> list[str]:
-    return [p for p in ("groq", "openrouter", "github") if _chave(p)]
+    return [p for p in ("groq", "openrouter", "cf") if _chave(p)]
 
 
 def disponivel() -> bool:
@@ -72,7 +63,7 @@ def disponivel() -> bool:
 
 def status() -> dict[str, Any]:
     out = {}
-    for p in ("groq", "openrouter", "github"):
+    for p in ("groq", "openrouter", "cf"):
         k = _chave(p)
         st = _estado.get(p, {})
         out[p] = {"configurada": bool(k), "hint": ("…" + k[-4:]) if k else "",
@@ -95,18 +86,58 @@ async def _modelos_openrouter(cx: httpx.AsyncClient, chave: str) -> list[str]:
     return _or_free_cache["ids"]
 
 
+
+async def _chamada_cf(cx: httpx.AsyncClient, modelo: str, system: str, user: str,
+                      max_tokens: int) -> tuple[str, str]:
+    """Reserva grátis da Cloudflare. Sem cartão. A chave não sai daqui."""
+    conta = os.environ.get("ORBE_CF_ACCOUNT", "").strip()
+    chave = _chave("cf")
+    if not conta or not chave:
+        return "", "chave"
+    url = f"{CF_URL}/{conta}/ai/run/{modelo}"
+    try:
+        r = await cx.post(
+            url,
+            headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+            json={"messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                  "max_tokens": max_tokens},
+        )
+    except Exception as exc:
+        return "", type(exc).__name__
+    if r.status_code == 429:
+        _pausa_modelo[f"cf:{modelo}"] = time.time() + 40
+        return "", "429"
+    if r.status_code in (401, 403):
+        return "", "chave"
+    if r.status_code != 200:
+        return "", f"HTTP {r.status_code}"
+    try:
+        data = r.json()
+        result = data.get("result") or {}
+        txt = ""
+        choices = result.get("choices") or []
+        if choices:
+            msg = choices[0].get("message") or {}
+            txt = (msg.get("content") or "").strip()
+        if not txt:
+            txt = str(result.get("response") or "").strip()
+    except Exception:
+        txt = ""
+    return (txt, "") if len(txt) >= 8 else ("", "resposta vazia")
+
+
 async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: str, user: str,
                       max_tokens: int, temperature: float, web: bool) -> tuple[str, str]:
     """Devolve (texto, "") em sucesso ou ("", motivo) — motivo "chave" aborta o provedor."""
     import asyncio
 
+    if prov == "cf":
+        return await _chamada_cf(cx, modelo, system, user, max_tokens)
     chave = _chave(prov)
-    base = {"groq": GROQ_URL, "github": GITHUB_URL}.get(prov, OPENROUTER_URL)
+    base = GROQ_URL if prov == "groq" else OPENROUTER_URL
     hdr = {"Authorization": f"Bearer {chave}", "Content-Type": "application/json"}
     if prov == "openrouter":
         hdr.update({"HTTP-Referer": "https://github.com/arcana-devTools/orbe", "X-Title": "Orbe"})
-    if prov == "github":
-        hdr.update({"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"})
     corpo = {"model": modelo, "temperature": temperature, "max_tokens": max_tokens,
              "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if web:
@@ -157,8 +188,8 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
             st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
             if prov == "groq":
                 modelos = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
-            elif prov == "github":
-                modelos = GITHUB_MODELOS
+            elif prov == "cf":
+                modelos = CF_MODELOS
             else:
                 modelos = await _modelos_openrouter(cx, _chave(prov))
             for modelo in modelos:
@@ -168,7 +199,7 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
                     continue
                 if falta > 0:
                     await asyncio.sleep(falta + 1)
-                gap = GAP_GITHUB_S if prov == "github" else GAP_MIN_S
+                gap = GAP_CF_S if prov == "cf" else GAP_MIN_S
                 espera = gap - (time.time() - st["ultimo"])
                 if espera > 0:
                     await asyncio.sleep(espera)
@@ -187,26 +218,26 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
 
 async def chat_reserva(system: str, user: str, max_tokens: int = 700,
                         temperature: float = 0.3) -> tuple[str, str]:
-    """Só a reserva (GitHub Models). A colônia usa quando o Groq não responde."""
-    if not _chave("github"):
-        raise RuntimeError("sem PAT do GitHub para a reserva")
+    """Só a reserva. A colônia usa quando o Groq não responde."""
+    if not _chave("cf") or not os.environ.get("ORBE_CF_ACCOUNT", "").strip():
+        raise RuntimeError("sem reserva da Cloudflare")
     import asyncio
 
     erros = []
     async with httpx.AsyncClient(timeout=90) as cx:
-        st = _estado.setdefault("github", {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
-        for modelo in GITHUB_MODELOS:
-            falta = _pausa_modelo.get(f"github:{modelo}", 0) - time.time()
+        st = _estado.setdefault("cf", {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
+        for modelo in CF_MODELOS:
+            falta = _pausa_modelo.get(f"cf:{modelo}", 0) - time.time()
             if falta > 20:
-                erros.append(f"github/{modelo}: em pausa (cota)")
+                erros.append(f"cf/{modelo}: em pausa (cota)")
                 continue
-            txt, motivo = await _uma_chamada(cx, "github", modelo, system, user, max_tokens, temperature, False)
+            txt, motivo = await _uma_chamada(cx, "cf", modelo, system, user, max_tokens, temperature, False)
             st["ultimo"] = time.time()
             if txt:
                 st["erro"] = ""
-                return txt, f"github:{modelo}"
+                return txt, f"cf:{modelo}"
             st["erro"] = f"{modelo}: {motivo}"
-            erros.append(f"github/{modelo}: {motivo}")
+            erros.append(f"cf/{modelo}: {motivo}")
             if motivo == "chave":
                 break
     raise RuntimeError("; ".join(erros) or "reserva sem resposta")
