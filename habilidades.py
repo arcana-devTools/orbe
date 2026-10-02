@@ -33,7 +33,18 @@ def lista() -> list[dict[str, Any]]:
     for p in sorted(PASTA.glob("*.md")):
         try:
             txt = p.read_text(encoding="utf-8")
-            titulo = txt.splitlines()[0].lstrip("# ").strip() if txt else p.stem
+            linhas = txt.splitlines()
+            if linhas and linhas[0].strip() == "---":
+                for i, linha in enumerate(linhas[1:], 1):
+                    if linha.strip() == "---":
+                        linhas = linhas[i + 1:]
+                        break
+            titulo = p.stem
+            for linha in linhas:
+                s = linha.strip()
+                if s.startswith("#"):
+                    titulo = s.lstrip("# ").strip()
+                    break
             saida.append({"nome": p.stem, "titulo": titulo[:80], "linhas": len(txt.splitlines()),
                           "em": p.stat().st_mtime})
         except Exception:
