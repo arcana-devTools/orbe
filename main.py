@@ -218,7 +218,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
-_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado",
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
              "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
 
@@ -598,6 +598,42 @@ async def hermes_resultado(request: Request) -> dict[str, Any]:
     except Exception:
         d = {"texto": (await request.body()).decode("utf-8", "replace")[:4000]}
     return hermes.anotar_resultado(d if isinstance(d, dict) else {"dado": d})
+
+
+
+@app.post("/api/hermes/pensar")
+async def hermes_pensar(request: Request) -> dict[str, Any]:
+    """O Hermes pede a colônia para pensar. A chave fica no servidor."""
+    import hmac
+    import llm_pool
+
+    _touch()
+    esperado = os.environ.get("ORBE_HERMES_TOKEN", "")
+    dado = request.headers.get("x-orbe-token", "")
+    if not esperado or not hmac.compare_digest(dado, esperado):
+        raise HTTPException(401, "token do Hermes inválido")
+    try:
+        d = await request.json()
+    except Exception:
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    tarefa = str(d.get("tarefa") or "")[:4000]
+    publico = str(d.get("publico") or "")[:4000]
+    if not tarefa:
+        raise HTTPException(400, "tarefa vazia")
+    system = (
+        "Voce e a colonia Orbe. Portugues, frases curtas. Nao invente o que nao viu. "
+        "Nao peca o dono para fazer o passo. Sem spam, sem conta falsa, sem aposta, "
+        "sem piramide, sem cartao. Dinheiro simulado nao conta. "
+        "Diga o que o video ensina, o que da para executar agora e o que falhou."
+    )
+    user = tarefa + ("\n\nTexto publico:\n" + publico if publico else "")
+    try:
+        texto, origem = await llm_pool.chat(system, user, max_tokens=1200, web=True)
+    except Exception as exc:
+        raise HTTPException(502, f"{type(exc).__name__}: {str(exc)[:180]}")
+    return {"ok": True, "origem": origem, "texto": texto[:4000]}
 
 
 @app.post("/api/hermes/pedir")
@@ -998,7 +1034,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.34",
+        "versao": "0.27.35",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
