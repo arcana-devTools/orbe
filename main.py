@@ -218,7 +218,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
-_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar",
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
              "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
 
@@ -636,6 +636,54 @@ async def hermes_pensar(request: Request) -> dict[str, Any]:
     return {"ok": True, "origem": origem, "texto": texto[:4000]}
 
 
+
+def _hermes_ok(request: Request) -> bool:
+    import hmac
+
+    esperado = os.environ.get("ORBE_HERMES_TOKEN", "")
+    dado = request.headers.get("x-orbe-token", "")
+    return bool(esperado) and hmac.compare_digest(dado, esperado)
+
+
+@app.post("/api/hermes/aprender")
+async def hermes_aprender(request: Request) -> dict[str, Any]:
+    """A colônia escreve a skill do que viu e guarda."""
+    import habilidades
+
+    _touch()
+    if not _hermes_ok(request):
+        raise HTTPException(401, "token do Hermes inválido")
+    try:
+        d = await request.json()
+    except Exception:
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    acao = str(d.get("acao") or "")[:80]
+    porque = str(d.get("porque") or "")[:400]
+    material = str(d.get("material") or "")[:4000]
+    if not acao or len(material.strip()) < 40:
+        raise HTTPException(400, "sem material")
+    caminho = await habilidades.aprender_material(acao, porque, material)
+    if not caminho:
+        raise HTTPException(502, "não escreveu a habilidade")
+    try:
+        import state_backup
+
+        await state_backup.salvar(forcar=True)
+    except Exception:
+        pass
+    return {"ok": True, "acao": acao, "arquivo": caminho, "ja_tinha": habilidades.tem(acao)}
+
+
+@app.get("/api/habilidades")
+async def habilidades_lista() -> dict[str, Any]:
+    import habilidades
+
+    _touch()
+    return {"habilidades": habilidades.lista(), "n": len(habilidades.lista())}
+
+
 @app.post("/api/hermes/pedir")
 async def hermes_pedir(payload: dict[str, Any]) -> dict[str, Any]:
     """A colônia encomenda uma tarefa ao Hermes (mãos)."""
@@ -1034,7 +1082,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.36",
+        "versao": "0.27.37",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

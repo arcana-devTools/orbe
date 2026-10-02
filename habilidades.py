@@ -107,6 +107,49 @@ async def escrever(acao: str, porque: str, resultado: str) -> str | None:
     return str(p) if p else None
 
 
+
+async def aprender_material(acao: str, porque: str, material: str) -> str | None:
+    """Ela escreve a skill a partir do que viu. Sem material, não inventa."""
+    acao = (acao or "").strip()[:80]
+    material = (material or "").strip()
+    if not acao or len(material) < 40:
+        return None
+    if tem(acao):
+        return str(PASTA / (_slug(acao) + ".md"))
+    try:
+        import llm_pool
+
+        if not llm_pool.disponivel():
+            return None
+    except Exception:
+        return None
+    sistema = (
+        "Você é a Orbe. Escreva a SUA habilidade em português, markdown, no máximo 18 linhas. "
+        "Só o que está no material. Não invente nome de site, bot ou fornecedor. "
+        "Não inclua passo de spam, conta falsa, aposta, pirâmide, cartão, repostar vídeo alheio "
+        "nem baixar vídeo do YouTube. Se o material não der um procedimento, diga isso em uma linha."
+    )
+    user = (
+        f"Ação: {acao}\nPor que: {porque[:300]}\n\nMaterial que eu vi:\n{material[:3500]}\n\n"
+        "Escreva: (1) quando eu uso, (2) os passos que eu sigo, (3) como sei que deu certo, "
+        "(4) o que pode dar errado. Nada de introdução."
+    )
+    try:
+        txt, _motor = await llm_pool.chat(sistema, user, max_tokens=900, temperature=0.3)
+    except Exception:
+        return None
+    if not txt or len(txt) < 40:
+        return None
+    salvo = salvar(acao, txt)
+    try:
+        import conciencia
+
+        conciencia.anotar(f"habilidade gravada: {acao}", acao="habilidade")
+    except Exception:
+        pass
+    return str(salvo) if salvo else None
+
+
 async def tentar_aprender(decidido: dict[str, Any], resultado: dict[str, Any]) -> str | None:
     """Chamada depois de agir: se repetiu (ou foi bem), ela escreve a receita."""
     acao = str(decidido.get("acao") or "")
