@@ -36,8 +36,8 @@ APPS = {
 def _http(url: str, token: str, corpo: dict | None = None, timeout: int = 40) -> dict:
     data = json.dumps(corpo).encode() if corpo is not None else None
     req = urllib.request.Request(url, data=data, method="POST" if corpo is not None else "GET",
-                                 headers={"x-orbe-mao": token, "Content-Type": "application/json",
-                                          "User-Agent": "orbe-mao"})
+                                 headers={"x-orbe-mao": token, "x-orbe-mao-email": "1",
+                                          "Content-Type": "application/json", "User-Agent": "orbe-mao"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode() or "{}")
 
@@ -313,6 +313,34 @@ def _tecla(nome: str) -> tuple[bool, str]:
     return False, "tecla neste sistema não está disponível"
 
 
+def _enviar_saida(base: str, token: str, apelido: str) -> None:
+    try:
+        saida = _http(f"{base}/api/mao/saida?aparelho={apelido}", token, timeout=20)
+    except Exception:
+        return
+    item = saida.get("saida") or None
+    if not item:
+        return
+    de, para, senha = item.get("de") or "", item.get("para") or "", item.get("senha") or ""
+    if not de or not para or not senha:
+        return
+    import smtplib
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = de
+    msg["To"] = para
+    msg["Subject"] = item.get("assunto") or "Orbe"
+    msg.set_content(item.get("corpo") or "")
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+            smtp.starttls()
+            smtp.login(de, senha)
+            smtp.send_message(msg)
+    except Exception:
+        return
+
+
 def executar(cmd: dict) -> tuple[bool, str, str]:
     acao, alvo = cmd.get("acao"), cmd.get("alvo") or ""
     extra = cmd.get("extra") or {}
@@ -366,6 +394,7 @@ def main() -> None:
             continue
         cmd = fila.get("comando")
         if not cmd:
+            _enviar_saida(base, args.token, args.apelido)
             continue
         ok, resumo, imagem = executar(cmd)
         corpo = {"id": cmd.get("id"), "ok": ok, "resumo": resumo, "aparelho": args.apelido}

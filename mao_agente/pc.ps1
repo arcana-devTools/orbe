@@ -28,7 +28,7 @@ public class OrbeMao {
 "@
 
 function Invoke-Orbe([string]$Metodo, [string]$Url, $Corpo) {
-  $h = @{ "x-orbe-mao" = $Token }
+  $h = @{ "x-orbe-mao" = $Token; "x-orbe-mao-email" = "1" }
   if ($Corpo -ne $null) {
     $json = $Corpo | ConvertTo-Json -Compress
     return Invoke-RestMethod -Method $Metodo -Uri $Url -Headers $h -Body $json -ContentType "application/json; charset=utf-8" -TimeoutSec 40
@@ -86,6 +86,19 @@ Write-Host "mao pc ligada em $Base"
 while ($true) {
   try {
     $fila = Invoke-Orbe GET "$Base/api/mao/fila?aparelho=$Apelido" $null
+    if (-not $fila.comando) {
+      try {
+        $saida = Invoke-Orbe GET "$Base/api/mao/saida?aparelho=$Apelido" $null
+        if ($saida.saida) {
+          $m = New-Object System.Net.Mail.MailMessage($saida.saida.de, $saida.saida.para, $saida.saida.assunto, $saida.saida.corpo)
+          $c = New-Object System.Net.Mail.SmtpClient("smtp.gmail.com", 587)
+          $c.EnableSsl = $true
+          $c.Credentials = New-Object System.Net.NetworkCredential($saida.saida.de, $saida.saida.senha)
+          $c.Send($m)
+          $m.Dispose(); $c.Dispose()
+        }
+      } catch {}
+    }
     if ($fila.comando) {
       $ok, $resumo, $img = Executa $fila.comando
       $corpo = @{ id = $fila.comando.id; ok = [bool]$ok; resumo = [string]$resumo; aparelho = $Apelido }

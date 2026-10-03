@@ -123,6 +123,15 @@ def _env_hermes() -> dict[str, str]:
     env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
     env.pop("ORBE_TG_TOKEN", None)
     env.pop("TELEGRAM_BOT_TOKEN", None)
+    try:
+        import email_saida
+
+        if email_saida.pronta():
+            env["SSL_CERT_FILE"] = email_saida.pacote_ca()
+            env["EMAIL_SMTP_HOST"] = email_saida.HOST
+            env["EMAIL_SMTP_PORT"] = str(email_saida.PORTA)
+    except Exception:
+        pass
     return env
 
 
@@ -203,6 +212,14 @@ async def garantir() -> str | None:
     if shutil.which("hermes") is None:
         return "o Hermes não está instalado neste servidor"
     _preparar()
+    try:
+        import email_saida
+
+        if email_saida.pronta():
+            email_saida.ligar()
+            email_saida.aplicar_env()
+    except Exception:
+        pass
     async with _trava:
         if not (_proc is not None and _proc.poll() is None and _no_ar()):
             log = open(HOME / "logs" / "painel.log", "ab")

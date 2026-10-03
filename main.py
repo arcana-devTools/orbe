@@ -775,6 +775,9 @@ async def mao_fila(request: Request, aparelho: str = "", apelido: str = "") -> d
         raise HTTPException(400, "aparelho")
     _mao_token(request, aparelho)
     mao.viu_app(aparelho, request.headers.get("user-agent", ""))
+    if request.headers.get("x-orbe-mao-email") == "1":
+        import email_saida
+        email_saida.marcar_pc(True)
     cmd = mao.pegar(aparelho)
     if cmd:
         return {"comando": cmd}
@@ -785,6 +788,22 @@ async def mao_fila(request: Request, aparelho: str = "", apelido: str = "") -> d
             return {"comando": cmd}
     mao.bater(aparelho)
     return {"comando": None}
+
+
+@app.get("/api/mao/saida")
+async def mao_saida(request: Request, aparelho: str = "") -> dict[str, Any]:
+    """A mão nova pega um e-mail pra enviar pela internet de casa. Não grava a senha."""
+    import email_saida
+
+    if aparelho not in ("celular", "pc"):
+        raise HTTPException(400, "aparelho")
+    _mao_token(request, aparelho)
+    email_saida.marcar_pc(True)
+    item = email_saida.pegar_pc()
+    if not item:
+        return {"saida": None}
+    item["senha"] = email_saida.senha_gmail()
+    return {"saida": item}
 
 
 @app.post("/api/mao/resultado")
@@ -1129,6 +1148,36 @@ async def conectores_atalho() -> RedirectResponse:
     return RedirectResponse("/hermes/channels", status_code=302)
 
 
+@app.get("/email-saida", include_in_schema=False)
+async def email_saida_pagina() -> HTMLResponse:
+    import email_saida
+
+    return HTMLResponse(email_saida.pagina())
+
+
+@app.post("/email-saida", include_in_schema=False)
+async def email_saida_salvar(request: Request) -> HTMLResponse:
+    import email_saida
+    import hermes_painel
+
+    form = await request.form()
+    chave = str(form.get("chave") or "")
+    erro = email_saida.salvar_chave(chave) if chave.strip() else ""
+    if erro:
+        return HTMLResponse(email_saida.pagina(erro), status_code=400)
+    if not email_saida.tem_chave():
+        return HTMLResponse(email_saida.pagina("cola a chave de API"), status_code=400)
+    if not email_saida.remetente_confirmado(forcar=True):
+        return HTMLResponse(email_saida.pagina(
+            "A chave entrou. Falta confirmar o Gmail em Remetentes, no Brevo, e voltar aqui."
+        ))
+    email_saida.ligar()
+    email_saida.aplicar_env()
+    await hermes_painel.garantir()
+    await hermes_painel.reiniciar_gateway()
+    return HTMLResponse(email_saida.pagina("Salvo. O teste do e-mail já pode passar.", ok=True))
+
+
 @app.api_route("/hermes", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
 @app.api_route("/hermes/{caminho:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
 async def hermes_conectores(request: Request, caminho: str = "") -> Response:
@@ -1160,7 +1209,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.83",
+        "versao": "0.27.84",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
