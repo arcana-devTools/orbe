@@ -753,6 +753,7 @@ async def mao_fila(request: Request, aparelho: str = "", apelido: str = "") -> d
     if aparelho not in mao.APARELHOS:
         raise HTTPException(400, "aparelho")
     _mao_token(request, aparelho)
+    mao.viu_app(aparelho, request.headers.get("user-agent", ""))
     cmd = mao.pegar(aparelho)
     if cmd:
         return {"comando": cmd}
@@ -1101,7 +1102,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.55",
+        "versao": "0.27.56",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

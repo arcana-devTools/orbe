@@ -22,6 +22,8 @@ def passo() -> dict:
         import mao
         if not mao.online("celular"):
             return {"ok": False, "motivo": "celular fora"}
+        if mao.versao_app() < 4:
+            return {"ok": True, "ja": True}
     except Exception as exc:
         return {"ok": False, "motivo": type(exc).__name__}
     _ultimo = time.time()

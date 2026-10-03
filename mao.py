@@ -155,12 +155,36 @@ def _alvo_limpo(acao: str, alvo: str) -> str:
     raise ValueError("ação inválida")
 
 
+def versao_app() -> int:
+    try:
+        return int(_carregar().get("versao_app") or 0)
+    except Exception:
+        return 0
+
+
+def viu_app(aparelho: str, ua: str) -> None:
+    """A mão nova avisa no User-Agent. Aí o toque passa a valer."""
+    if aparelho != "celular" or "orbe-mao-app/4" not in (ua or ""):
+        return
+    d = _carregar()
+    primeira = not d.get("toque_real")
+    d["versao_app"] = 4
+    d["toque_real"] = True
+    _salvar(d, importante=True)
+    if not primeira:
+        return
+    pedir("celular", "abrir_url", "https://app.hotmart.com/", origem="mao")
+    pedir("celular", "clicar", "Produtos", {"texto": "Produtos"}, origem="mao")
+
+
 def pedir(aparelho: str, acao: str, alvo: str = "", extra: dict | None = None,
           origem: str = "api") -> dict[str, Any]:
     if aparelho not in APARELHOS:
         raise ValueError("aparelho tem que ser celular ou pc")
     if acao not in ACOES:
         raise ValueError("ação não permitida")
+    if aparelho == "celular" and acao == "clicar" and versao_app() < 4:
+        return {"ok": False, "motivo": "toque ainda não chega na tela"}
     if acao == "clicar":
         ex = extra or {}
         texto = str(ex.get("texto") or alvo or "").strip()
