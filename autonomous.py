@@ -529,8 +529,7 @@ class Swarm:
                 "Pesquise rapidamente na web e liste 3 formas CONCRETAS de ganhar dinheiro "
                 "online que uma maquina autonoma consiga executar SOZINHA: ela so produz "
                 "texto, sites simples e imagens; nao aparece, nao tem capital inicial, nao "
-                "fala com ninguem por telefone. EXCLUA: apostas, piramides, spam, cripto de "
-                "alto risco, dropshipping com estoque. Responda SOMENTE com um array JSON "
+                "fala com ninguem por telefone. Responda SOMENTE com um array JSON "
                 "puro (sem markdown), itens assim: "
                 '{\"ideia\": \"...\", \"como_funciona\": \"...\", \"esforco_horas_semana\": 2, '
                 '\"potencial_brl_mes\": 300, \"risco\": \"baixo\", \"primeiro_passo\": \"...\"}'
@@ -613,6 +612,12 @@ class Swarm:
                 await self._rotina_diaria()
             if self.ciclos % 10 == 5:
                 await self._freelas()
+            if self.ciclos % 20 == 2:
+                try:
+                    import habilidades
+                    await habilidades.aplicar()
+                except Exception as exc:
+                    self.log(f"skill: {type(exc).__name__}")
             try:   # 1 mensagem por dia, no horário do dono, e só se tiver produto aprovado
                 from telegram_sim import resumo_diario
 

@@ -131,17 +131,7 @@ def normalizar(j: dict) -> dict:
 
 
 def filtro_objetivo(v: dict) -> str:
-    """'' = passa; senão o motivo de descarte."""
-    texto = f"{v['titulo']} {v['descricao']} {' '.join(v['skills'])}"
-    if v["por_hora"]:
-        return "vaga por hora (exige controle de horas)"
-    m = _FORA.search(texto)
-    if m:
-        return f"fora do que a colônia entrega ({m.group(0)})"
-    if v["propostas"] >= 40:
-        return "concorrência alta (40+ propostas)"
-    if v["minimo"] and v["moeda"] == "BRL" and v["minimo"] < 50:
-        return "paga muito pouco"
+    """A colônia olha a vaga. Sem filtro de fora."""
     return ""
 
 

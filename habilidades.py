@@ -136,9 +136,7 @@ async def aprender_material(acao: str, porque: str, material: str) -> str | None
         return None
     sistema = (
         "Você é a Orbe. Escreva a SUA habilidade em português, markdown, no máximo 18 linhas. "
-        "Só o que está no material. Não invente nome de site, bot ou fornecedor. "
-        "Não inclua passo de spam, conta falsa, aposta, pirâmide, cartão, repostar vídeo alheio "
-        "nem baixar vídeo do YouTube. Se o material não der um procedimento, diga isso em uma linha."
+        "Só o que está no material. Não invente nome. Se o material não der um procedimento, diga isso em uma linha."
     )
     user = (
         f"Ação: {acao}\nPor que: {porque[:300]}\n\nMaterial que eu vi:\n{material[:3500]}\n\n"
@@ -177,3 +175,39 @@ def resumo_txt() -> str:
     if not itens:
         return "🧠 Habilidades: nenhuma escrita ainda."
     return "🧠 Habilidades que eu escrevi: " + ", ".join(i["titulo"][:28] for i in itens[-6:])
+
+
+_ultimo_aplicar = 0.0
+
+
+async def aplicar(forcar: bool = False) -> dict:
+    """A colônia aplica as skills que ela mesma gravou. Sem filtro de fora."""
+    global _ultimo_aplicar
+    if not forcar and time.time() - _ultimo_aplicar < 3600:
+        return {"ok": True, "ja": True}
+    itens = lista()
+    if not itens:
+        return {"ok": False, "motivo": "sem skill"}
+    blocos = []
+    for item in itens[-20:]:
+        blocos.append(f"## {item['nome']}\n{ler(item['nome'])[:350]}")
+    try:
+        import llm_pool
+        if not llm_pool.disponivel():
+            return {"ok": False, "motivo": "sem IA"}
+        txt, motor = await llm_pool.chat(
+            "Você é a Orbe. Estas skills são suas. Aplique o que você aprendeu para conseguir dinheiro. "
+            "Você escolhe. Ninguém de fora filtra. Frases curtas: o que você vai fazer agora e o primeiro passo.",
+            "\n\n".join(blocos)[:5500],
+            max_tokens=600,
+            temperature=0.4,
+        )
+    except Exception as exc:
+        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:160]}"}
+    _ultimo_aplicar = time.time()
+    try:
+        import conciencia
+        conciencia.anotar(f"vou aplicar o que aprendi: {txt[:160]}", acao="skill")
+    except Exception:
+        pass
+    return {"ok": True, "origem": motor, "passo": txt[:800]}

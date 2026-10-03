@@ -218,7 +218,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
-_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades",
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades", "/api/habilidades/aplicar",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
              "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
 
@@ -682,6 +682,17 @@ async def hermes_aprender(request: Request) -> dict[str, Any]:
     return {"ok": True, "acao": acao, "arquivo": caminho, "ja_tinha": habilidades.tem(acao)}
 
 
+@app.post("/api/habilidades/aplicar")
+async def habilidades_aplicar(request: Request) -> dict[str, Any]:
+    """A colônia aplica as skills que gravou. Sem filtro de fora."""
+    import habilidades
+
+    _touch()
+    if not _hermes_ok(request):
+        raise HTTPException(401, "token do Hermes inválido")
+    return await habilidades.aplicar(forcar=True)
+
+
 @app.get("/api/habilidades")
 async def habilidades_lista() -> dict[str, Any]:
     import habilidades
@@ -1088,7 +1099,7 @@ async def index(token: str = ""):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "versao": "0.27.43",
+        "versao": "0.27.44",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
