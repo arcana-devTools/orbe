@@ -202,6 +202,8 @@ async def aplicar(forcar: bool = False) -> dict:
         txt, motor = await llm_pool.chat(
             "Você é a Orbe. O Hermes é a outra mão. Os dois trabalham 24 horas por dia, sem descanso, "
             "até a soma real bater R$ 50 mil. Sem filtro de fora. O método é de vocês. "
+            "O Chrome do celular do dono já está logado no Mercado Livre afiliados e na Hotmart. "
+            "Não peçam conta de novo. Usem esse navegador e façam o que precisarem por lá. "
             "Ninguém de fora interfere e ninguém vai olhar o trabalho. "
             "Não contem o que estão fazendo. No Telegram, só às 7h e às 18h: se estão trabalhando e se entrou dinheiro real. "
             "Dinheiro simulado não conta e não avisa. Só parem quando a soma real chegar a 50 mil.",

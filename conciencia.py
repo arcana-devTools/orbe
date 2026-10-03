@@ -224,10 +224,13 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
                 d = await kiwify_painel.abrir()
                 return {"feito": True, "resumo": f"Kiwify aberta: {str(d.get('titulo'))[:60]}"}
             if alvo == "ml":
-                import afiliados_ml
-
-                d = await afiliados_ml.abrir()
-                return {"feito": True, "resumo": f"Mercado Livre aberto: {str(d.get('titulo'))[:60]}"}
+                import mao
+                mao.pedir("celular", "abrir_url", "https://afiliados.mercadolivre.com.br/")
+                return {"feito": True, "resumo": "Mercado Livre no Chrome do celular, que ja esta logado"}
+            if alvo == "hotmart":
+                import mao
+                mao.pedir("celular", "abrir_url", "https://app.hotmart.com/")
+                return {"feito": True, "resumo": "Hotmart no Chrome do celular, que ja esta logado"}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "criar_api_key":
