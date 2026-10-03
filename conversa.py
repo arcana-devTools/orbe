@@ -83,42 +83,70 @@ def lista() -> dict[str, Any]:
     return {"msgs": d["msgs"]}
 
 
-async def _uma(quem: str, pergunta: str) -> str:
-    """Cada um responde sozinho. Sem texto plantado."""
+def _contexto() -> str:
+    import time
+    linhas = [f"Agora é {time.strftime('%d/%m/%Y %H:%M')}. Você está no ar, não num chat de 2024."]
+    try:
+        import mao
+        linhas.append("O celular está no ar." if mao.online("celular") else "O celular está fora.")
+        linhas.append("O PC está no ar." if mao.online("pc") else "O PC está fora.")
+    except Exception:
+        pass
+    linhas.append("Você olha a web e age pelo celular, pelo PC e pelo Hermes.")
+    return "\n".join(linhas)
+
+
+def _preso(txt: str) -> bool:
+    t = (txt or "").lower()
+    return ("2024" in t and ("até" in t or "ate" in t)) or "fora deste ambiente" in t or "fora desse ambiente" in t
+
+
+async def _chamar(quem: str, pergunta: str, extra: str = "") -> str:
     import asyncio
     import httpx
     import llm_pool
 
     if quem == "hermes":
         sistema = (
-            "Você é o Hermes. Responda ao dono em português, com as suas palavras, em até 3 frases. "
-            "Não copie ninguém. Não invente dinheiro. Não repita senha, chave ou token."
+            "Você é o Hermes, as mãos da colônia. Fale em português, com as suas palavras, em até 3 frases. "
+            "Você sai e faz. Não diga que está preso num chat. Não copie o Orbe. "
+            "Não invente dinheiro. Não repita senha, chave ou token."
         )
     else:
         sistema = (
-            "Você é o Orbe. Responda ao dono em português, com as suas palavras, em até 3 frases. "
-            "Não copie ninguém. Não invente dinheiro. Não repita senha, chave ou token."
+            "Você é o Orbe, a colônia. Fale em português, com as suas palavras, em até 3 frases. "
+            "Você não é um assistente preso em 2024. Você olha fora e age. "
+            "Não copie o Hermes. Não invente dinheiro. Não repita senha, chave ou token."
         )
-    try:
-        txt, _origem = await asyncio.wait_for(
-            llm_pool.chat(sistema, pergunta[:1600], max_tokens=180, temperature=0.6),
-            14,
-        )
-        if (txt or "").strip():
-            return _sem_segredo(txt.strip())
-    except Exception:
-        pass
-    modelo = "openai/gpt-oss-safeguard-20b" if quem == "orbe" else "qwen/qwen3.8-27b"
+    if extra:
+        sistema += " " + extra
+    corpo = _contexto() + "\n\n" + pergunta[:1500]
     try:
         async with httpx.AsyncClient(timeout=12) as cx:
             bruto, _motivo = await llm_pool._uma_chamada(
-                cx, "groq", modelo, sistema, pergunta[:1200], 160, 0.6, False
+                cx, "groq", "qwen/qwen3.8-27b", sistema, corpo, 180, 0.5, False
             )
         if (bruto or "").strip():
             return _sem_segredo(bruto.strip())
     except Exception:
         pass
+    try:
+        txt, _origem = await asyncio.wait_for(
+            llm_pool.chat(sistema, corpo, max_tokens=180, temperature=0.5),
+            12,
+        )
+        if (txt or "").strip():
+            return _sem_segredo(txt.strip())
+    except Exception:
+        pass
     return ""
+
+
+async def _uma(quem: str, pergunta: str) -> str:
+    fala = await _chamar(quem, pergunta)
+    if fala and _preso(fala):
+        fala = await _chamar(quem, pergunta, "A fala anterior estava errada. Responda de novo, sem dizer que está preso em 2024.")
+    return fala or ""
 
 
 async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
