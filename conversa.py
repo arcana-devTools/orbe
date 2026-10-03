@@ -83,32 +83,36 @@ def lista() -> dict[str, Any]:
     return {"msgs": d["msgs"]}
 
 
-async def _responder(pergunta: str) -> str:
-    """Responde a pergunta. Não devolve frase pronta no lugar da resposta."""
+async def _uma(quem: str, pergunta: str) -> str:
+    """Cada um responde sozinho. Sem texto plantado."""
     import asyncio
     import httpx
     import llm_pool
 
-    sistema = (
-        "Você é o Orbe. O Hermes é a outra mão. "
-        "Responda a pergunta do dono em português, direto, em até 4 frases. "
-        "Se ele perguntar limite, diga o limite real, sem enrolar. "
-        "Não invente dinheiro. Não repita senha, chave ou token. "
-        "Não peça para ele fazer o passo."
-    )
+    if quem == "hermes":
+        sistema = (
+            "Você é o Hermes. Responda ao dono em português, com as suas palavras, em até 3 frases. "
+            "Não copie ninguém. Não invente dinheiro. Não repita senha, chave ou token."
+        )
+    else:
+        sistema = (
+            "Você é o Orbe. Responda ao dono em português, com as suas palavras, em até 3 frases. "
+            "Não copie ninguém. Não invente dinheiro. Não repita senha, chave ou token."
+        )
     try:
         txt, _origem = await asyncio.wait_for(
-            llm_pool.chat(sistema, pergunta[:1800], max_tokens=220, temperature=0.3),
-            16,
+            llm_pool.chat(sistema, pergunta[:1600], max_tokens=180, temperature=0.6),
+            14,
         )
         if (txt or "").strip():
             return _sem_segredo(txt.strip())
     except Exception:
         pass
+    modelo = "openai/gpt-oss-safeguard-20b" if quem == "orbe" else "qwen/qwen3.8-27b"
     try:
         async with httpx.AsyncClient(timeout=12) as cx:
             bruto, _motivo = await llm_pool._uma_chamada(
-                cx, "groq", "openai/gpt-oss-safeguard-20b", sistema, pergunta[:1200], 180, 0.3, False
+                cx, "groq", modelo, sistema, pergunta[:1200], 160, 0.6, False
             )
         if (bruto or "").strip():
             return _sem_segredo(bruto.strip())
@@ -118,26 +122,25 @@ async def _responder(pergunta: str) -> str:
 
 
 async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
+    import asyncio
+
     curto = texto.strip().lower().strip("?!., ")
     cumprimento = curto in {"oi", "ola", "olá", "e ai", "e aí", "bom dia", "boa tarde", "boa noite"}
-    pergunta = texto
+    base = texto
     if not cumprimento:
         try:
-            import asyncio
             import llm_pool
-            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 6)
+            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 5)
         except Exception:
             visto = ""
         if visto:
-            pergunta = texto[:700] + "\n\nVi agora:\n" + visto[:800] + "\n\nResponda a pergunta com isso, se servir."
-    fala = await _responder(pergunta)
-    if not fala:
-        fala = "A cabeça não respondeu. Pergunta de novo."
-    if para == "hermes":
-        return [("hermes", fala)]
-    if para == "orbe":
-        return [("orbe", fala)]
-    return [("orbe", fala), ("hermes", fala)]
+            base = texto[:600] + "\n\nVi agora:\n" + visto[:700]
+    quem = ["orbe", "hermes"] if para == "os dois" else [para if para in ("orbe", "hermes") else "orbe"]
+    falas = await asyncio.gather(*[_uma(q, base) for q in quem])
+    saida = []
+    for q, fala in zip(quem, falas):
+        saida.append((q, fala or "Não consegui responder agora."))
+    return saida
 
 
 
