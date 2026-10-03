@@ -220,6 +220,8 @@ def _no_ar() -> bool:
 def _env_hermes() -> dict[str, str]:
     env = os.environ.copy()
     env["HERMES_HOME"] = str(HOME)
+    env["MALLOC_ARENA_MAX"] = "2"
+    env["NODE_OPTIONS"] = "--max-old-space-size=128"
     env["HERMES_LANGUAGE"] = "pt"
     # o token da página não pode mudar a cada reinício, senão o chat fica
     # reconectando com a sessão velha e o Hermes recusa
@@ -316,13 +318,12 @@ def _ligar_vigia() -> None:
 
 
 async def garantir() -> str | None:
-    """Sobe o dashboard e o gateway. O teste de e-mail exige o gateway."""
+    """Sobe o painel. O gateway do e-mail fica para o botão, senão o chat cai."""
     global _proc
     if shutil.which("hermes") is None:
         return "o Hermes não está instalado neste servidor"
     # já no ar: não relê 507 skills nem fala com o Brevo a cada clique
     if _proc is not None and _proc.poll() is None and _no_ar():
-        _ligar_vigia()
         return None
     _preparar()
     try:
@@ -343,8 +344,7 @@ async def garantir() -> str | None:
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
-        _subir_gateway()
-        _ligar_vigia()
+        # o gateway do e-mail não sobe com o chat: os dois juntos estouram 512 MB
     for _ in range(80):
         if _no_ar():
             return None
