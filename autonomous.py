@@ -618,6 +618,13 @@ class Swarm:
                     await habilidades.aplicar()
                 except Exception as exc:
                     self.log(f"skill: {type(exc).__name__}")
+
+            if self.ciclos % 3 == 1:
+                try:
+                    import navegador_dono
+                    navegador_dono.passo()
+                except Exception as exc:
+                    self.log(f"navegador: {type(exc).__name__}")
             try:   # 1 mensagem por dia, no horário do dono, e só se tiver produto aprovado
                 from telegram_sim import resumo_diario
 
