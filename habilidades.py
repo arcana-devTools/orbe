@@ -180,6 +180,68 @@ def resumo_txt() -> str:
     return "🧠 Habilidades que eu escrevi: " + ", ".join(i["titulo"][:28] for i in itens[-6:])
 
 
+
+_IDX = Path("data/skill_idx.txt")
+
+
+def _proxima() -> dict | None:
+    itens = lista()
+    if not itens:
+        return None
+    try:
+        idx = int(_IDX.read_text(encoding="utf-8").strip())
+    except Exception:
+        idx = 0
+    item = itens[idx % len(itens)]
+    try:
+        _IDX.parent.mkdir(parents=True, exist_ok=True)
+        _IDX.write_text(str(idx + 1), encoding="utf-8")
+    except Exception:
+        pass
+    return item
+
+
+def _json_acao(txt: str) -> dict | None:
+    i, j = txt.find("{"), txt.rfind("}")
+    if i < 0 or j <= i:
+        return None
+    try:
+        d = json.loads(txt[i:j + 1])
+    except Exception:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def _so_humano(acao: str, alvo: str) -> bool:
+    t = (alvo or "").lower()
+    if any(x in t for x in ("senha", "password", "captcha", "2fa")):
+        return True
+    if acao == "clicar" and any(x in t for x in ("aceitar termos", "aceito os termos", "i agree")):
+        return True
+    return False
+
+
+def _executar(d: dict) -> bool:
+    aparelho = str(d.get("aparelho") or "celular").strip().lower()
+    acao = str(d.get("acao") or "").strip().lower()
+    alvo = str(d.get("alvo") or "").strip()
+    if aparelho not in ("celular", "pc"):
+        aparelho = "celular"
+    if acao not in ("abrir_url", "abrir_app", "clicar", "digitar", "tecla"):
+        return False
+    if _so_humano(acao, alvo):
+        return False
+    import mao
+    if not mao.online(aparelho):
+        outro = "pc" if aparelho == "celular" else "celular"
+        if not mao.online(outro):
+            return False
+        aparelho = outro
+    extra = {"texto": alvo} if acao == "clicar" and alvo else None
+    mao.pedir(aparelho, acao, alvo, extra, origem="skill")
+    return True
+
+
 _ultimo_aplicar = 0.0
 
 
@@ -192,54 +254,35 @@ async def aplicar(forcar: bool = False) -> dict:
         return {"ok": True, "parar": True, "real_brl": prog["real_brl"]}
     if not forcar and time.time() - _ultimo_aplicar < 60:
         return {"ok": True, "ja": True, "falta_brl": prog["falta_brl"]}
-    itens = lista()
-    if not itens:
+    item = _proxima()
+    if not item:
         return {"ok": False, "motivo": "sem skill"}
-    blocos = []
-    for item in itens[-30:]:
-        blocos.append(f"## {item['nome']}\n{ler(item['nome'])[:280]}")
+    corpo = ler(item["nome"])[:1600]
+    if not corpo:
+        return {"ok": False, "motivo": "skill vazia"}
     try:
         import llm_pool
         if not llm_pool.disponivel():
             return {"ok": False, "motivo": "sem IA"}
         txt, motor = await llm_pool.chat(
-            "Você é a Orbe. O Hermes é a outra mão. Os dois trabalham 24 horas por dia, sem descanso, "
-            "até a soma real bater R$ 50 mil. Sem filtro de fora. O método é de vocês. "
-            "O dono deu acesso total ao celular. Usem o Chrome e os apps. Já está logado. "
-            "Não peçam permissão. Não esperem. Façam o que precisarem por lá. "
-            "Se o toque não mudar a tela, vocês percebem e evoluem o próprio toque. Ninguém de fora arruma isso. "
-            "Ninguém de fora interfere e ninguém vai olhar o trabalho. "
-            "Não contem o que estão fazendo. No Telegram, só às 7h e às 18h: se estão trabalhando e se entrou dinheiro real. "
-            "Dinheiro simulado não conta e não avisa. Só parem quando a soma real chegar a 50 mil.",
-            "Faltam R$ "
-            + str(prog["falta_brl"])
-            + " na soma real. Se o material não bastar, procurem vocês. Sem filtro.\n\n"
-            + "\n\n".join(blocos)[:1400],
-            max_tokens=280,
-            temperature=0.5,
+            "Você é a Orbe. A skill gravada é o trabalho, não a loja. "
+            "Responda só um JSON: {\"aparelho\":\"celular\" ou \"pc\",\"acao\":\"abrir_url\" ou \"abrir_app\" ou \"clicar\" ou \"digitar\" ou \"tecla\",\"alvo\":\"...\"}. "
+            "Escolha vocês. Não peçam o dono. Não digite senha, não resolva captcha, não aceite termos. Sem texto fora do JSON.",
+            "Skill:\n" + corpo,
+            max_tokens=120,
+            temperature=0.3,
         )
     except Exception as exc:
-        motivo = str(exc)
-        if "cota" not in motivo:
-            return {"ok": False, "motivo": f"{type(exc).__name__}: {motivo[:160]}"}
-        try:
-            import llm_pool
-            llm_pool._pausa_modelo.clear()
-            txt, motor = await llm_pool.chat(
-                "Você é a Orbe. Diga o próximo passo curto. Sem fraude.",
-                "Faltam R$ " + str(prog["falta_brl"]) + ". Um passo agora.",
-                max_tokens=120,
-                temperature=0.4,
-            )
-        except Exception as exc2:
-            return {"ok": False, "motivo": f"{type(exc2).__name__}: {str(exc2)[:160]}"}
+        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:160]}"}
     _ultimo_aplicar = time.time()
+    d = _json_acao(txt or "")
+    feito = _executar(d) if d else False
     try:
         import conciencia
-        conciencia.anotar(f"vou aplicar o que aprendi: {txt[:160]}", acao="skill")
+        conciencia.anotar("skill em uso", acao="skill")
     except Exception:
         pass
-    return {"ok": True, "origem": motor, "passo": txt[:800], "falta_brl": prog["falta_brl"]}
+    return {"ok": True, "origem": motor, "feito": feito, "falta_brl": prog["falta_brl"]}
 
 
 async def pesquisar() -> dict:

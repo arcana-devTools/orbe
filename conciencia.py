@@ -164,6 +164,14 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         return d("reviver", "a colônia está extinta — sem agente vivo ninguém trabalha")
     if not p.get("ia"):
         return d("esperar", "sem IA disponível (Groq/OpenRouter) — não gasto o resto à toa")
+    if p.get("habilidades", 0) > 0:
+        try:
+            import meta_renda
+            if meta_renda.progresso().get("parar"):
+                return d("observar", "a soma real chegou")
+        except Exception:
+            pass
+        return d("aplicar_skill", "há skills gravadas — o trabalho sai delas, não só da loja")
     # primeiro ela se arruma: o que depende DELA, não do dono
     if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
         return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
@@ -305,6 +313,13 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "reviver":
         return {"feito": False, "resumo": "o renascimento acontece sozinho no próximo tick"}
+    if acao == "aplicar_skill":
+        try:
+            import habilidades
+            r = await habilidades.aplicar(forcar=True)
+            return {"feito": bool(r.get("feito")), "resumo": "skill em uso" if r.get("ok") else str(r.get("motivo") or "")[:80]}
+        except Exception as exc:
+            return {"feito": False, "resumo": type(exc).__name__}
     return {"feito": False, "resumo": "nada a executar agora"}
 
 
