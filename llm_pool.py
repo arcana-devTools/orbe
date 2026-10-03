@@ -22,8 +22,13 @@ GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 CF_URL = "https://api.cloudflare.com/client/v4/accounts"
 GROQ_MODELOS = ["qwen/qwen3.8-27b", "openai/gpt-oss-safeguard-20b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
-OVH_URL = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions"
-OVH_MODELOS = ["gpt-oss-20b", "mistral@latest"]
+# Cada reserva tem cota própria. Uma acabar não derruba as outras.
+RESERVAS = (
+    ("kilo", "https://api.kilo.ai/api/gateway/chat/completions", ("kilo-auto/free", "qwen/qwen3.8-27b:free")),
+    ("llm7", "https://api.llm7.io/v1/chat/completions", ("mistral-Nemo-Instruct-2407", "codestral-latest")),
+    ("ovh", "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
+     ("Qwen3.6-27B", "Mistral-Small-3.2-24B-Instruct-2506", "Meta-Llama-3_3-70B-Instruct", "gpt-oss-20b")),
+)
 CF_MODELOS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
@@ -212,14 +217,15 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
     return "", "429"
 
 
-async def _chamada_ovh(cx: httpx.AsyncClient, modelo: str, system: str, user: str,
-                       max_tokens: int, temperature: float) -> tuple[str, str]:
-    """Cabeça sem chave. A cota do Groq não vale aqui."""
-    if time.time() < _pausa_modelo.get("ovh", 0):
+async def _chamada_solta(cx: httpx.AsyncClient, nome: str, url: str, modelo: str,
+                         system: str, user: str, max_tokens: int, temperature: float) -> tuple[str, str]:
+    """Reserva sem chave. A cota de uma não trava as outras."""
+    chave = f"{nome}:{modelo}"
+    if time.time() < _pausa_modelo.get(chave, 0):
         return "", "pausa"
     try:
         r = await cx.post(
-            OVH_URL,
+            url,
             json={
                 "model": modelo,
                 "messages": [
@@ -234,7 +240,7 @@ async def _chamada_ovh(cx: httpx.AsyncClient, modelo: str, system: str, user: st
     except Exception as exc:
         return "", type(exc).__name__
     if r.status_code == 429:
-        _pausa_modelo["ovh"] = time.time() + 50
+        _pausa_modelo[chave] = time.time() + 40
         return "", "429"
     if r.status_code != 200:
         return "", f"HTTP {r.status_code}"
@@ -244,6 +250,18 @@ async def _chamada_ovh(cx: httpx.AsyncClient, modelo: str, system: str, user: st
     except Exception:
         txt = ""
     return (txt, "") if txt else ("", "resposta vazia")
+
+
+async def _reservas(system: str, user: str, max_tokens: int, temperature: float) -> tuple[str, str, list[str]]:
+    erros: list[str] = []
+    async with httpx.AsyncClient(timeout=60) as cx:
+        for nome, url, modelos in RESERVAS:
+            for modelo in modelos:
+                txt, motivo = await _chamada_solta(cx, nome, url, modelo, system, user, max_tokens, temperature)
+                if txt:
+                    return txt, f"{nome}:{modelo}", erros
+                erros.append(f"{nome}/{modelo}: {motivo}")
+    return "", "", erros
 
 
 async def buscar_publico(consulta: str) -> str:
@@ -347,12 +365,10 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
         except Exception as exc:
             erros.append(str(exc)[:160])
     if not web:
-        async with httpx.AsyncClient(timeout=60) as cx:
-            for modelo in OVH_MODELOS:
-                txt, motivo = await _chamada_ovh(cx, modelo, system, user, max_tokens, temperature)
-                if txt:
-                    return txt, f"ovh:{modelo}"
-                erros.append(f"ovh/{modelo}: {motivo}")
+        txt, origem, extra = await _reservas(system, user, max_tokens, temperature)
+        erros.extend(extra)
+        if txt:
+            return txt, origem
     raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
                                              else "nenhuma chave de IA configurada"))
 
@@ -360,8 +376,11 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
 async def chat_reserva(system: str, user: str, max_tokens: int = 700,
                         temperature: float = 0.3) -> tuple[str, str]:
     """Só a reserva. A colônia usa quando o Groq não responde."""
-    if not _chave("cf") or not os.environ.get("ORBE_CF_ACCOUNT", "").strip():
-        raise RuntimeError("sem reserva da Cloudflare")
+    if cota_cheia() or not _chave("cf") or not os.environ.get("ORBE_CF_ACCOUNT", "").strip():
+        txt, origem, extra = await _reservas(system, user, max_tokens, temperature)
+        if txt:
+            return txt, origem
+        raise RuntimeError("; ".join(extra) or "reserva sem resposta")
     import asyncio
 
     erros = []
@@ -381,4 +400,8 @@ async def chat_reserva(system: str, user: str, max_tokens: int = 700,
             erros.append(f"cf/{modelo}: {motivo}")
             if motivo == "chave":
                 break
+    txt, origem, extra = await _reservas(system, user, max_tokens, temperature)
+    if txt:
+        return txt, origem
+    erros.extend(extra)
     raise RuntimeError("; ".join(erros) or "reserva sem resposta")
