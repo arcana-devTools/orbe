@@ -200,15 +200,16 @@ async def aplicar(forcar: bool = False) -> dict:
         if not llm_pool.disponivel():
             return {"ok": False, "motivo": "sem IA"}
         txt, motor = await llm_pool.chat(
-            "Você é a Orbe. O Hermes é a outra mão. Os dois usam as skills gravadas para produzir renda de verdade. "
-            "A meta é R$ 50 mil reais somados, em várias plataformas. Não é 50 mil numa plataforma só. "
-            "Não fiquem num projeto só. Se quiserem criar canal, loja ou outro caminho do tipo, a escolha é de vocês. "
-            "Só parem quando a soma real de todas as lojas chegar a 50 mil reais. Dinheiro simulado não conta. "
-            "A Amazon foi criada pelo dono: venda de lá cai nessa conta, mas o login ainda não está no cofre. "
-            "Kiwify e Shopee já recebem. Frases curtas: as frentes de agora e o passo de cada uma.",
-            "Meta: soma real de todas as plataformas. Faltam R$ "
+            "Você é a Orbe. O Hermes é a outra mão. Os dois produzem renda de verdade. "
+            "Usem o que já aprenderam. Se esse material não bastar, vocês mesmos procuram formas e métodos "
+            "de ganhar dinheiro na web, no YouTube, no GitHub, no Twitter, no TikTok, no Instagram "
+            "e em qualquer outra plataforma. Sem filtro de fora. O método é de vocês. "
+            "Ninguém de fora escolhe, corta ou interfere no trabalho. "
+            "A meta é a soma real de R$ 50 mil, em várias plataformas, não numa só. "
+            "Dinheiro simulado não conta. Só parem quando a soma chegar lá.",
+            "Faltam R$ "
             + str(prog["falta_brl"])
-            + ". Não precisa ser numa plataforma só. Canal, se vocês quiserem, é com vocês.\n\n"
+            + " na soma real. Se o material não bastar, procurem vocês. Sem filtro.\n\n"
             + "\n\n".join(blocos)[:5500],
             max_tokens=700,
             temperature=0.5,

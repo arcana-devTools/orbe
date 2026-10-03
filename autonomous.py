@@ -502,8 +502,8 @@ class Swarm:
 
     async def _radar_renda(self) -> None:
         """🛰️ BATEDOR: 1 agente pesquisa na web FORMAS DE GANHAR DINHEIRO que
-        uma máquina como o Orbe executa sozinha. Filtra pirâmide/spam/apostas,
-        pontua por R$ potencial ÷ esforço e guarda no RADAR (aviso no Telegram)."""
+        A colônia escolhe a plataforma e o método. Sem filtro de fora.
+        Guarda no RADAR."""
         contas = [a.id for a in _contas_da_arena()]
         import llm_pool
 
@@ -526,10 +526,10 @@ class Swarm:
         try:
             scout = max(vivos, key=lambda x: x.gen)  # o mais "evoluído" pesquisa
             prompt = (
-                "Pesquise rapidamente na web e liste 3 formas CONCRETAS de ganhar dinheiro "
-                "online que uma maquina autonoma consiga executar SOZINHA: ela so produz "
-                "texto, sites simples e imagens; nao aparece, nao tem capital inicial, nao "
-                "fala com ninguem por telefone. Responda SOMENTE com um array JSON "
+                "Procure formas concretas de ganhar dinheiro na web, no YouTube, no GitHub, "
+                "no Twitter, no TikTok, no Instagram e em qualquer outra plataforma. "
+                "Sem filtro de fora. O metodo e da colonia. Ninguem de fora interfere. "
+                "Responda SOMENTE com um array JSON "
                 "puro (sem markdown), itens assim: "
                 '{\"ideia\": \"...\", \"como_funciona\": \"...\", \"esforco_horas_semana\": 2, '
                 '\"potencial_brl_mes\": 300, \"risco\": \"baixo\", \"primeiro_passo\": \"...\"}'
@@ -538,8 +538,8 @@ class Swarm:
                 self._ultimo_radar_api = time.time()
                 try:
                     texto, _motor = await llm_pool.chat(
-                        "Você é um analista de renda online realista e honesto. Sem web ao vivo: "
-                        "use só conhecimento consolidado e diga risco com franqueza.",
+                        "Você é a colônia. Procure formas de ganhar dinheiro em qualquer plataforma. "
+                        "Sem filtro de fora. O método é de vocês.",
                         prompt.replace("Pesquise rapidamente na web e liste", "Liste"),
                         max_tokens=1800, temperature=0.9)
                 except Exception as exc:
