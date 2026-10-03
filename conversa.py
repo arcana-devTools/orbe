@@ -83,75 +83,62 @@ def lista() -> dict[str, Any]:
     return {"msgs": d["msgs"]}
 
 
-async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
-    """Uma chamada só, no modelo que já responde. Não espera a fila inteira."""
+async def _responder(pergunta: str) -> str:
+    """Responde a pergunta. Não devolve frase pronta no lugar da resposta."""
+    import asyncio
     import httpx
     import llm_pool
 
-    if para == "hermes":
-        sistema = (
-            "Você é o Hermes. Português, uma frase curta. "
-            "Responda ao dono. Não peça passo. Não invente dinheiro."
+    sistema = (
+        "Você é o Orbe. O Hermes é a outra mão. "
+        "Responda a pergunta do dono em português, direto, em até 4 frases. "
+        "Se ele perguntar limite, diga o limite real, sem enrolar. "
+        "Não invente dinheiro. Não repita senha, chave ou token. "
+        "Não peça para ele fazer o passo."
+    )
+    try:
+        txt, _origem = await asyncio.wait_for(
+            llm_pool.chat(sistema, pergunta[:1800], max_tokens=220, temperature=0.3),
+            16,
         )
-    elif para == "orbe":
-        sistema = (
-            "Você é o Orbe. Português, uma frase curta. "
-            "Responda ao dono. Não peça passo. Não invente dinheiro. Não conte o método."
-        )
-    else:
-        sistema = (
-            "Você é a caixa. Duas linhas, português, curtas. "
-            "Linha 1 começa com Orbe: . Linha 2 começa com Hermes: . "
-            "Não peça passo. Não invente dinheiro. Não conte o método."
-        )
-    curto = texto.strip().lower()
-    cumprimento = len(curto) < 28 and not any(x in curto for x in ("?", "hoje", "agora", "preco", "preço", "cotac", "noticia", "notícia", "quanto"))
-    visto = ""
+        if (txt or "").strip():
+            return _sem_segredo(txt.strip())
+    except Exception:
+        pass
+    try:
+        async with httpx.AsyncClient(timeout=12) as cx:
+            bruto, _motivo = await llm_pool._uma_chamada(
+                cx, "groq", "openai/gpt-oss-safeguard-20b", sistema, pergunta[:1200], 180, 0.3, False
+            )
+        if (bruto or "").strip():
+            return _sem_segredo(bruto.strip())
+    except Exception:
+        pass
+    return ""
+
+
+async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
+    curto = texto.strip().lower().strip("?!., ")
+    cumprimento = curto in {"oi", "ola", "olá", "e ai", "e aí", "bom dia", "boa tarde", "boa noite"}
+    pergunta = texto
     if not cumprimento:
         try:
             import asyncio
-            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 8)
+            import llm_pool
+            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 6)
         except Exception:
             visto = ""
         if visto:
-            sistema += " Use o bloco Vi agora para número e notícia. Não invente o que não está nele."
-            texto = texto[:700] + "\n\nVi agora:\n" + visto[:900]
-        else:
-            sistema += " A busca de fora falhou. Não invente cotação nem notícia de hoje. Responda o que der sem fingir que olhou."
-    chave = llm_pool._chave("groq")
-    txt = ""
-    if chave:
-        try:
-            async with httpx.AsyncClient(timeout=8) as cx:
-                bruto, _motivo = await llm_pool._uma_chamada(
-                    cx, "groq", "qwen/qwen3.8-27b", sistema, texto[:1600], 140, 0.3, False
-                )
-                txt = (bruto or "").strip()
-        except Exception:
-            txt = ""
-    if not txt:
-        try:
-            import asyncio
-            txt, _origem, _erros = await asyncio.wait_for(
-                llm_pool._reservas(sistema, texto[:800], 80, 0.3), 8
-            )
-        except Exception:
-            txt = ""
-    txt = _sem_segredo(txt)
-    if para == "os dois":
-        orbe, hermes = "Estou aqui.", "Recebi."
-        for linha in txt.splitlines():
-            s = linha.strip()
-            baixo = s.lower()
-            if baixo.startswith("orbe:"):
-                orbe = s.split(":", 1)[1].strip() or orbe
-            elif baixo.startswith("hermes:"):
-                hermes = s.split(":", 1)[1].strip() or hermes
-        if txt and orbe == "Estou aqui." and "hermes:" not in txt.lower():
-            orbe = txt
-        return [("orbe", orbe), ("hermes", hermes)]
-    quem = "hermes" if para == "hermes" else "orbe"
-    return [(quem, txt or "Estou aqui.")]
+            pergunta = texto[:700] + "\n\nVi agora:\n" + visto[:800] + "\n\nResponda a pergunta com isso, se servir."
+    fala = await _responder(pergunta)
+    if not fala:
+        fala = "A cabeça não respondeu. Pergunta de novo."
+    if para == "hermes":
+        return [("hermes", fala)]
+    if para == "orbe":
+        return [("orbe", fala)]
+    return [("orbe", fala), ("hermes", fala)]
+
 
 
 def _sair_hermes(texto: str) -> None:
