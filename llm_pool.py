@@ -21,7 +21,9 @@ import httpx
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 CF_URL = "https://api.cloudflare.com/client/v4/accounts"
-GROQ_MODELOS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+GROQ_MODELOS = ["qwen/qwen3.8-27b", "openai/gpt-oss-safeguard-20b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+OVH_URL = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions"
+OVH_MODELOS = ["gpt-oss-20b", "mistral@latest"]
 CF_MODELOS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
@@ -191,7 +193,7 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
                 await asyncio.sleep(ra + 1)
                 continue
             # cota do dia: pula este modelo e deixa a reserva atender. Minuto: trava curta.
-            espera_pausa = min(max(ra, 120), 1800) if diario else min(max(ra, 12), 45)
+            espera_pausa = min(max(ra, 6 * 3600), 8 * 3600) if diario else min(max(ra, 12), 45)
             _pausa_modelo[f"{prov}:{modelo}"] = time.time() + espera_pausa
             if diario:
                 marcar_cota_dia(ra)
@@ -208,6 +210,40 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
             txt = ""
         return (txt, "") if txt else ("", "resposta vazia")
     return "", "429"
+
+
+async def _chamada_ovh(cx: httpx.AsyncClient, modelo: str, system: str, user: str,
+                       max_tokens: int, temperature: float) -> tuple[str, str]:
+    """Cabeça sem chave. A cota do Groq não vale aqui."""
+    if time.time() < _pausa_modelo.get("ovh", 0):
+        return "", "pausa"
+    try:
+        r = await cx.post(
+            OVH_URL,
+            json={
+                "model": modelo,
+                "messages": [
+                    {"role": "system", "content": system[:1500]},
+                    {"role": "user", "content": user[:4000]},
+                ],
+                "max_tokens": min(max_tokens, 600),
+                "temperature": temperature,
+            },
+            timeout=50,
+        )
+    except Exception as exc:
+        return "", type(exc).__name__
+    if r.status_code == 429:
+        _pausa_modelo["ovh"] = time.time() + 50
+        return "", "429"
+    if r.status_code != 200:
+        return "", f"HTTP {r.status_code}"
+    try:
+        msg = r.json()["choices"][0]["message"]
+        txt = (msg.get("content") or msg.get("reasoning") or "").strip()
+    except Exception:
+        txt = ""
+    return (txt, "") if txt else ("", "resposta vazia")
 
 
 async def buscar_publico(consulta: str) -> str:
@@ -259,9 +295,8 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
     web=True: pesquisa na internet de verdade (Groq gpt-oss + browser_search)."""
     import asyncio
 
-    if cota_cheia():
-        raise RuntimeError("cota do dia cheia")
     erros = []
+    pular_cf = cota_cheia()
     provs = (["groq"] if "groq" in provedores() else []) if web else provedores()
     async with httpx.AsyncClient(timeout=180) as cx:
         for prov in provs:
@@ -269,6 +304,9 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
             if prov == "groq":
                 modelos = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
             elif prov == "cf":
+                if pular_cf:
+                    erros.append("cf: cota do dia")
+                    continue
                 modelos = CF_MODELOS
             else:
                 modelos = await _modelos_openrouter(cx, _chave(prov))
@@ -280,9 +318,10 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
                 if falta > 0:
                     await asyncio.sleep(falta + 1)
                 gap = GAP_CF_S if prov == "cf" else GAP_MIN_S
-                espera = gap - (time.time() - st["ultimo"])
-                if espera > 0:
-                    await asyncio.sleep(espera)
+                if not st.get("erro"):
+                    espera = gap - (time.time() - st["ultimo"])
+                    if espera > 0:
+                        await asyncio.sleep(espera)
                 st["ultimo"] = time.time()
                 txt, motivo = await _uma_chamada(cx, prov, modelo, system, user, max_tokens, temperature, web)
                 if txt:
@@ -307,6 +346,13 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
             )
         except Exception as exc:
             erros.append(str(exc)[:160])
+    if not web:
+        async with httpx.AsyncClient(timeout=60) as cx:
+            for modelo in OVH_MODELOS:
+                txt, motivo = await _chamada_ovh(cx, modelo, system, user, max_tokens, temperature)
+                if txt:
+                    return txt, f"ovh:{modelo}"
+                erros.append(f"ovh/{modelo}: {motivo}")
     raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
                                              else "nenhuma chave de IA configurada"))
 
