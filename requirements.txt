@@ -15,3 +15,4 @@ Pillow>=10.0
 segno>=1.6
 socksio>=1.0
 h11>=0.14
+hermes-agent[messaging]==0.19.0

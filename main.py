@@ -1124,6 +1124,24 @@ async def conversa_pagina(token: str = ""):
     return FileResponse(WEB_DIR / "conversa.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/conectores", include_in_schema=False)
+async def conectores_atalho() -> RedirectResponse:
+    return RedirectResponse("/hermes/channels", status_code=302)
+
+
+@app.api_route("/hermes", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
+@app.api_route("/hermes/{caminho:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
+async def hermes_conectores(request: Request, caminho: str = "") -> Response:
+    import hermes_painel
+    return await hermes_painel.encaminhar(request, caminho)
+
+
+@app.websocket("/hermes/{caminho:path}")
+async def hermes_conectores_ws(ws: WebSocket, caminho: str) -> None:
+    import hermes_painel
+    await hermes_painel.ponte(ws, caminho)
+
+
 @app.get("/api/conversa")
 async def conversa_ler() -> dict[str, Any]:
     import conversa
@@ -1142,7 +1160,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.78",
+        "versao": "0.27.79",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

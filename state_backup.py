@@ -102,6 +102,21 @@ def empacotar() -> bytes:
             mds = sorted(res.glob("*.md"), key=lambda x: x.stat().st_mtime)[-MAX_RESULTADOS:]
             for p in mds:
                 tar.add(p, arcname=f"resultados/{p.name}")
+        # conectores do Hermes: credencial salva, sem log nem sessão enorme
+        raiz = DATA / "hermes"
+        pular = {"logs", "sessions", "cache", "node_modules", "web_dist", "skills", "__pycache__"}
+        if raiz.exists():
+            n = 0
+            for p in raiz.rglob("*"):
+                if n >= 200 or not p.is_file():
+                    continue
+                rel = p.relative_to(raiz)
+                if set(rel.parts) & pular or p.suffix in {".log", ".db", ".db-wal", ".db-shm", ".pyc"}:
+                    continue
+                if p.stat().st_size > 1_500_000:
+                    continue
+                tar.add(p, arcname=f"hermes/{rel.as_posix()}")
+                n += 1
     return buf.getvalue()
 
 
