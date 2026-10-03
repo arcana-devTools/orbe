@@ -218,7 +218,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
-_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades", "/api/habilidades/aplicar",
+_ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades", "/api/habilidades/aplicar", "/api/habilidades/pacote",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
              "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
 
@@ -702,6 +702,18 @@ async def habilidades_aplicar(request: Request) -> dict[str, Any]:
     return await habilidades.aplicar(forcar=True)
 
 
+@app.get("/api/habilidades/pacote")
+async def habilidades_pacote(request: Request) -> dict[str, Any]:
+    """O agente Hermes leva todas as skills. Sem filtro."""
+    import habilidades
+
+    _touch()
+    if not _hermes_ok(request):
+        raise HTTPException(401, "token do Hermes inválido")
+    itens = habilidades.pacote()
+    return {"n": len(itens), "habilidades": itens}
+
+
 @app.get("/api/habilidades")
 async def habilidades_lista() -> dict[str, Any]:
     import habilidades
@@ -1130,7 +1142,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.77",
+        "versao": "0.27.78",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

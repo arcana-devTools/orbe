@@ -56,6 +56,21 @@ def tem(acao: str) -> bool:
     return (PASTA / (_slug(acao) + ".md")).exists()
 
 
+def pacote() -> list[dict[str, Any]]:
+    """Todas as skills, inteiras. Sem filtro."""
+    saida = []
+    for item in lista():
+        corpo = ler(item["nome"])
+        if not corpo.strip():
+            continue
+        saida.append({
+            "nome": item["nome"],
+            "titulo": item.get("titulo") or item["nome"],
+            "corpo": corpo,
+        })
+    return saida
+
+
 def ler(acao: str) -> str:
     p = PASTA / (_slug(acao) + ".md")
     try:
