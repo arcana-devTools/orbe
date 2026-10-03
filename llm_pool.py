@@ -189,13 +189,12 @@ async def buscar_publico(consulta: str) -> str:
     headers = {"User-Agent": "Mozilla/5.0 (compatible; Orbe/1.0)"}
     async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as cx:
         try:
-            r = await cx.get("https://html.duckduckgo.com/html/", params={"q": q})
+            r = await cx.get("https://lite.duckduckgo.com/lite/", params={"q": q})
             if r.status_code == 200:
-                for titulo, snip in re.findall(
-                    r'class="result__a"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</',
-                    r.text,
-                    re.S,
-                ):
+                links = re.findall(r"result-link[^>]*>(.*?)</a>", r.text, re.S)
+                snips = re.findall(r"result-snippet[^>]*>(.*?)</td>", r.text, re.S)
+                for i, titulo in enumerate(links):
+                    snip = snips[i] if i < len(snips) else ""
                     limpo = re.sub(r"<[^>]+>", " ", f"{titulo}: {snip}")
                     limpo = re.sub(r"\s+", " ", limpo).strip()
                     if len(limpo) > 20:
@@ -261,15 +260,19 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
                     break
     if web:
         trechos = await buscar_publico(user)
-        if trechos:
+        extra = ("\n\nTrechos públicos:\n" + trechos) if trechos else ""
+        if not trechos:
+            erros.append("busca pública vazia")
+        try:
             return await chat(
                 system,
-                user + "\n\nTrechos públicos:\n" + trechos,
+                user + extra,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 web=False,
             )
-        erros.append("busca pública vazia")
+        except Exception as exc:
+            erros.append(str(exc)[:160])
     raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
                                              else "nenhuma chave de IA configurada"))
 
