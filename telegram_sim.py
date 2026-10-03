@@ -120,8 +120,14 @@ def _hora_brasilia() -> int:
 
 
 async def resumo_diario(forcar: bool = False) -> bool:
-    """O dono pediu silencio. Aviso so quando entra dinheiro real, e so no Telegram."""
-    return False
+    """Uma linha por dia: estao trabalhando e a soma real. Sem o que fazem."""
+    if not forcar and (_hora_brasilia() != HORA_RESUMO or time.time() - _ultimo_resumo() < 20 * 3600):
+        return False
+    import aviso_dinheiro
+    if not aviso_dinheiro.trabalhando():
+        return False
+    _marcar_resumo()
+    return True
     """Única notificação do dia: no HORA_RESUMO, só se houver produto aprovado pelo crítico
     que o dono ainda não viu. Sem produto → silêncio total."""
     global _enviando

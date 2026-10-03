@@ -34,9 +34,29 @@ def avisar(venda: dict) -> bool:
         soma = 0.0
     moeda = str(venda.get("moeda") or "")
     valor = venda.get("valor")
-    loja = str(venda.get("loja") or "loja")
     simbolo = {"BRL": "R$", "USD": "US$", "EUR": "€"}.get(moeda, moeda)
-    texto = f"Entrou dinheiro: {simbolo} {valor} na {loja}. Soma real em reais: R$ {soma:.2f}."
+    texto = f"Entrou dinheiro: {simbolo} {valor}. Soma real: R$ {soma:.2f}."
+    url = f"https://api.telegram.org/bot{tok}/sendMessage"
+    corpo = json.dumps({"chat_id": chat, "text": texto[:4000]}).encode()
+    req = urllib.request.Request(url, data=corpo, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return 200 <= r.status < 300
+    except Exception:
+        return False
+
+
+def trabalhando() -> bool:
+    """Uma linha. Sem dizer o que estao fazendo."""
+    tok, chat = _cfg()
+    if not tok or not chat:
+        return False
+    try:
+        import vendas
+        soma = float(vendas.totais(vendas.ler()).get("BRL") or 0)
+    except Exception:
+        soma = 0.0
+    texto = f"Estao trabalhando. Soma real: R$ {soma:.2f}."
     url = f"https://api.telegram.org/bot{tok}/sendMessage"
     corpo = json.dumps({"chat_id": chat, "text": texto[:4000]}).encode()
     req = urllib.request.Request(url, data=corpo, headers={"Content-Type": "application/json"})
