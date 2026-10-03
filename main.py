@@ -1105,13 +1105,32 @@ async def index(token: str = ""):
     return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/conversa", include_in_schema=False)
+async def conversa_pagina(token: str = ""):
+    if _s.auth_token and not _ok_token(token):
+        return RedirectResponse(url="/?denied=1")
+    return FileResponse(WEB_DIR / "conversa.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/conversa")
+async def conversa_ler() -> dict[str, Any]:
+    import conversa
+    return conversa.lista()
+
+
+@app.post("/api/conversa")
+async def conversa_enviar(payload: dict[str, Any]) -> dict[str, Any]:
+    import conversa
+    return await conversa.enviar(str(payload.get("para") or "os dois"), str(payload.get("texto") or ""))
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1" and not SWARM.running:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.69",
+        "versao": "0.27.70",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Caixa — Orbe e Hermes</title>
+<style>
+  :root {
+    --ink: #e7e1d6;
+    --mute: #8d867a;
+    --line: #2a2622;
+    --paper: #12100e;
+    --desk: #090807;
+    --orbe: #c4b5fd;
+    --hermes: #7dd3c0;
+    --you: #e6c07b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    color: var(--ink);
+    background:
+      radial-gradient(900px 420px at 10% -10%, #2a2140 0%, transparent 55%),
+      radial-gradient(700px 380px at 110% 0%, #14332c 0%, transparent 50%),
+      var(--desk);
+    font: 16px/1.45 "Iowan Old Style", Palatino, Georgia, serif;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 22px 10px;
+  }
+  .marca { display: flex; align-items: center; gap: 12px; }
+  .selo {
+    width: 36px; height: 36px; border-radius: 50%;
+    background:
+      radial-gradient(circle at 35% 30%, #efe7ff, #7c5cff 42%, #14332c 78%);
+    box-shadow: 0 0 0 1px #ffffff14, 0 8px 24px #0008;
+  }
+  h1 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: .01em; }
+  .sub { margin: 2px 0 0; color: var(--mute); font: 12px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: .04em; }
+  a.sair {
+    color: var(--mute);
+    font: 12px/1 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: .08em;
+    text-decoration: none;
+    border-bottom: 1px solid #3a342c;
+    padding-bottom: 2px;
+  }
+  .fio {
+    flex: 1;
+    overflow: auto;
+    padding: 8px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .vazio {
+    margin: auto;
+    max-width: 340px;
+    text-align: center;
+    color: var(--mute);
+    font-size: 15px;
+  }
+  .vazio strong { color: var(--ink); font-weight: 500; }
+  .msg { display: flex; gap: 10px; max-width: 680px; width: 100%; }
+  .msg.dono { margin-left: auto; flex-direction: row-reverse; }
+  .av {
+    width: 28px; height: 28px; border-radius: 50%; flex: none; margin-top: 4px;
+    display: grid; place-items: center;
+    font: 11px/1 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: .04em;
+  }
+  .orbe .av { background: #2a2148; color: var(--orbe); }
+  .hermes .av { background: #14332c; color: var(--hermes); }
+  .dono .av { background: #3a2e18; color: var(--you); }
+  .carta {
+    border: 1px solid var(--line);
+    background: #16130f;
+    border-radius: 16px 16px 16px 6px;
+    padding: 10px 14px 11px;
+    min-width: 0;
+  }
+  .dono .carta {
+    border-radius: 16px 16px 6px 16px;
+    background: #1c1812;
+    border-color: #3d3424;
+  }
+  .quem {
+    font: 11px/1 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .orbe .quem { color: var(--orbe); }
+  .hermes .quem { color: var(--hermes); }
+  .dono .quem { color: var(--you); }
+  .texto { white-space: pre-wrap; word-break: break-word; }
+  form {
+    padding: 8px 16px calc(14px + env(safe-area-inset-bottom));
+    display: grid;
+    gap: 8px;
+    background: linear-gradient(180deg, transparent, #090807 28%);
+  }
+  .quem-escolhe { display: flex; gap: 6px; }
+  .quem-escolhe button, .enviar {
+    font: 13px/1 ui-sans-serif, system-ui, sans-serif;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .quem-escolhe button {
+    border: 1px solid #3a342c;
+    background: transparent;
+    color: var(--mute);
+    padding: 8px 12px;
+  }
+  .quem-escolhe button.on { color: var(--ink); border-color: #6d6254; background: #1b1814; }
+  .linha { display: flex; gap: 8px; align-items: flex-end; }
+  textarea {
+    flex: 1;
+    min-height: 52px;
+    max-height: 160px;
+    resize: none;
+    border-radius: 16px;
+    border: 1px solid #3a342c;
+    background: #14110e;
+    color: var(--ink);
+    padding: 14px 14px 12px;
+    font: 16px/1.4 "Iowan Old Style", Palatino, Georgia, serif;
+  }
+  textarea:focus { outline: none; border-color: #8d7350; }
+  .enviar {
+    height: 48px;
+    padding: 0 16px;
+    border: 0;
+    background: #e6c07b;
+    color: #1a140c;
+    font-weight: 650;
+  }
+  .enviar:disabled { opacity: .45; }
+  .erro { color: #e7a0a0; font: 12px/1.3 ui-sans-serif, system-ui, sans-serif; min-height: 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="marca">
+    <div class="selo" aria-hidden="true"></div>
+    <div>
+      <h1>Caixa</h1>
+      <p class="sub">Orbe e Hermes</p>
+    </div>
+  </div>
+  <a class="sair" href="/">Painel</a>
+</header>
+<div class="fio" id="fio">
+  <div class="vazio" id="vazio"><strong>Escreva.</strong><br>O Orbe responde. O Hermes recebe.</div>
+</div>
+<form id="form">
+  <div class="quem-escolhe" role="group" aria-label="Para quem">
+    <button type="button" data-para="os dois" class="on">Os dois</button>
+    <button type="button" data-para="orbe">Orbe</button>
+    <button type="button" data-para="hermes">Hermes</button>
+  </div>
+  <div class="linha">
+    <textarea id="texto" rows="1" placeholder="Escreva para eles" required></textarea>
+    <button class="enviar" id="enviar" type="submit">Enviar</button>
+  </div>
+  <div class="erro" id="erro"></div>
+</form>
+<script>
+const fio = document.getElementById("fio");
+const vazio = document.getElementById("vazio");
+const texto = document.getElementById("texto");
+const erro = document.getElementById("erro");
+const enviar = document.getElementById("enviar");
+let para = "os dois";
+let visto = "";
+
+document.querySelectorAll("[data-para]").forEach((b) => {
+  b.addEventListener("click", () => {
+    para = b.dataset.para;
+    document.querySelectorAll("[data-para]").forEach((x) => x.classList.toggle("on", x === b));
+  });
+});
+
+function carta(m) {
+  const el = document.createElement("article");
+  el.className = "msg " + (m.de || "orbe");
+  const nome = m.de === "dono" ? "Você" : m.de === "hermes" ? "Hermes" : "Orbe";
+  const letra = nome.slice(0, 1);
+  el.innerHTML = '<div class="av"></div><div class="carta"><div class="quem"></div><div class="texto"></div></div>';
+  el.querySelector(".av").textContent = letra;
+  el.querySelector(".quem").textContent = nome;
+  el.querySelector(".texto").textContent = m.texto || "";
+  return el;
+}
+
+function desenhar(msgs) {
+  const chave = JSON.stringify(msgs || []);
+  if (chave === visto) return;
+  visto = chave;
+  fio.innerHTML = "";
+  if (!msgs || !msgs.length) {
+    fio.appendChild(vazio);
+    return;
+  }
+  msgs.forEach((m) => fio.appendChild(carta(m)));
+  fio.scrollTop = fio.scrollHeight;
+}
+
+async function ler() {
+  const r = await fetch("/api/conversa", { headers: { "Accept": "application/json" } });
+  if (!r.ok) throw new Error("caixa");
+  const d = await r.json();
+  desenhar(d.msgs || []);
+}
+
+document.getElementById("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const t = texto.value.trim();
+  if (!t) return;
+  erro.textContent = "";
+  enviar.disabled = true;
+  try {
+    const r = await fetch("/api/conversa", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ para, texto: t }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error("envio");
+    texto.value = "";
+    desenhar(d.msgs || []);
+  } catch (e) {
+    erro.textContent = "Não chegou. Tente de novo.";
+  } finally {
+    enviar.disabled = false;
+    texto.focus();
+  }
+});
+
+texto.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) {
+    ev.preventDefault();
+    document.getElementById("form").requestSubmit();
+  }
+});
+
+ler().catch(() => { erro.textContent = "A caixa ainda não abriu."; });
+setInterval(() => { ler().catch(() => {}); }, 12000);
+</script>
+</body>
+</html>
