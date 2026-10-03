@@ -147,6 +147,9 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
             r = await cx.post(f"{base}/chat/completions", headers=hdr, json=corpo)
         except Exception as exc:
             return "", type(exc).__name__
+        if r.status_code == 429 and web:
+            _pausa_modelo[f"{prov}:{modelo}"] = time.time() + 120
+            return "", "429 cota"
         if r.status_code == 429:
             try:
                 ra = float(r.headers.get("retry-after", "60"))
