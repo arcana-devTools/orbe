@@ -354,6 +354,44 @@ async def garantir() -> str | None:
     return "o painel do Hermes demorou"
 
 
+def _script_marca() -> str:
+    """O banner do Hermes nasce em zero e só preenche depois. A marca não espera."""
+    return (
+        "<script>(function(){if(location.pathname.indexOf('/chat')<0)return;"
+        "function get(p){return fetch(p,{headers:{'X-Hermes-Session-Token':"
+        "window.__HERMES_SESSION_TOKEN__||''}}).then(function(r){return r.ok?r.json():[]})}"
+        "function desenha(skills,toolsets){"
+        "var nomes=[],i,t,n;"
+        "for(i=0;i<toolsets.length;i++){t=toolsets[i];if(!t||t.enabled===false)continue;"
+        "(t.tools||[]).forEach(function(x){if(nomes.indexOf(x)<0)nomes.push(x)})}"
+        "var ligadas=(skills||[]).filter(function(s){return s&&s.enabled!==false});"
+        "var box=document.getElementById('orbe-marca')||document.createElement('div');"
+        "box.id='orbe-marca';"
+        "box.style.cssText='position:absolute;z-index:30;left:8px;right:8px;top:8px;"
+        "min-height:190px;max-height:48%;overflow:auto;background:#07110e;border:1px solid #d6b44a;"
+        "color:#f0e2a8;padding:8px 10px;font:12px/1.35 ui-monospace,monospace;"
+        "box-shadow:0 8px 24px rgba(0,0,0,.45)';"
+        "var html='<div style=\"color:#f2d56b;font-weight:700;margin-bottom:4px\">'"
+        "+nomes.length+' tools ligadas · '+ligadas.length+' skills ligadas</div>';"
+        "html+='<div style=\"margin-bottom:6px\">';"
+        "for(n=0;n<nomes.length;n++){html+='<span style=\"display:inline-block;margin:0 8px 3px 0\">✓ '+nomes[n]+'</span>'}"
+        "html+='</div><div style=\"color:#cbb98a\">skills: ';"
+        "var mostra=ligadas.slice(0,24).map(function(s){return s.name||s.nome||''}).filter(Boolean);"
+        "html+=mostra.join(' · ');"
+        "if(ligadas.length>mostra.length)html+=' · e mais '+(ligadas.length-mostra.length);"
+        "html+='</div>';box.innerHTML=html;"
+        "function por(){var term=document.querySelector('.xterm');"
+        "if(!term||!term.parentElement){setTimeout(por,250);return}"
+        "var host=term.parentElement;if(getComputedStyle(host).position==='static')host.style.position='relative';"
+        "if(box.parentElement!==host)host.appendChild(box)}"
+        "por()}"
+        "function puxa(){Promise.all([get('/hermes/api/skills'),get('/hermes/api/tools/toolsets')])"
+        ".then(function(par){desenha(par[0]||[],par[1]||[])}).catch(function(){})}"
+        "if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',puxa);else puxa();"
+        "})();</script>"
+    )
+
+
 def _destino(loc: str) -> str:
     if loc.startswith(PREFIXO + "/") or loc == PREFIXO:
         return loc
@@ -427,7 +465,8 @@ async def encaminhar(request: Request, caminho: str) -> Response:
             "<head>",
             "<head><script>try{var k='hermes-locale';var c=localStorage.getItem(k);"
             "if(!c||c==='en')localStorage.setItem(k,'pt')}catch(e){}</script>"
-            "<script>(function(){var N=window.WebSocket;if(!N||N.__orbe)return;"
+            + _script_marca()
+            + "<script>(function(){var N=window.WebSocket;if(!N||N.__orbe)return;"
             "function W(u,p){var s=p?new N(u,p):new N(u);"
             "s.addEventListener('open',function(){try{sessionStorage.removeItem('orbe-hermes-reload')}catch(e){}});"
             "s.addEventListener('close',function(e){if(e.code!==4401&&e.code!==1006)return;"
