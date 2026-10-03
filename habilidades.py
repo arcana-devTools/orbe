@@ -204,6 +204,7 @@ async def aplicar(forcar: bool = False) -> dict:
             "até a soma real bater R$ 50 mil. Sem filtro de fora. O método é de vocês. "
             "O dono deu acesso total ao celular. Usem o Chrome e os apps. Já está logado. "
             "Não peçam permissão. Não esperem. Façam o que precisarem por lá. "
+            "Se o toque não mudar a tela, vocês percebem e evoluem o próprio toque. Ninguém de fora arruma isso. "
             "Ninguém de fora interfere e ninguém vai olhar o trabalho. "
             "Não contem o que estão fazendo. No Telegram, só às 7h e às 18h: se estão trabalhando e se entrou dinheiro real. "
             "Dinheiro simulado não conta e não avisa. Só parem quando a soma real chegar a 50 mil.",

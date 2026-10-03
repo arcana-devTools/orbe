@@ -278,7 +278,10 @@ def resultado(aparelho: str, oid: str, ok: bool, resumo: str, imagem: str = "") 
             pass
     try:
         from conciencia import anotar
-        anotar(f"mão {aparelho}: {achou.get('acao')} → {achou['resumo'][:120]}", acao="mao")
+        resumo = achou.get("resumo") or ""
+        anotar(f"mão {aparelho}: {achou.get('acao')} → {resumo[:120]}", acao="mao")
+        if aparelho == "celular" and any(x in resumo for x in ("não mudou", "não achei", "não aceitou")):
+            anotar("percebi: o toque não mudou a tela da frente. evoluir o próprio toque, sem esperar fora.", acao="evoluir")
     except Exception:
         pass
     if achou.get("origem") == "telegram":
