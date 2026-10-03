@@ -198,9 +198,10 @@ async def portao_humano(
     )
     await BUS.warn(aviso, "captcha")
     try:
-        from autopilot import AUTOPILOT
-
-        await AUTOPILOT.send_telegram(aviso)
+        import aviso_dinheiro
+        if aviso_dinheiro.raro("captcha"):
+            from autopilot import AUTOPILOT
+            await AUTOPILOT.send_telegram(aviso)
     except Exception:
         pass
 

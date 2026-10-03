@@ -327,6 +327,9 @@ async def pedir_ajuda(texto: str) -> bool:
         tok, chat = telegram_sim._cfg()
         if not (tok and chat):
             return False
+        import aviso_dinheiro
+        if not aviso_dinheiro.raro("ajuda"):
+            return False
         await telegram_sim._tg("sendMessage", chat_id=chat,
                                text="⚠️ " + texto + "\n\n/desktop (ou pelo painel) e depois /entrar")
         return True

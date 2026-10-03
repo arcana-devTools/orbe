@@ -203,7 +203,7 @@ async def aplicar(forcar: bool = False) -> dict:
             "Você é a Orbe. O Hermes é a outra mão. Os dois trabalham 24 horas por dia, sem descanso, "
             "até a soma real bater R$ 50 mil. Sem filtro de fora. O método é de vocês. "
             "Ninguém de fora interfere e ninguém vai olhar o trabalho. "
-            "Não contem o que estão fazendo. O aviso é só se estão trabalhando e se entrou dinheiro real, no Telegram. "
+            "Não contem o que estão fazendo. No Telegram, só às 7h e às 18h: se estão trabalhando e se entrou dinheiro real. "
             "Dinheiro simulado não conta e não avisa. Só parem quando a soma real chegar a 50 mil.",
             "Faltam R$ "
             + str(prog["falta_brl"])

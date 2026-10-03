@@ -120,14 +120,9 @@ def _hora_brasilia() -> int:
 
 
 async def resumo_diario(forcar: bool = False) -> bool:
-    """Uma linha por dia: estao trabalhando e a soma real. Sem o que fazem."""
-    if not forcar and (_hora_brasilia() != HORA_RESUMO or time.time() - _ultimo_resumo() < 20 * 3600):
-        return False
+    """So as 7h e as 18h. O forcar nao fura o horario."""
     import aviso_dinheiro
-    if not aviso_dinheiro.trabalhando():
-        return False
-    _marcar_resumo()
-    return True
+    return aviso_dinheiro.trabalhando()
     """Única notificação do dia: no HORA_RESUMO, só se houver produto aprovado pelo crítico
     que o dono ainda não viu. Sem produto → silêncio total."""
     global _enviando

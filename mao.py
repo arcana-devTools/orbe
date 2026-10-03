@@ -272,6 +272,7 @@ def consultar(oid: str) -> dict[str, Any]:
 
 
 def _avisar_telegram(ordem: dict) -> None:
+    return
     try:
         import telegram_sim
         tok, chat = telegram_sim._cfg()
