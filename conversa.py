@@ -96,13 +96,27 @@ async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
             "Linha 1 começa com Orbe: . Linha 2 começa com Hermes: . "
             "Não peça passo. Não invente dinheiro. Não conte o método."
         )
+    curto = texto.strip().lower()
+    cumprimento = len(curto) < 28 and not any(x in curto for x in ("?", "hoje", "agora", "preco", "preço", "cotac", "noticia", "notícia", "quanto"))
+    visto = ""
+    if not cumprimento:
+        try:
+            import asyncio
+            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 5)
+        except Exception:
+            visto = ""
+        sistema += " Se houver texto em 'Vi agora', use isso para fato e número. Se não houver, diga que não viu fora. Não invente."
+        if visto:
+            texto = texto[:700] + "\n\nVi agora:\n" + visto[:900]
+        else:
+            texto = texto[:700] + "\n\nNão vi nada fora agora."
     chave = llm_pool._chave("groq")
     txt = ""
     if chave:
         try:
             async with httpx.AsyncClient(timeout=8) as cx:
                 bruto, _motivo = await llm_pool._uma_chamada(
-                    cx, "groq", "qwen/qwen3.8-27b", sistema, texto[:800], 80, 0.3, False
+                    cx, "groq", "qwen/qwen3.8-27b", sistema, texto[:1600], 140, 0.3, False
                 )
                 txt = (bruto or "").strip()
         except Exception:

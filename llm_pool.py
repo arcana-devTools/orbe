@@ -313,9 +313,23 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
     web=True: pesquisa na internet de verdade (Groq gpt-oss + browser_search)."""
     import asyncio
 
+    if web:
+        trechos = ""
+        try:
+            trechos = await asyncio.wait_for(buscar_publico(user), 6)
+        except Exception:
+            trechos = ""
+        extra = ("\n\nVi agora, fora:\n" + trechos) if trechos else "\n\nNão vi nada fora agora."
+        return await chat(
+            system + " Use só o que está em 'Vi agora' para fato, preço e notícia. Se não viu, diga isso. Não invente.",
+            user[:1500] + extra,
+            max_tokens=min(max_tokens, 500),
+            temperature=temperature,
+            web=False,
+        )
     erros = []
     pular_cf = cota_cheia()
-    provs = (["groq"] if "groq" in provedores() else []) if web else provedores()
+    provs = provedores()
     async with httpx.AsyncClient(timeout=180) as cx:
         for prov in provs:
             st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
