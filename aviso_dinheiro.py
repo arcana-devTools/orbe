@@ -56,6 +56,8 @@ def avisar(venda: dict) -> bool:
 
 
 def trabalhando() -> bool:
+    """Nao avisa que estao trabalhando nem que nao caiu dinheiro.
+    So sai mensagem se entrou dinheiro real novo, uma vez naquele horario."""
     hora, dia = _agora()
     if hora not in HORAS:
         return False
@@ -75,8 +77,9 @@ def trabalhando() -> bool:
         novo = round(sum(float(v.get("valor") or 0) for v in novos), 2)
     except Exception:
         soma, novo = 0.0, 0.0
-    extra = f"Dinheiro novo: R$ {novo:.2f}." if novo else "Dinheiro novo: nenhum."
-    texto = f"Estao trabalhando. Soma real: R$ {soma:.2f}. {extra}"
+    if not novo:
+        return False
+    texto = f"Caiu dinheiro. Novo: R$ {novo:.2f}. Soma real: R$ {soma:.2f}."
     url = f"https://api.telegram.org/bot{tok}/sendMessage"
     corpo = json.dumps({"chat_id": chat, "text": texto[:4000]}).encode()
     req = urllib.request.Request(url, data=corpo, headers={"Content-Type": "application/json"})

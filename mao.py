@@ -171,10 +171,7 @@ def viu_app(aparelho: str, ua: str) -> None:
     d["versao_app"] = 5
     d["toque_v5"] = True
     _salvar(d, importante=True)
-    if not primeira:
-        return
-    pedir("celular", "abrir_url", "https://app.hotmart.com/", origem="mao")
-    pedir("celular", "clicar", "Ferramentas", {"texto": "Ferramentas"}, origem="mao")
+    return
 
 
 def pedir(aparelho: str, acao: str, alvo: str = "", extra: dict | None = None,
@@ -287,6 +284,21 @@ def resultado(aparelho: str, oid: str, ok: bool, resumo: str, imagem: str = "") 
     if achou.get("origem") == "telegram":
         _avisar_telegram(achou)
     return {"ok": True}
+
+
+def esvaziar_pendentes() -> int:
+    """Cancela o que ainda nao terminou. O celular e o PC nao abrem pagina parada."""
+    d = _carregar()
+    n = 0
+    for o in d.get("ordens") or []:
+        if o.get("estado") in ("fila", "executando"):
+            o["estado"] = "cancelado"
+            o["ok"] = False
+            o["resumo"] = "cancelada: nao abre pagina sozinha"
+            n += 1
+    if n:
+        _salvar(d, importante=True)
+    return n
 
 
 def consultar(oid: str) -> dict[str, Any]:

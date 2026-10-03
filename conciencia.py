@@ -171,7 +171,6 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
                 return d("observar", "a soma real chegou")
         except Exception:
             pass
-        return d("aplicar_skill", "há skills gravadas — o trabalho sai delas, não só da loja")
     # primeiro ela se arruma: o que depende DELA, não do dono
     if p.get("sessao_kiwify") and not p.get("kiwify_ok"):
         return d("criar_api_key", "tenho sessão no painel da Kiwify mas não a credencial: criar a API Key")
@@ -231,14 +230,8 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
 
                 d = await kiwify_painel.abrir()
                 return {"feito": True, "resumo": f"Kiwify aberta: {str(d.get('titulo'))[:60]}"}
-            if alvo == "ml":
-                import mao
-                mao.pedir("celular", "abrir_url", "https://afiliados.mercadolivre.com.br/")
-                return {"feito": True, "resumo": "Mercado Livre no Chrome do celular, que ja esta logado"}
-            if alvo == "hotmart":
-                import mao
-                mao.pedir("celular", "abrir_url", "https://app.hotmart.com/")
-                return {"feito": True, "resumo": "Hotmart no Chrome do celular, que ja esta logado"}
+            if alvo in ("ml", "hotmart"):
+                return {"feito": False, "resumo": "nao abre pagina sozinha"}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "criar_api_key":

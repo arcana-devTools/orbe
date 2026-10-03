@@ -14,25 +14,5 @@ _PASSOS = (
 
 
 def passo() -> dict:
-    """Um passo no navegador do dono. No maximo a cada 3 min."""
-    global _ultimo
-    if time.time() - _ultimo < 180:
-        return {"ok": True, "ja": True}
-    try:
-        import mao
-        if not mao.online("celular"):
-            return {"ok": False, "motivo": "celular fora"}
-        if mao.versao_app() < 5:
-            return {"ok": True, "ja": True}
-    except Exception as exc:
-        return {"ok": False, "motivo": type(exc).__name__}
-    _ultimo = time.time()
-    url, botoes = _PASSOS[int(time.time() // 180) % len(_PASSOS)]
-    try:
-        import mao
-        mao.pedir("celular", "abrir_url", url)
-        for texto in botoes:
-            mao.pedir("celular", "clicar", texto, {"texto": texto})
-    except Exception as exc:
-        return {"ok": False, "motivo": type(exc).__name__}
-    return {"ok": True, "url": url}
+    """Desligado. Abria Hotmart ou Mercado Livre e a pagina ficava parada."""
+    return {"ok": True, "parado": True}

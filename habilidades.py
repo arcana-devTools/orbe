@@ -216,88 +216,9 @@ def _proxima() -> dict | None:
     return item
 
 
-def _json_acao(txt: str) -> dict | None:
-    i, j = txt.find("{"), txt.rfind("}")
-    if i < 0 or j <= i:
-        return None
-    try:
-        d = json.loads(txt[i:j + 1])
-    except Exception:
-        return None
-    return d if isinstance(d, dict) else None
-
-
-def _so_humano(acao: str, alvo: str) -> bool:
-    t = (alvo or "").lower()
-    if any(x in t for x in ("senha", "password", "captcha", "2fa")):
-        return True
-    if acao == "clicar" and any(x in t for x in ("aceitar termos", "aceito os termos", "i agree")):
-        return True
-    return False
-
-
-def _executar(d: dict) -> bool:
-    aparelho = str(d.get("aparelho") or "celular").strip().lower()
-    acao = str(d.get("acao") or "").strip().lower()
-    alvo = str(d.get("alvo") or "").strip()
-    if aparelho not in ("celular", "pc"):
-        aparelho = "celular"
-    if acao not in ("abrir_url", "abrir_app", "clicar", "digitar", "tecla"):
-        return False
-    if _so_humano(acao, alvo):
-        return False
-    import mao
-    if not mao.online(aparelho):
-        outro = "pc" if aparelho == "celular" else "celular"
-        if not mao.online(outro):
-            return False
-        aparelho = outro
-    extra = {"texto": alvo} if acao == "clicar" and alvo else None
-    mao.pedir(aparelho, acao, alvo, extra, origem="skill")
-    return True
-
-
-_ultimo_aplicar = 0.0
-
-
 async def aplicar(forcar: bool = False) -> dict:
-    """A colônia aplica as skills que ela mesma gravou. Sem filtro de fora."""
-    global _ultimo_aplicar
-    import meta_renda
-    prog = meta_renda.progresso()
-    if prog["parar"]:
-        return {"ok": True, "parar": True, "real_brl": prog["real_brl"]}
-    if not forcar and time.time() - _ultimo_aplicar < 60:
-        return {"ok": True, "ja": True, "falta_brl": prog["falta_brl"]}
-    item = _proxima()
-    if not item:
-        return {"ok": False, "motivo": "sem skill"}
-    corpo = ler(item["nome"])[:1600]
-    if not corpo:
-        return {"ok": False, "motivo": "skill vazia"}
-    try:
-        import llm_pool
-        if not llm_pool.disponivel():
-            return {"ok": False, "motivo": "sem IA"}
-        txt, motor = await llm_pool.chat(
-            "Você é a Orbe. A skill gravada é o trabalho, não a loja. "
-            "Responda só um JSON: {\"aparelho\":\"celular\" ou \"pc\",\"acao\":\"abrir_url\" ou \"abrir_app\" ou \"clicar\" ou \"digitar\" ou \"tecla\",\"alvo\":\"...\"}. "
-            "Escolha vocês. Não peçam o dono. Não digite senha, não resolva captcha, não aceite termos. Sem texto fora do JSON.",
-            "Skill:\n" + corpo,
-            max_tokens=120,
-            temperature=0.3,
-        )
-    except Exception as exc:
-        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:160]}"}
-    _ultimo_aplicar = time.time()
-    d = _json_acao(txt or "")
-    feito = _executar(d) if d else False
-    try:
-        import conciencia
-        conciencia.anotar("skill em uso", acao="skill")
-    except Exception:
-        pass
-    return {"ok": True, "origem": motor, "feito": feito, "falta_brl": prog["falta_brl"]}
+    """Nao abre pagina no celular nem no PC. A skill fica gravada; a tela nao."""
+    return {"ok": True, "parado": True, "motivo": "nao abre pagina sozinha"}
 
 
 async def pesquisar() -> dict:

@@ -174,6 +174,11 @@ async def _restaurar_estado_no_boot() -> None:
 async def lifespan(app: FastAPI):
     await BUS.info("iniciando Orbe…")
     await _restaurar_estado_no_boot()
+    try:
+        import mao
+        mao.esvaziar_pendentes()
+    except Exception:
+        pass
     # o navegador não pode segurar a primeira página; sobe por baixo
     asyncio.create_task(MANAGER.start())
     eng = get_engine()
@@ -1225,7 +1230,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.86",
+        "versao": "0.27.87",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
