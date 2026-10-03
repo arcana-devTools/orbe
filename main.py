@@ -682,6 +682,15 @@ async def hermes_aprender(request: Request) -> dict[str, Any]:
     return {"ok": True, "acao": acao, "arquivo": caminho, "ja_tinha": habilidades.tem(acao)}
 
 
+@app.post("/api/habilidades/pesquisar")
+async def habilidades_pesquisar() -> dict[str, Any]:
+    """A colônia pesquisa. Devolve só ok."""
+    import habilidades
+
+    _touch()
+    return await habilidades.pesquisar()
+
+
 @app.post("/api/habilidades/aplicar")
 async def habilidades_aplicar(request: Request) -> dict[str, Any]:
     """A colônia aplica as skills que gravou. Sem filtro de fora."""
@@ -1102,7 +1111,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.58",
+        "versao": "0.27.59",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

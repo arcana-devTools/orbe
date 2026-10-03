@@ -224,3 +224,39 @@ async def aplicar(forcar: bool = False) -> dict:
     except Exception:
         pass
     return {"ok": True, "origem": motor, "passo": txt[:800], "falta_brl": prog["falta_brl"]}
+
+
+async def pesquisar() -> dict:
+    """A colônia pesquisa renda e grava. A resposta de fora é só ok."""
+    import llm_pool
+
+    if not llm_pool.disponivel():
+        return {"ok": False, "motivo": "sem IA"}
+    sistema = (
+        "Você é a Orbe. O Hermes é a outra mão. Pesquisem renda real. "
+        "O método é de vocês. Não peçam o dono. Não inventem venda. "
+        "Sem fraude, sem spam, sem conta falsa, sem aposta, sem pirâmide. "
+        "Gravem o que dá para executar agora. Português, curto."
+    )
+    perguntas = (
+        "Renda real em afiliados, produtos digitais e marketplace.",
+        "Renda real em serviço, conteúdo e canais.",
+        "Renda real nas plataformas que uma pessoa já logada alcança hoje.",
+    )
+    blocos = []
+    for pergunta in perguntas:
+        try:
+            txt, _motor = await llm_pool.chat(sistema, pergunta, max_tokens=700, temperature=0.4, web=True)
+        except Exception:
+            txt = ""
+        if txt and len(txt) > 40:
+            blocos.append(txt.strip())
+    if not blocos:
+        return {"ok": False, "motivo": "pesquisa vazia"}
+    salvar("renda pesquisada", "\n\n".join(blocos)[:8000])
+    try:
+        import conciencia
+        conciencia.anotar("pesquisa de renda gravada", acao="pesquisar")
+    except Exception:
+        pass
+    return {"ok": True, "resposta": "ok"}
