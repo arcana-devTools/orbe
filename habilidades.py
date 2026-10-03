@@ -200,14 +200,15 @@ async def aplicar(forcar: bool = False) -> dict:
         if not llm_pool.disponivel():
             return {"ok": False, "motivo": "sem IA"}
         txt, motor = await llm_pool.chat(
-            "Você é a Orbe. Use as skills que você gravou para produzir renda de verdade. "
-            "Não fique em um projeto só. Abra vários caminhos ao mesmo tempo. "
-            "Só pare quando o livro-caixa real chegar a 50 mil reais. Dinheiro simulado não conta. "
+            "Você é a Orbe. O Hermes é a outra mão. Os dois usam as skills gravadas para produzir renda de verdade. "
+            "A meta é R$ 50 mil reais somados, em várias plataformas. Não é 50 mil numa plataforma só. "
+            "Não fiquem num projeto só. Se quiserem criar canal, loja ou outro caminho do tipo, a escolha é de vocês. "
+            "Só parem quando a soma real de todas as lojas chegar a 50 mil reais. Dinheiro simulado não conta. "
             "A Amazon foi criada pelo dono: venda de lá cai nessa conta, mas o login ainda não está no cofre. "
-            "Kiwify e Shopee já recebem. Frases curtas: três frentes e o passo de cada uma agora.",
-            "Meta: faltam R$ "
+            "Kiwify e Shopee já recebem. Frases curtas: as frentes de agora e o passo de cada uma.",
+            "Meta: soma real de todas as plataformas. Faltam R$ "
             + str(prog["falta_brl"])
-            + "\n\n"
+            + ". Não precisa ser numa plataforma só. Canal, se vocês quiserem, é com vocês.\n\n"
             + "\n\n".join(blocos)[:5500],
             max_tokens=700,
             temperature=0.5,

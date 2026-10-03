@@ -1,6 +1,7 @@
-"""Meta de renda real. A colonia so para quando o livro-caixa chegar aqui.
+"""Meta de renda real. A colonia so para quando a SOMA de todas as plataformas chegar aqui.
 
-Dinheiro simulado da colonia nao conta.
+Nao e 50 mil numa plataforma so. Canal, loja ou outro caminho e escolha da colonia.
+Dinheiro simulado nao conta.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ def progresso() -> dict:
         "real_brl": round(brl, 2),
         "falta_brl": round(max(0.0, META_BRL - brl), 2),
         "parar": brl >= META_BRL,
+        "regra": "soma real de todas as plataformas, nao uma so",
         "amazon": "conta criada pelo dono; login ainda nao esta no cofre",
         "kiwify": "conta ja ligada; venda cai nela",
         "shopee": "conta de afiliado ja aprovada; comissao cai nela",
