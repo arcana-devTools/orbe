@@ -38,14 +38,22 @@ def _salvar(d: dict[str, Any]) -> None:
         pass
 
 
+def _interno(txt: str) -> bool:
+    s = (txt or "").strip()
+    if not s.startswith("{") and not s.startswith("["):
+        return False
+    return any(x in s for x in ("falta_brl", '"feito"', '"origem"', '"ok":'))
+
+
 def _texto_hermes(dado: Any) -> str:
     if isinstance(dado, dict):
         for k in ("saida", "resumo", "texto", "resultado", "msg"):
             v = dado.get(k)
-            if isinstance(v, str) and v.strip():
+            if isinstance(v, str) and v.strip() and not _interno(v):
                 return _sem_segredo(v.strip())
-        return _sem_segredo(json.dumps(dado, ensure_ascii=False))
-    return _sem_segredo(str(dado))
+        return ""
+    texto = _sem_segredo(str(dado))
+    return "" if _interno(texto) else texto
 
 
 def _ingerir_hermes(d: dict[str, Any]) -> None:
@@ -102,14 +110,14 @@ async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
     if not cumprimento:
         try:
             import asyncio
-            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 5)
+            visto = await asyncio.wait_for(llm_pool.buscar_publico(texto), 8)
         except Exception:
             visto = ""
-        sistema += " Se houver texto em 'Vi agora', use isso para fato e número. Se não houver, diga que não viu fora. Não invente."
         if visto:
+            sistema += " Use o bloco Vi agora para número e notícia. Não invente o que não está nele."
             texto = texto[:700] + "\n\nVi agora:\n" + visto[:900]
         else:
-            texto = texto[:700] + "\n\nNão vi nada fora agora."
+            sistema += " A busca de fora falhou. Não invente cotação nem notícia de hoje. Responda o que der sem fingir que olhou."
     chave = llm_pool._chave("groq")
     txt = ""
     if chave:

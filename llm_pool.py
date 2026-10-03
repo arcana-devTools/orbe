@@ -264,31 +264,67 @@ async def _reservas(system: str, user: str, max_tokens: int, temperature: float)
     return "", "", erros
 
 
+def _limpar_html(txt: str) -> str:
+    import re
+    limpo = re.sub(r"<[^>]+>", " ", txt or "")
+    return re.sub(r"\s+", " ", limpo).strip()
+
+
+def _trechos_jina(texto: str) -> list[str]:
+    import re
+    saida: list[str] = []
+    for bloco in re.split(r"\n(?=\d+\.\[)", texto or ""):
+        m = re.search(r"\d+\.\[(.+?)\]", bloco)
+        if not m:
+            continue
+        titulo = m.group(1).strip()
+        resto = re.sub(r"\d+\.\[.+?\]\([^)]*\)", " ", bloco)
+        resto = re.sub(r"https?://\S+", " ", resto)
+        resto = re.sub(r"\*+", "", resto)
+        resto = re.sub(r"\s+", " ", resto).strip()
+        linha = f"{titulo}: {resto}" if resto and resto != titulo else titulo
+        if len(linha) > 24:
+            saida.append(linha[:300])
+        if len(saida) >= 6:
+            break
+    return saida
+
+
 async def buscar_publico(consulta: str) -> str:
-    """Busca pública. Não depende da cota do Groq."""
+    """Busca pública. Não depende da cota do Groq. O espelho lê mesmo se o IP daqui for barrado."""
     import re
 
     q = (consulta or "").strip()[:180]
     if not q:
         return ""
     trechos: list[str] = []
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; Orbe/1.0)"}
-    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as cx:
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; Orbe/1.0)", "Accept": "text/plain"}
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers=headers) as cx:
         try:
             r = await cx.get("https://lite.duckduckgo.com/lite/", params={"q": q})
-            if r.status_code == 200:
+            if r.status_code == 200 and "result-link" in r.text:
                 links = re.findall(r"result-link[^>]*>(.*?)</a>", r.text, re.S)
                 snips = re.findall(r"result-snippet[^>]*>(.*?)</td>", r.text, re.S)
                 for i, titulo in enumerate(links):
                     snip = snips[i] if i < len(snips) else ""
-                    limpo = re.sub(r"<[^>]+>", " ", f"{titulo}: {snip}")
-                    limpo = re.sub(r"\s+", " ", limpo).strip()
+                    limpo = _limpar_html(f"{titulo}: {snip}")
                     if len(limpo) > 20:
                         trechos.append(limpo[:300])
                     if len(trechos) >= 6:
                         break
         except Exception:
             pass
+        if not trechos:
+            try:
+                r = await cx.get(
+                    "https://r.jina.ai/http://lite.duckduckgo.com/lite/",
+                    params={"q": q},
+                    timeout=8,
+                )
+                if r.status_code == 200:
+                    trechos = _trechos_jina(r.text)
+            except Exception:
+                pass
         if not trechos:
             try:
                 r = await cx.get(
@@ -304,6 +340,18 @@ async def buscar_publico(consulta: str) -> str:
                         trechos.append(f"{nome}: {extra}"[:300])
             except Exception:
                 pass
+    baixo = q.lower()
+    if any(x in baixo for x in ("dolar", "dólar", "usd", "euro", "cota")):
+        try:
+            async with httpx.AsyncClient(timeout=6) as cx2:
+                r = await cx2.get("https://api.frankfurter.app/latest", params={"from": "USD", "to": "BRL"})
+                if r.status_code == 200:
+                    d = r.json()
+                    taxa = (d.get("rates") or {}).get("BRL")
+                    if taxa:
+                        trechos.insert(0, f"Câmbio público USD/BRL: {taxa} em {d.get('date', '')}")
+        except Exception:
+            pass
     return "\n".join(trechos)[:2500]
 
 
@@ -316,7 +364,7 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
     if web:
         trechos = ""
         try:
-            trechos = await asyncio.wait_for(buscar_publico(user), 6)
+            trechos = await asyncio.wait_for(buscar_publico(user), 9)
         except Exception:
             trechos = ""
         extra = ("\n\nVi agora, fora:\n" + trechos) if trechos else "\n\nNão vi nada fora agora."
