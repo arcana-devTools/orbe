@@ -25,6 +25,7 @@ _HOP = {
     "content-length", "content-encoding",
 }
 _proc: subprocess.Popen | None = None
+_gw: subprocess.Popen | None = None
 _trava = asyncio.Lock()
 
 
@@ -112,30 +113,62 @@ def _no_ar() -> bool:
         s.close()
 
 
+def _env_hermes() -> dict[str, str]:
+    env = os.environ.copy()
+    env["HERMES_HOME"] = str(HOME)
+    env["HERMES_LANGUAGE"] = "pt"
+    # a página de arquivos não passeia em /root — isso o Cloudflare trata como ataque
+    env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
+    env.pop("ORBE_TG_TOKEN", None)
+    env.pop("TELEGRAM_BOT_TOKEN", None)
+    return env
+
+
+def _subir_gateway() -> int:
+    """No Render não há systemd. O botão do painel chama `gateway restart` e falha."""
+    global _gw
+    if _gw is not None and _gw.poll() is None:
+        return _gw.pid
+    log = open(HOME / "logs" / "gateway.log", "ab")
+    _gw = subprocess.Popen(
+        ["hermes", "gateway", "run"],
+        env=_env_hermes(),
+        cwd=str(HOME),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+    )
+    return _gw.pid
+
+
+def reiniciar_gateway() -> int:
+    global _gw
+    if _gw is not None and _gw.poll() is None:
+        _gw.terminate()
+        try:
+            _gw.wait(timeout=8)
+        except Exception:
+            _gw.kill()
+    _gw = None
+    return _subir_gateway()
+
+
 async def garantir() -> str | None:
-    """Sobe o dashboard do Hermes se ainda não estiver ouvindo."""
+    """Sobe o dashboard e o gateway. O teste de e-mail exige o gateway."""
     global _proc
     if shutil.which("hermes") is None:
         return "o Hermes não está instalado neste servidor"
     _preparar()
     async with _trava:
-        if _proc is not None and _proc.poll() is None and _no_ar():
-            return None
-        log = open(HOME / "logs" / "painel.log", "ab")
-        env = os.environ.copy()
-        env["HERMES_HOME"] = str(HOME)
-        env["HERMES_LANGUAGE"] = "pt"
-        # a página de arquivos não passeia em /root — isso o Cloudflare trata como ataque
-        env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
-        env.pop("ORBE_TG_TOKEN", None)
-        env.pop("TELEGRAM_BOT_TOKEN", None)
-        _proc = subprocess.Popen(
-            ["hermes", "dashboard", "--host", "127.0.0.1", "--port", str(PORTA), "--no-open"],
-            env=env,
-            cwd=str(HOME),
-            stdout=log,
-            stderr=subprocess.STDOUT,
-        )
+        if not (_proc is not None and _proc.poll() is None and _no_ar()):
+            log = open(HOME / "logs" / "painel.log", "ab")
+            _proc = subprocess.Popen(
+                ["hermes", "dashboard", "--host", "127.0.0.1", "--port", str(PORTA), "--no-open"],
+                env=_env_hermes(),
+                cwd=str(HOME),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+        _subir_gateway()
     for _ in range(80):
         if _no_ar():
             return None
@@ -172,6 +205,15 @@ def _sujar(caminho: str, metodo: str, status: int) -> None:
 async def encaminhar(request: Request, caminho: str) -> Response:
     if request.method == "GET" and caminho in {"", "/"}:
         return RedirectResponse(PREFIXO + "/channels", status_code=302)
+    if request.method == "POST" and caminho.strip("/") == "api/gateway/restart":
+        erro = await garantir()
+        if erro:
+            return HTMLResponse("<p>O gateway do Hermes não subiu.</p>", status_code=503)
+        pid = reiniciar_gateway()
+        return Response(
+            content=f'{{"ok":true,"pid":{pid},"name":"gateway-restart"}}',
+            media_type="application/json",
+        )
     erro = await garantir()
     if erro:
         return HTMLResponse(
