@@ -68,6 +68,11 @@ def registrar(loja: str, valor: float, moeda: str, prova: str = "", produto_id: 
                 p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
         except Exception:
             pass
+    try:
+        import discord_aviso
+        discord_aviso.avisar(venda)
+    except Exception:
+        pass
     return venda
 
 

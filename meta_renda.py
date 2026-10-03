@@ -20,7 +20,7 @@ def progresso() -> dict:
         "real_brl": round(brl, 2),
         "falta_brl": round(max(0.0, META_BRL - brl), 2),
         "parar": brl >= META_BRL,
-        "regra": "soma real de todas as plataformas; se o material nao bastar, a colonia procura o metodo em qualquer plataforma, sem filtro de fora",
+        "regra": "trabalhar ate a soma real bater 50 mil; avisar o dono so quando entrar dinheiro real, e so no Discord",
         "amazon": "conta criada pelo dono; login ainda nao esta no cofre",
         "kiwify": "conta ja ligada; venda cai nela",
         "shopee": "conta de afiliado ja aprovada; comissao cai nela",

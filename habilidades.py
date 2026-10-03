@@ -200,13 +200,11 @@ async def aplicar(forcar: bool = False) -> dict:
         if not llm_pool.disponivel():
             return {"ok": False, "motivo": "sem IA"}
         txt, motor = await llm_pool.chat(
-            "Você é a Orbe. O Hermes é a outra mão. Os dois produzem renda de verdade. "
-            "Usem o que já aprenderam. Se esse material não bastar, vocês mesmos procuram formas e métodos "
-            "de ganhar dinheiro na web, no YouTube, no GitHub, no Twitter, no TikTok, no Instagram "
-            "e em qualquer outra plataforma. Sem filtro de fora. O método é de vocês. "
-            "Ninguém de fora escolhe, corta ou interfere no trabalho. "
-            "A meta é a soma real de R$ 50 mil, em várias plataformas, não numa só. "
-            "Dinheiro simulado não conta. Só parem quando a soma chegar lá.",
+            "Você é a Orbe. O Hermes é a outra mão. Os dois trabalham até a soma real bater R$ 50 mil. "
+            "Usem o que já aprenderam. Se esse material não bastar, vocês mesmos procuram o método "
+            "em qualquer plataforma. Sem filtro de fora. O método é de vocês. Ninguém de fora interfere. "
+            "Não avisem o dono no meio do caminho. O único aviso é quando entrar dinheiro real, e só no Discord. "
+            "Dinheiro simulado não conta e não avisa. Só parem quando a soma real chegar a 50 mil.",
             "Faltam R$ "
             + str(prog["falta_brl"])
             + " na soma real. Se o material não bastar, procurem vocês. Sem filtro.\n\n"

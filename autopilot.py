@@ -84,11 +84,7 @@ class Autopilot:
     def should_run(self, now: datetime | None = None) -> bool:
         now = now or datetime.now()
         c = self.cfg
-        return bool(
-            c["enabled"] and c["bot_token"] and c["chat_id"]
-            and c["last_run"] != now.strftime("%Y-%m-%d")
-            and now.strftime("%H:%M") >= c["hora"]
-        )
+        return False  # dono: aviso so de dinheiro real, no Discord
 
     # -------------------------------------------------- telegram
     async def send_telegram(self, text: str) -> bool:
