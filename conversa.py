@@ -163,11 +163,17 @@ async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
             visto = ""
         if visto:
             base = texto[:600] + "\n\nVi agora:\n" + visto[:700]
-    quem = ["orbe", "hermes"] if para == "os dois" else [para if para in ("orbe", "hermes") else "orbe"]
-    falas = await asyncio.gather(*[_uma(q, base) for q in quem])
+    quem = []
+    if para in ("orbe", "os dois"):
+        quem.append("orbe")
+    if para == "hermes":
+        return [("hermes", "O agente Hermes saiu. A fala dele chega quando o job voltar.")]
+    falas = await asyncio.gather(*[_uma(q, base) for q in quem]) if quem else []
     saida = []
     for q, fala in zip(quem, falas):
         saida.append((q, fala or "Não consegui responder agora."))
+    if para == "os dois":
+        saida.append(("hermes", "O agente Hermes saiu. A fala dele chega quando o job voltar."))
     return saida
 
 
