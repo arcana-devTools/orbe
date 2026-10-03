@@ -21,7 +21,7 @@ import httpx
 GROQ_URL = "https://api.groq.com/openai/v1"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 CF_URL = "https://api.cloudflare.com/client/v4/accounts"
-GROQ_MODELOS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+GROQ_MODELOS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 CF_MODELOS = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct"]
 OPENROUTER_PREFERIDOS = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free",
                          "qwen/qwen3-235b-a22b:free", "deepseek/deepseek-chat-v3.1:free"]
@@ -233,7 +233,7 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
         for prov in provs:
             st = _estado.setdefault(prov, {"ultimo": 0.0, "pausa_ate": 0.0, "erro": ""})
             if prov == "groq":
-                modelos = ["llama-3.1-8b-instant", "openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
+                modelos = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] if web else GROQ_MODELOS
             elif prov == "cf":
                 modelos = CF_MODELOS
             else:

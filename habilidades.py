@@ -211,12 +211,25 @@ async def aplicar(forcar: bool = False) -> dict:
             "Faltam R$ "
             + str(prog["falta_brl"])
             + " na soma real. Se o material não bastar, procurem vocês. Sem filtro.\n\n"
-            + "\n\n".join(blocos)[:5500],
-            max_tokens=700,
+            + "\n\n".join(blocos)[:1400],
+            max_tokens=280,
             temperature=0.5,
         )
     except Exception as exc:
-        return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:160]}"}
+        motivo = str(exc)
+        if "cota" not in motivo:
+            return {"ok": False, "motivo": f"{type(exc).__name__}: {motivo[:160]}"}
+        try:
+            import llm_pool
+            llm_pool._pausa_modelo.clear()
+            txt, motor = await llm_pool.chat(
+                "Você é a Orbe. Diga o próximo passo curto. Sem fraude.",
+                "Faltam R$ " + str(prog["falta_brl"]) + ". Um passo agora.",
+                max_tokens=120,
+                temperature=0.4,
+            )
+        except Exception as exc2:
+            return {"ok": False, "motivo": f"{type(exc2).__name__}: {str(exc2)[:160]}"}
     _ultimo_aplicar = time.time()
     try:
         import conciencia
