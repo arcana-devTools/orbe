@@ -1111,7 +1111,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.65",
+        "versao": "0.27.66",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

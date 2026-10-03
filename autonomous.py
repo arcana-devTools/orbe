@@ -600,19 +600,24 @@ class Swarm:
     async def _loop(self) -> None:
         while self.running:
             self.tick()
-            if self.ciclos % self.CICLOS_POR_EXPEDICAO == 0:
+            try:
+                import llm_pool
+                cheia = llm_pool.cota_cheia()
+            except Exception:
+                cheia = False
+            if not cheia and self.ciclos % self.CICLOS_POR_EXPEDICAO == 0:
                 await self._expedicao_real()
-            if self.ciclos % 15 == 10:
+            if not cheia and self.ciclos % 15 == 10:
                 await self._radar_renda()
             if self.ciclos % 5 == 3:
                 await self._acabamento()
-            if self.ciclos % 5 == 1:
+            if not cheia and self.ciclos % 5 == 1:
                 await self._pesquisa_mercado()
             if self.ciclos % 30 == 7:
                 await self._rotina_diaria()
-            if self.ciclos % 10 == 5:
+            if not cheia and self.ciclos % 10 == 5:
                 await self._freelas()
-            if self.ciclos % 5 == 2:
+            if not cheia and self.ciclos % 5 == 2:
                 try:
                     import habilidades
                     await habilidades.aplicar()

@@ -29,7 +29,34 @@ GAP_MIN_S = 20          # espaçamento mínimo entre chamadas no mesmo provedor
 GAP_CF_S = 2
 _estado: dict[str, dict[str, Any]] = {}
 _pausa_modelo: dict[str, float] = {}      # "groq:modelo" -> até quando evitar   # provedor -> {ultimo, pausa_ate, erro}
+_cota_dia_ate = 0.0
 _or_free_cache: dict[str, Any] = {"ts": 0.0, "ids": []}
+
+
+def marcar_cota_dia(segundos: float) -> None:
+    """A cota do dia acabou. Não gasta o resto em tentativa vazia."""
+    global _cota_dia_ate
+    ate = time.time() + min(max(float(segundos or 0), 3600), 8 * 3600)
+    if ate > _cota_dia_ate:
+        _cota_dia_ate = ate
+    try:
+        from pathlib import Path
+        arq = Path("data/cota_dia.txt")
+        arq.parent.mkdir(parents=True, exist_ok=True)
+        arq.write_text(str(_cota_dia_ate))
+    except Exception:
+        pass
+
+
+def cota_cheia() -> bool:
+    global _cota_dia_ate
+    if _cota_dia_ate <= 0:
+        try:
+            from pathlib import Path
+            _cota_dia_ate = float(Path("data/cota_dia.txt").read_text().strip())
+        except Exception:
+            return False
+    return time.time() < _cota_dia_ate
 
 
 def _chave(nome: str) -> str:
@@ -105,6 +132,9 @@ async def _chamada_cf(cx: httpx.AsyncClient, modelo: str, system: str, user: str
     except Exception as exc:
         return "", type(exc).__name__
     if r.status_code == 429:
+        corpo = r.text.lower()
+        if "daily" in corpo or "allocation" in corpo:
+            marcar_cota_dia(6 * 3600)
         _pausa_modelo[f"cf:{modelo}"] = time.time() + 40
         return "", "429"
     if r.status_code in (401, 403):
@@ -163,6 +193,8 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
             # cota do dia: pula este modelo e deixa a reserva atender. Minuto: trava curta.
             espera_pausa = min(max(ra, 120), 1800) if diario else min(max(ra, 12), 45)
             _pausa_modelo[f"{prov}:{modelo}"] = time.time() + espera_pausa
+            if diario:
+                marcar_cota_dia(ra)
             trecho = " ".join(r.text.split())[:80]
             return "", ("429 cota diária " if diario else "429 ") + trecho
         if r.status_code in (401, 403):
@@ -227,6 +259,8 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
     web=True: pesquisa na internet de verdade (Groq gpt-oss + browser_search)."""
     import asyncio
 
+    if cota_cheia():
+        raise RuntimeError("cota do dia cheia")
     erros = []
     provs = (["groq"] if "groq" in provedores() else []) if web else provedores()
     async with httpx.AsyncClient(timeout=180) as cx:
