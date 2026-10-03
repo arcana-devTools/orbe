@@ -157,15 +157,15 @@ def _modelos_chat() -> None:
             "transport": "openai_chat",
         }
         for modelo in (
-            "openai/gpt-oss-120b:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "qwen/qwen3-235b-a22b:free",
+            "openrouter/free",
+            "qwen/qwen3.8-27b:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
         ):
             cadeia.append({"provider": "openrouter", "model": modelo})
         if not groq:
             cfg["model"] = {
                 "provider": "openrouter",
-                "default": "openai/gpt-oss-120b:free",
+                "default": "openrouter/free",
                 "base_url": "https://openrouter.ai/api/v1",
             }
     if mini:
@@ -175,11 +175,11 @@ def _modelos_chat() -> None:
             "key_env": "MINIMAX_API_KEY",
             "transport": "openai_chat",
         }
-        cadeia.append({"provider": "minimax", "model": "MiniMax-M2.5"})
+        cadeia.append({"provider": "minimax", "model": "MiniMax-M2.7"})
         if not groq and not router:
             cfg["model"] = {
                 "provider": "minimax",
-                "default": "MiniMax-M2.5",
+                "default": "MiniMax-M2.7",
                 "base_url": "https://api.minimax.io/v1",
             }
     cfg["providers"] = provedores
