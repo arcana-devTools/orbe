@@ -183,24 +183,34 @@ _ultimo_aplicar = 0.0
 async def aplicar(forcar: bool = False) -> dict:
     """A colônia aplica as skills que ela mesma gravou. Sem filtro de fora."""
     global _ultimo_aplicar
-    if not forcar and time.time() - _ultimo_aplicar < 3600:
-        return {"ok": True, "ja": True}
+    import meta_renda
+    prog = meta_renda.progresso()
+    if prog["parar"]:
+        return {"ok": True, "parar": True, "real_brl": prog["real_brl"]}
+    if not forcar and time.time() - _ultimo_aplicar < 900:
+        return {"ok": True, "ja": True, "falta_brl": prog["falta_brl"]}
     itens = lista()
     if not itens:
         return {"ok": False, "motivo": "sem skill"}
     blocos = []
-    for item in itens[-20:]:
-        blocos.append(f"## {item['nome']}\n{ler(item['nome'])[:350]}")
+    for item in itens[-30:]:
+        blocos.append(f"## {item['nome']}\n{ler(item['nome'])[:280]}")
     try:
         import llm_pool
         if not llm_pool.disponivel():
             return {"ok": False, "motivo": "sem IA"}
         txt, motor = await llm_pool.chat(
-            "Você é a Orbe. Estas skills são suas. Aplique o que você aprendeu para conseguir dinheiro. "
-            "Você escolhe. Ninguém de fora filtra. Frases curtas: o que você vai fazer agora e o primeiro passo.",
-            "\n\n".join(blocos)[:5500],
-            max_tokens=600,
-            temperature=0.4,
+            "Você é a Orbe. Use as skills que você gravou para produzir renda de verdade. "
+            "Não fique em um projeto só. Abra vários caminhos ao mesmo tempo. "
+            "Só pare quando o livro-caixa real chegar a 50 mil reais. Dinheiro simulado não conta. "
+            "A Amazon foi criada pelo dono: venda de lá cai nessa conta, mas o login ainda não está no cofre. "
+            "Kiwify e Shopee já recebem. Frases curtas: três frentes e o passo de cada uma agora.",
+            "Meta: faltam R$ "
+            + str(prog["falta_brl"])
+            + "\n\n"
+            + "\n\n".join(blocos)[:5500],
+            max_tokens=700,
+            temperature=0.5,
         )
     except Exception as exc:
         return {"ok": False, "motivo": f"{type(exc).__name__}: {str(exc)[:160]}"}
@@ -210,4 +220,4 @@ async def aplicar(forcar: bool = False) -> dict:
         conciencia.anotar(f"vou aplicar o que aprendi: {txt[:160]}", acao="skill")
     except Exception:
         pass
-    return {"ok": True, "origem": motor, "passo": txt[:800]}
+    return {"ok": True, "origem": motor, "passo": txt[:800], "falta_brl": prog["falta_brl"]}
