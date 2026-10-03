@@ -121,8 +121,9 @@ public final class Olho extends AccessibilityService {
             }
             String antes = marca(raiz);
             Rect alvo = boundsUteis(achou);
-            boolean tocou = alvo != null && gesto(alvo.centerX(), alvo.centerY());
-            if (!tocou) tocou = tocar(achou);
+            boolean tocou = false;
+            if (alvo != null) tocou = gesto(alvo.centerX(), alvo.centerY());
+            if (tocar(achou)) tocou = true;
             achou.recycle();
             if (!tocou) return "o botão não aceitou";
             try {
@@ -150,10 +151,9 @@ public final class Olho extends AccessibilityService {
                 achou.recycle();
                 return "não mexo nisso";
             }
-            Rect alvo = boundsUteis(achou);
             String antes = marca(raiz);
-            boolean ok = alvo != null && gesto(alvo.centerX(), alvo.centerY());
-            if (!ok) ok = achou.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            boolean ok = gesto(x, y);
+            if (tocar(achou)) ok = true;
             achou.recycle();
             if (!ok) return "o botão não aceitou";
             try {
@@ -242,23 +242,37 @@ public final class Olho extends AccessibilityService {
     }
 
     private static AccessibilityNodeInfo acharVisivel(AccessibilityNodeInfo n, String needle, Rect janela) {
+        int[] area = new int[] {Integer.MAX_VALUE};
+        return melhorVisivel(n, needle, janela, area);
+    }
+
+    private static AccessibilityNodeInfo melhorVisivel(AccessibilityNodeInfo n, String needle, Rect janela, int[] area) {
         if (n == null) return null;
+        AccessibilityNodeInfo escolhido = null;
         String s = textoDe(n).toLowerCase(Locale.ROOT);
         if (s.length() > 0 && s.contains(needle) && !proibido(s)) {
             Rect r = new Rect();
             n.getBoundsInScreen(r);
-            if (r.width() > 4 && r.height() > 4 && janela.contains(r.centerX(), r.centerY())) {
-                return AccessibilityNodeInfo.obtain(n);
+            int a = r.width() * r.height();
+            boolean sano = r.width() > 8 && r.height() > 8 && r.width() < 700 && r.height() < 240
+                    && r.centerX() > janela.left + 12 && r.centerY() > janela.top + 12
+                    && janela.contains(r.centerX(), r.centerY());
+            if (sano && a < area[0]) {
+                area[0] = a;
+                escolhido = AccessibilityNodeInfo.obtain(n);
             }
         }
         for (int i = 0; i < n.getChildCount(); i++) {
             AccessibilityNodeInfo f = n.getChild(i);
             if (f == null) continue;
-            AccessibilityNodeInfo achou = acharVisivel(f, needle, janela);
+            AccessibilityNodeInfo achou = melhorVisivel(f, needle, janela, area);
             f.recycle();
-            if (achou != null) return achou;
+            if (achou != null) {
+                if (escolhido != null) escolhido.recycle();
+                escolhido = achou;
+            }
         }
-        return null;
+        return escolhido;
     }
 
     private static Rect boundsUteis(AccessibilityNodeInfo n) {
@@ -281,11 +295,13 @@ public final class Olho extends AccessibilityService {
     private static boolean gesto(int x, int y) {
         Olho o = ativo;
         if (o == null || x < 1 || y < 1) return false;
-        Path path = new Path();
-        path.moveTo(x, y);
-        path.lineTo(x + 1, y + 1);
-        GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(path, 0, 120);
-        GestureDescription g = new GestureDescription.Builder().addStroke(stroke).build();
+        Path desce = new Path();
+        desce.moveTo(x, y);
+        Path sobe = new Path();
+        sobe.moveTo(x, y);
+        GestureDescription.StrokeDescription pressao = new GestureDescription.StrokeDescription(desce, 0, 50, true);
+        GestureDescription.StrokeDescription solta = pressao.continueStroke(sobe, 50, 40, false);
+        GestureDescription g = new GestureDescription.Builder().addStroke(pressao).addStroke(solta).build();
         final boolean[] feito = new boolean[] {false};
         final Object trava = new Object();
         boolean enviou;

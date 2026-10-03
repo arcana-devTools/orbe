@@ -8,7 +8,7 @@ import time
 
 _ultimo = 0.0
 _PASSOS = (
-    ("https://app.hotmart.com/", ("Produtos", "Criar produto", "Novo produto", "Ferramentas")),
+    ("https://app.hotmart.com/", ("Ferramentas", "Criar produto", "Home", "Entrar na Hotmart")),
     ("https://afiliados.mercadolivre.com.br/", ("Gerar link", "Criar link", "Meus links", "Afiliados")),
 )
 
@@ -22,7 +22,7 @@ def passo() -> dict:
         import mao
         if not mao.online("celular"):
             return {"ok": False, "motivo": "celular fora"}
-        if mao.versao_app() < 4:
+        if mao.versao_app() < 5:
             return {"ok": True, "ja": True}
     except Exception as exc:
         return {"ok": False, "motivo": type(exc).__name__}

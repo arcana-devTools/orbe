@@ -159,7 +159,7 @@ public final class MaoService extends Service {
         c.setConnectTimeout(timeout);
         c.setReadTimeout(timeout);
         c.setRequestProperty("x-orbe-mao", token);
-        c.setRequestProperty("User-Agent", "orbe-mao-app/4");
+        c.setRequestProperty("User-Agent", "orbe-mao-app/5");
         return ler(c);
     }
 
@@ -171,7 +171,7 @@ public final class MaoService extends Service {
         c.setDoOutput(true);
         c.setRequestProperty("Content-Type", "application/json");
         c.setRequestProperty("x-orbe-mao", token);
-        c.setRequestProperty("User-Agent", "orbe-mao-app/4");
+        c.setRequestProperty("User-Agent", "orbe-mao-app/5");
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         OutputStream out = c.getOutputStream();
         out.write(bytes);
