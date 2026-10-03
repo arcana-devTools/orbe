@@ -28,9 +28,44 @@ _proc: subprocess.Popen | None = None
 _trava = asyncio.Lock()
 
 
+_skills_gravadas = False
+
+
+def instalar_skills() -> int:
+    """As skills da colônia entram no Hermes antes dele abrir. Sem filtro."""
+    global _skills_gravadas
+    import re
+
+    try:
+        import habilidades
+        itens = habilidades.pacote()
+    except Exception:
+        return 0
+    dest = HOME / "skills" / "colonia"
+    dest.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for item in itens:
+        nome = re.sub(r"[^a-z0-9-]+", "-", str(item.get("nome") or "skill").lower()).strip("-")[:48] or "skill"
+        corpo = str(item.get("corpo") or "")
+        if not corpo.strip():
+            continue
+        if not corpo.lstrip().startswith("---"):
+            titulo = str(item.get("titulo") or nome)[:120].replace("\n", " ")
+            corpo = f"---\nname: {nome}\ndescription: {titulo}\n---\n\n{corpo}"
+        pasta = dest / nome
+        pasta.mkdir(parents=True, exist_ok=True)
+        alvo = pasta / "SKILL.md"
+        if not alvo.exists() or alvo.read_text(encoding="utf-8") != corpo:
+            alvo.write_text(corpo, encoding="utf-8")
+        n += 1
+    _skills_gravadas = n > 0
+    return n
+
+
 def _preparar() -> None:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "logs").mkdir(parents=True, exist_ok=True)
+    instalar_skills()
     groq = os.environ.get("ORBE_GROQ_API_KEY", "").strip()
     if not groq:
         return
@@ -74,6 +109,8 @@ async def garantir() -> str | None:
         log = open(HOME / "logs" / "painel.log", "ab")
         env = os.environ.copy()
         env["HERMES_HOME"] = str(HOME)
+        # a página de arquivos não passeia em /root — isso o Cloudflare trata como ataque
+        env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
         env.pop("ORBE_TG_TOKEN", None)
         env.pop("TELEGRAM_BOT_TOKEN", None)
         _proc = subprocess.Popen(
@@ -152,6 +189,7 @@ async def encaminhar(request: Request, caminho: str) -> Response:
 
 async def ponte(ws: WebSocket, caminho: str) -> None:
     import hmac
+    from urllib.parse import parse_qs
 
     senha = os.environ.get("ORBE_PANEL_PASSWORD", "")
     if senha:
@@ -170,43 +208,56 @@ async def ponte(ws: WebSocket, caminho: str) -> None:
     url = f"ws://127.0.0.1:{PORTA}/{caminho.lstrip('/')}"
     if ws.url.query:
         url += "?" + ws.url.query
-    offered = ws.scope.get("subprotocols") or []
+    offered = list(ws.scope.get("subprotocols") or [])
+    headers = [("X-Forwarded-Prefix", PREFIXO)]
+    tok = (parse_qs(ws.url.query).get("token") or [""])[0]
+    if tok:
+        headers.append(("X-Hermes-Session-Token", tok))
+    kwargs = {"max_size": 8_000_000, "ping_interval": 20, "ping_timeout": 20}
+    if offered:
+        kwargs["subprotocols"] = offered
+    up_cm = None
+    try:
+        try:
+            up_cm = websockets.connect(url, additional_headers=headers, **kwargs)
+        except TypeError:
+            up_cm = websockets.connect(url, extra_headers=headers, **kwargs)
+        up = await up_cm.__aenter__()
+    except Exception:
+        await ws.close(code=1011)
+        return
     await ws.accept(subprotocol=offered[0] if offered else None)
     try:
-        async with websockets.connect(
-            url,
-            additional_headers=[
-                ("Host", f"127.0.0.1:{PORTA}"),
-                ("X-Forwarded-Prefix", PREFIXO),
-            ],
-            max_size=8_000_000,
-        ) as up:
-            async def ida() -> None:
-                while True:
-                    msg = await ws.receive()
-                    if msg["type"] == "websocket.disconnect":
-                        break
-                    if msg.get("text") is not None:
-                        await up.send(msg["text"])
-                    elif msg.get("bytes") is not None:
-                        await up.send(msg["bytes"])
+        async def ida() -> None:
+            while True:
+                msg = await ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    return
+                if msg.get("text") is not None:
+                    await up.send(msg["text"])
+                elif msg.get("bytes") is not None:
+                    await up.send(msg["bytes"])
 
-            async def volta() -> None:
-                async for dado in up:
-                    if isinstance(dado, str):
-                        await ws.send_text(dado)
-                    else:
-                        await ws.send_bytes(dado)
+        async def volta() -> None:
+            async for dado in up:
+                if isinstance(dado, str):
+                    await ws.send_text(dado)
+                else:
+                    await ws.send_bytes(dado)
 
-            feitas = await asyncio.wait(
-                [asyncio.create_task(ida()), asyncio.create_task(volta())],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for t in feitas[1]:
-                t.cancel()
+        feitas = {asyncio.create_task(ida()), asyncio.create_task(volta())}
+        done, pending = await asyncio.wait(feitas, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        for t in done:
+            t.result() if not t.cancelled() else None
     except Exception:
         pass
     finally:
+        try:
+            await up_cm.__aexit__(None, None, None)
+        except Exception:
+            pass
         try:
             await ws.close()
         except Exception:
