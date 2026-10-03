@@ -136,7 +136,7 @@ async def _manter_acordado() -> None:
     if not url or os.environ.get("ORBE_AUTO_PING", "1") == "0":
         return
     while True:
-        await asyncio.sleep(600)
+        await asyncio.sleep(240)
         try:
             async with httpx.AsyncClient(timeout=30) as cx:
                 await cx.get(f"{url}/health")
@@ -174,11 +174,8 @@ async def _restaurar_estado_no_boot() -> None:
 async def lifespan(app: FastAPI):
     await BUS.info("iniciando Orbe…")
     await _restaurar_estado_no_boot()
-    await MANAGER.start()
-    if MANAGER.enabled:
-        await BUS.ok(f"navegador pronto (headless={_s.headless}, channel={_s.channel or 'chromium'})")
-    else:
-        await BUS.warn(f"navegador indisponível: {MANAGER.disabled_reason}")
+    # o navegador não pode segurar a primeira página; sobe por baixo
+    asyncio.create_task(MANAGER.start())
     eng = get_engine()
     await BUS.info(
         f"{len(eng.registry.specs)} plataformas instaladas, {len(STORE.accounts)} contas configuradas"
@@ -203,6 +200,14 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(state_backup.laco())
     asyncio.create_task(_manter_acordado())
+    async def _aquecer_hermes() -> None:
+        await asyncio.sleep(2)
+        try:
+            import hermes_painel
+            await hermes_painel.garantir()
+        except Exception:
+            pass
+    asyncio.create_task(_aquecer_hermes())
     if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1":
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
         await BUS.ok("colônia ligada sozinha (ORBE_COLONIA_AUTOSTART=1)")
@@ -1220,7 +1225,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.85",
+        "versao": "0.27.86",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

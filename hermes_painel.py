@@ -39,6 +39,8 @@ def instalar_skills() -> int:
     global _skills_gravadas
     import re
 
+    if _skills_gravadas:
+        return 0
     try:
         import habilidades
         itens = habilidades.pacote()
@@ -211,6 +213,10 @@ async def garantir() -> str | None:
     global _proc
     if shutil.which("hermes") is None:
         return "o Hermes não está instalado neste servidor"
+    # já no ar: não relê 507 skills nem fala com o Brevo a cada clique
+    if _proc is not None and _proc.poll() is None and _no_ar():
+        _ligar_vigia()
+        return None
     _preparar()
     try:
         import email_saida
