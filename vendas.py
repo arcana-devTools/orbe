@@ -69,8 +69,8 @@ def registrar(loja: str, valor: float, moeda: str, prova: str = "", produto_id: 
         except Exception:
             pass
     try:
-        import discord_aviso
-        discord_aviso.avisar(venda)
+        import aviso_dinheiro
+        aviso_dinheiro.avisar(venda)
     except Exception:
         pass
     return venda

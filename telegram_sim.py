@@ -120,7 +120,7 @@ def _hora_brasilia() -> int:
 
 
 async def resumo_diario(forcar: bool = False) -> bool:
-    """O dono pediu silencio. Aviso so quando entra dinheiro real, e so no Discord."""
+    """O dono pediu silencio. Aviso so quando entra dinheiro real, e so no Telegram."""
     return False
     """Única notificação do dia: no HORA_RESUMO, só se houver produto aprovado pelo crítico
     que o dono ainda não viu. Sem produto → silêncio total."""

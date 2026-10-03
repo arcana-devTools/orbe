@@ -84,7 +84,7 @@ class Autopilot:
     def should_run(self, now: datetime | None = None) -> bool:
         now = now or datetime.now()
         c = self.cfg
-        return False  # dono: aviso so de dinheiro real, no Discord
+        return False  # dono: sem digest. Aviso so de dinheiro real, no Telegram
 
     # -------------------------------------------------- telegram
     async def send_telegram(self, text: str) -> bool:
