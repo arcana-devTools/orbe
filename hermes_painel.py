@@ -82,27 +82,126 @@ def _idioma() -> None:
         alma.write_text("Responda em português.\n", encoding="utf-8")
 
 
-def _preparar() -> None:
-    HOME.mkdir(parents=True, exist_ok=True)
-    (HOME / "logs").mkdir(parents=True, exist_ok=True)
-    instalar_skills()
-    _idioma()
-    groq = os.environ.get("ORBE_GROQ_API_KEY", "").strip()
-    if not groq:
+def _chave(*nomes: str) -> str:
+    for nome in nomes:
+        valor = os.environ.get(nome, "").strip()
+        if valor:
+            return valor
+    return ""
+
+
+def _gravar_env(nome: str, valor: str) -> None:
+    if not valor:
         return
     envp = HOME / ".env"
     texto = envp.read_text(encoding="utf-8") if envp.exists() else ""
-    if "GROQ_API_KEY=" in texto:
+    linhas = []
+    achei = False
+    for ln in texto.splitlines():
+        if ln.startswith(nome + "="):
+            linhas.append(f"{nome}={valor}")
+            achei = True
+        else:
+            linhas.append(ln)
+    if not achei:
+        if linhas and linhas[-1] != "":
+            pass
+        linhas.append(f"{nome}={valor}")
+    envp.write_text("\n".join(linhas).rstrip() + "\n", encoding="utf-8")
+
+
+def _modelos_chat() -> None:
+    """O chat não pode ficar sem modelo nem morrer na primeira cota."""
+    groq = _chave("ORBE_GROQ_API_KEY", "GROQ_API_KEY")
+    router = _chave("ORBE_OPENROUTER_API_KEY", "OPENROUTER_API_KEY")
+    mini = _chave("ORBE_MINIMAX_API_KEY", "MINIMAX_API_KEY")
+    _gravar_env("GROQ_API_KEY", groq)
+    _gravar_env("OPENROUTER_API_KEY", router)
+    _gravar_env("MINIMAX_API_KEY", mini)
+    if not (groq or router or mini):
         return
-    with envp.open("a", encoding="utf-8") as f:
-        if texto and not texto.endswith("\n"):
-            f.write("\n")
-        f.write(f"GROQ_API_KEY={groq}\n")
+    try:
+        import yaml
+    except Exception:
+        return
+    cfg_path = HOME / "config.yaml"
+    cfg = {}
+    if cfg_path.exists():
+        try:
+            carregado = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(carregado, dict):
+                cfg = carregado
+        except Exception:
+            cfg = {}
+    provedores = cfg.get("providers") if isinstance(cfg.get("providers"), dict) else {}
+    cadeia = []
+    if groq:
+        provedores["groq"] = {
+            "name": "Groq",
+            "base_url": "https://api.groq.com/openai/v1",
+            "key_env": "GROQ_API_KEY",
+            "transport": "openai_chat",
+        }
+        cfg["model"] = {
+            "provider": "groq",
+            "default": "openai/gpt-oss-120b",
+            "base_url": "https://api.groq.com/openai/v1",
+        }
+        for modelo in ("qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-safeguard-20b"):
+            cadeia.append({"provider": "groq", "model": modelo})
+    if router:
+        provedores["openrouter"] = {
+            "name": "OpenRouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "key_env": "OPENROUTER_API_KEY",
+            "transport": "openai_chat",
+        }
+        for modelo in (
+            "openai/gpt-oss-120b:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen3-235b-a22b:free",
+        ):
+            cadeia.append({"provider": "openrouter", "model": modelo})
+        if not groq:
+            cfg["model"] = {
+                "provider": "openrouter",
+                "default": "openai/gpt-oss-120b:free",
+                "base_url": "https://openrouter.ai/api/v1",
+            }
+    if mini:
+        provedores["minimax"] = {
+            "name": "MiniMax",
+            "base_url": "https://api.minimax.io/v1",
+            "key_env": "MINIMAX_API_KEY",
+            "transport": "openai_chat",
+        }
+        cadeia.append({"provider": "minimax", "model": "MiniMax-M2.5"})
+        if not groq and not router:
+            cfg["model"] = {
+                "provider": "minimax",
+                "default": "MiniMax-M2.5",
+                "base_url": "https://api.minimax.io/v1",
+            }
+    cfg["providers"] = provedores
+    if cadeia:
+        cfg["fallback_providers"] = cadeia
+    tela = cfg.get("display") if isinstance(cfg.get("display"), dict) else {}
+    tela["language"] = "pt"
+    cfg["display"] = tela
+    cfg_path.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
     try:
         import state_backup
         state_backup.sujo()
     except Exception:
         pass
+
+
+def _preparar() -> None:
+    HOME.mkdir(parents=True, exist_ok=True)
+    (HOME / "logs").mkdir(parents=True, exist_ok=True)
+    instalar_skills()
+    _idioma()
+    _modelos_chat()
 
 
 def _no_ar() -> bool:
