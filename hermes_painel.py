@@ -7,6 +7,7 @@ resto são os dele. Cada perfil guarda o seu bot. O token do Orbe não entra.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import signal
@@ -121,6 +122,13 @@ def _env_hermes() -> dict[str, str]:
     env = os.environ.copy()
     env["HERMES_HOME"] = str(HOME)
     env["HERMES_LANGUAGE"] = "pt"
+    # o token da página não pode mudar a cada reinício, senão o chat fica
+    # reconectando com a sessão velha e o Hermes recusa
+    senha = os.environ.get("ORBE_PANEL_PASSWORD", "").strip()
+    if senha:
+        env["HERMES_DASHBOARD_SESSION_TOKEN"] = hashlib.sha256(
+            ("hermes-sessao:" + senha).encode()
+        ).hexdigest()
     # a página de arquivos não passeia em /root — isso o Cloudflare trata como ataque
     env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
     env.pop("ORBE_TG_TOKEN", None)
@@ -319,7 +327,15 @@ async def encaminhar(request: Request, caminho: str) -> Response:
         texto = texto.replace(
             "<head>",
             "<head><script>try{var k='hermes-locale';var c=localStorage.getItem(k);"
-            "if(!c||c==='en')localStorage.setItem(k,'pt')}catch(e){}</script>",
+            "if(!c||c==='en')localStorage.setItem(k,'pt')}catch(e){}</script>"
+            "<script>(function(){var N=window.WebSocket;if(!N||N.__orbe)return;"
+            "function W(u,p){var s=p?new N(u,p):new N(u);"
+            "s.addEventListener('open',function(){try{sessionStorage.removeItem('orbe-hermes-reload')}catch(e){}});"
+            "s.addEventListener('close',function(e){if(e.code!==4401&&e.code!==1006)return;"
+            "try{if(sessionStorage.getItem('orbe-hermes-reload'))return;"
+            "sessionStorage.setItem('orbe-hermes-reload','1')}catch(x){return}location.reload()});"
+            "return s}W.prototype=N.prototype;W.CONNECTING=N.CONNECTING;W.OPEN=N.OPEN;"
+            "W.CLOSING=N.CLOSING;W.CLOSED=N.CLOSED;W.__orbe=1;window.WebSocket=W})();</script>",
             1,
         )
         corpo = texto.encode("utf-8")
