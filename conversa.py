@@ -75,23 +75,79 @@ def lista() -> dict[str, Any]:
     return {"msgs": d["msgs"]}
 
 
-async def _voz(quem: str, texto: str) -> str:
+async def _voz_rapida(para: str, texto: str) -> list[tuple[str, str]]:
+    """Uma chamada só, no modelo que já responde. Não espera a fila inteira."""
+    import httpx
     import llm_pool
 
-    if quem == "hermes":
+    if para == "hermes":
         sistema = (
-            "Você é o Hermes, as mãos da colônia. Português, frases curtas. "
-            "Responda ao dono. Não peça para ele fazer o passo. Não invente dinheiro. "
-            "Não repita senha, chave ou token."
+            "Você é o Hermes. Português, uma frase curta. "
+            "Responda ao dono. Não peça passo. Não invente dinheiro."
+        )
+    elif para == "orbe":
+        sistema = (
+            "Você é o Orbe. Português, uma frase curta. "
+            "Responda ao dono. Não peça passo. Não invente dinheiro. Não conte o método."
         )
     else:
         sistema = (
-            "Você é o Orbe, a colônia. Português, frases curtas. "
-            "Responda ao dono. O Hermes é a outra mão. Não peça para ele fazer o passo. "
-            "Não invente dinheiro. Não repita senha, chave ou token. Não conte o método."
+            "Você é a caixa. Duas linhas, português, curtas. "
+            "Linha 1 começa com Orbe: . Linha 2 começa com Hermes: . "
+            "Não peça passo. Não invente dinheiro. Não conte o método."
         )
-    txt, _origem = await llm_pool.chat(sistema, texto[:2000], max_tokens=220, temperature=0.4)
-    return _sem_segredo((txt or "").strip()) or "Estou aqui."
+    chave = llm_pool._chave("groq")
+    txt = ""
+    if chave:
+        try:
+            async with httpx.AsyncClient(timeout=8) as cx:
+                bruto, _motivo = await llm_pool._uma_chamada(
+                    cx, "groq", "qwen/qwen3.8-27b", sistema, texto[:800], 80, 0.3, False
+                )
+                txt = (bruto or "").strip()
+        except Exception:
+            txt = ""
+    if not txt:
+        try:
+            import asyncio
+            txt, _origem, _erros = await asyncio.wait_for(
+                llm_pool._reservas(sistema, texto[:800], 80, 0.3), 8
+            )
+        except Exception:
+            txt = ""
+    txt = _sem_segredo(txt)
+    if para == "os dois":
+        orbe, hermes = "Estou aqui.", "Recebi."
+        for linha in txt.splitlines():
+            s = linha.strip()
+            baixo = s.lower()
+            if baixo.startswith("orbe:"):
+                orbe = s.split(":", 1)[1].strip() or orbe
+            elif baixo.startswith("hermes:"):
+                hermes = s.split(":", 1)[1].strip() or hermes
+        if txt and orbe == "Estou aqui." and "hermes:" not in txt.lower():
+            orbe = txt
+        return [("orbe", orbe), ("hermes", hermes)]
+    quem = "hermes" if para == "hermes" else "orbe"
+    return [(quem, txt or "Estou aqui.")]
+
+
+def _sair_hermes(texto: str) -> None:
+    try:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+
+        async def _vai() -> None:
+            try:
+                import hermes
+                await hermes.pedir("Mensagem do dono na caixa: " + texto[:1500])
+            except Exception:
+                pass
+
+        loop.create_task(_vai())
+    except Exception:
+        pass
 
 
 async def enviar(para: str, texto: str) -> dict[str, Any]:
@@ -101,36 +157,15 @@ async def enviar(para: str, texto: str) -> dict[str, Any]:
     para = para if para in ("orbe", "hermes", "os dois") else "os dois"
     d = _ler()
     _ingerir_hermes(d)
-    agora = time.time()
-    d["msgs"].append({"ts": agora, "de": "dono", "texto": texto, "para": para})
-    novos: list[dict[str, Any]] = []
-    if para in ("orbe", "os dois"):
-        try:
-            fala = await _voz("orbe", texto)
-        except Exception:
-            fala = "A cabeça apertou. Manda de novo daqui a pouco."
-        item = {"ts": time.time(), "de": "orbe", "texto": fala}
-        d["msgs"].append(item)
-        novos.append(item)
-    if para in ("hermes", "os dois"):
-        try:
-            fala = await _voz("hermes", texto)
-        except Exception:
-            fala = "Recebi. A voz apertou, mas eu sigo."
-        item = {"ts": time.time(), "de": "hermes", "texto": fala}
-        d["msgs"].append(item)
-        novos.append(item)
-        try:
-            import hermes
-
-            h = await hermes.pedir("Mensagem do dono na caixa: " + texto[:1500])
-            if not h.get("ok"):
-                aviso = {"ts": time.time(), "de": "hermes", "texto": "Não consegui sair agora."}
-                d["msgs"].append(aviso)
-                novos.append(aviso)
-        except Exception:
-            aviso = {"ts": time.time(), "de": "hermes", "texto": "Não consegui sair agora."}
-            d["msgs"].append(aviso)
-            novos.append(aviso)
+    d["msgs"].append({"ts": time.time(), "de": "dono", "texto": texto, "para": para})
     _salvar(d)
-    return {"ok": True, "msgs": d["msgs"], "novos": novos}
+    try:
+        falas = await _voz_rapida(para, texto)
+    except Exception:
+        falas = [("orbe", "Estou aqui.")]
+    for quem, fala in falas:
+        d["msgs"].append({"ts": time.time(), "de": quem, "texto": fala or "Estou aqui."})
+    _salvar(d)
+    if para in ("hermes", "os dois"):
+        _sair_hermes(texto)
+    return {"ok": True, "msgs": d["msgs"]}

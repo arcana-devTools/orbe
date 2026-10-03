@@ -221,11 +221,18 @@ async function ler() {
   desenhar(d.msgs || []);
 }
 
+function mostrando() {
+  try { return JSON.parse(visto || "[]"); } catch (e) { return []; }
+}
+
 document.getElementById("form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const t = texto.value.trim();
   if (!t) return;
   erro.textContent = "";
+  texto.value = "";
+  const agora = mostrando().concat([{ de: "dono", texto: t }, { de: "orbe", texto: "…" }]);
+  desenhar(agora);
   enviar.disabled = true;
   try {
     const r = await fetch("/api/conversa", {
@@ -235,10 +242,11 @@ document.getElementById("form").addEventListener("submit", async (ev) => {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) throw new Error("envio");
-    texto.value = "";
+    visto = "";
     desenhar(d.msgs || []);
   } catch (e) {
     erro.textContent = "Não chegou. Tente de novo.";
+    setTimeout(() => { ler().catch(() => {}); }, 1500);
   } finally {
     enviar.disabled = false;
     texto.focus();
@@ -253,7 +261,7 @@ texto.addEventListener("keydown", (ev) => {
 });
 
 ler().catch(() => { erro.textContent = "A caixa ainda não abriu."; });
-setInterval(() => { ler().catch(() => {}); }, 12000);
+setInterval(() => { ler().catch(() => {}); }, 2500);
 </script>
 </body>
 </html>
