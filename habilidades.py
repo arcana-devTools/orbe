@@ -143,9 +143,12 @@ async def aprender_material(acao: str, porque: str, material: str) -> str | None
         "Escreva: (1) quando eu uso, (2) os passos que eu sigo, (3) como sei que deu certo, "
         "(4) o que pode dar errado. Nada de introdução."
     )
-    txt, _motor = await llm_pool.chat(sistema, user, max_tokens=900, temperature=0.3)
+    try:
+        txt, _motor = await llm_pool.chat(sistema, user, max_tokens=400, temperature=0.3)
+    except Exception:
+        txt = ""
     if not txt or len(txt) < 40:
-        return None
+        txt = "Vi isto. A cota apertou e não reescrevi.\n\n" + material[:3500]
     salvo = salvar(acao, txt)
     try:
         import conciencia
