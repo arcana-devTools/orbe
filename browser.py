@@ -115,8 +115,8 @@ class BrowserManager:
         self._contexts: dict[str, BrowserContext] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
-        self.enabled = True
-        self.disabled_reason = ""
+        self.enabled = False
+        self.disabled_reason = "sobe quando uma tarefa pedir"
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:

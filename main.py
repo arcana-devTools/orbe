@@ -61,10 +61,6 @@ async def _memory_watchdog() -> None:
     while True:
         await asyncio.sleep(60)
         try:
-            if not MANAGER.enabled:  # OOM matou o Chrome? ressuscita
-                await MANAGER.ensure_alive()
-                if MANAGER.enabled:
-                    await BUS.ok("navegador ressuscitado após queda")
             running = any(
                 getattr(getattr(t, "status", ""), "value", t.status) in ("queued", "running")
                 for t in STORE.tasks.values()
@@ -104,7 +100,7 @@ def _fail_stale_running_tasks() -> None:
 async def _restore_logins_on_boot() -> None:
     """Se o container reiniciou (Render), baixa de volta os logins do GitHub."""
     tok = STORE.prefs.get("backup_token", "")
-    if not tok or not MANAGER.enabled:
+    if not tok:
         return
     await asyncio.sleep(3)
     from profile_backup import restore_profile
@@ -179,8 +175,7 @@ async def lifespan(app: FastAPI):
         mao.esvaziar_pendentes()
     except Exception:
         pass
-    # o navegador não pode segurar a primeira página; sobe por baixo
-    asyncio.create_task(MANAGER.start())
+    # o Chrome não sobe no boot: 512 MB não cabem Chrome e o chat do Hermes juntos
     eng = get_engine()
     await BUS.info(
         f"{len(eng.registry.specs)} plataformas instaladas, {len(STORE.accounts)} contas configuradas"
@@ -1230,7 +1225,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.90",
+        "versao": "0.27.91",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
