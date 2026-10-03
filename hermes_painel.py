@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -27,6 +28,7 @@ _HOP = {
 _proc: subprocess.Popen | None = None
 _gw: subprocess.Popen | None = None
 _trava = asyncio.Lock()
+_vigia: asyncio.Task | None = None
 
 
 _skills_gravadas = False
@@ -125,31 +127,74 @@ def _env_hermes() -> dict[str, str]:
 
 
 def _subir_gateway() -> int:
-    """No Render não há systemd. O botão do painel chama `gateway restart` e falha."""
+    """No Render não há systemd. `gateway restart` espera um serviço que não existe."""
     global _gw
     if _gw is not None and _gw.poll() is None:
         return _gw.pid
     log = open(HOME / "logs" / "gateway.log", "ab")
+    # sessão própria: o sinal de parar o gateway não pode pegar o site
     _gw = subprocess.Popen(
         ["hermes", "gateway", "run"],
         env=_env_hermes(),
         cwd=str(HOME),
         stdout=log,
         stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     return _gw.pid
 
 
-def reiniciar_gateway() -> int:
+def _matar_gateway() -> None:
     global _gw
-    if _gw is not None and _gw.poll() is None:
-        _gw.terminate()
+    proc = _gw
+    if proc is None or proc.poll() is not None:
+        _gw = None
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except Exception:
+        proc.terminate()
+    try:
+        proc.wait(timeout=6)
+    except Exception:
         try:
-            _gw.wait(timeout=8)
+            os.killpg(proc.pid, signal.SIGKILL)
         except Exception:
-            _gw.kill()
+            proc.kill()
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            pass
     _gw = None
-    return _subir_gateway()
+
+
+async def reiniciar_gateway() -> int:
+    # fora do event loop: esperar o processo morrer não pode travar o site
+    await asyncio.to_thread(_matar_gateway)
+    return await asyncio.to_thread(_subir_gateway)
+
+
+async def _vigiar_gateway() -> None:
+    """Se o gateway cair, sobe de novo. Sem isso o teste de e-mail volta a falhar."""
+    while True:
+        await asyncio.sleep(20)
+        try:
+            if shutil.which("hermes") is None:
+                continue
+            if _gw is None or _gw.poll() is not None:
+                await asyncio.to_thread(_subir_gateway)
+        except Exception:
+            pass
+
+
+def _ligar_vigia() -> None:
+    global _vigia
+    if _vigia is not None and not _vigia.done():
+        return
+    try:
+        _vigia = asyncio.get_running_loop().create_task(_vigiar_gateway())
+    except RuntimeError:
+        pass
 
 
 async def garantir() -> str | None:
@@ -169,6 +214,7 @@ async def garantir() -> str | None:
                 stderr=subprocess.STDOUT,
             )
         _subir_gateway()
+        _ligar_vigia()
     for _ in range(80):
         if _no_ar():
             return None
@@ -209,7 +255,7 @@ async def encaminhar(request: Request, caminho: str) -> Response:
         erro = await garantir()
         if erro:
             return HTMLResponse("<p>O gateway do Hermes não subiu.</p>", status_code=503)
-        pid = reiniciar_gateway()
+        pid = await reiniciar_gateway()
         return Response(
             content=f'{{"ok":true,"pid":{pid},"name":"gateway-restart"}}',
             media_type="application/json",
