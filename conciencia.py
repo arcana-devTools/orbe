@@ -20,7 +20,7 @@ from typing import Any
 DIARIO = Path("data/diario.jsonl")
 CORACAO = Path("data/_desktop_hb.json")
 ULTIMO = Path("data/_conciencia.json")
-GAP = 20 * 60          # um ciclo a cada 20 min
+GAP = 90
 
 
 # ------------------------------------------------------------------ percepção

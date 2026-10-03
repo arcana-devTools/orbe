@@ -31,7 +31,7 @@ BUSCAS = ["/jobs?language=pt&category=writing-translation",
 ESTADO = Path("data/workana_estado.json")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/140.0.0.0 Safari/537.36")
-GAP_BUSCA_S = 3 * 3600          # 8 buscas/dia: vaga nova tem menos concorrência, ainda é pouco acesso
+GAP_BUSCA_S = 15 * 60
 MAX_PROPOSTAS_DIA = 3
 
 _FORA = re.compile(

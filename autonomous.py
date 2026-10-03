@@ -260,8 +260,8 @@ class Swarm:
         finally:
             self._expedindo = False
 
-    GAP_EXPEDICAO_API_S = 300      # 1 entrega/5 min = 288/dia (Groq grátis: 1000 pedidos/dia)
-    GAP_RADAR_API_S = 6 * 3600     # batedor por API: 4×/dia
+    GAP_EXPEDICAO_API_S = 90
+    GAP_RADAR_API_S = 15 * 60
 
     def _escolher_gig(self, cat: list[dict]) -> dict:
         """Missões aprovadas pelo dono (✅ no Telegram) têm prioridade: 70%."""
@@ -334,7 +334,7 @@ class Swarm:
             mercado.marcar(brief["id"], "rascunho_pronto", rascunho=arq.name)
         self.log(f"💼 {a.id} entregou “{gig['nome']}” ({tema}) via {motor} → +${preco:.2f} (crédito simulado)")
 
-    GAP_PESQUISA_S = 3 * 3600
+    GAP_PESQUISA_S = 15 * 60
 
     async def _pesquisa_mercado(self) -> None:
         """🔎 Sem brief bom na fila → pesquisa na web o que JÁ vende num nicho."""
@@ -612,7 +612,7 @@ class Swarm:
                 await self._rotina_diaria()
             if self.ciclos % 10 == 5:
                 await self._freelas()
-            if self.ciclos % 20 == 2:
+            if self.ciclos % 5 == 2:
                 try:
                     import habilidades
                     await habilidades.aplicar()

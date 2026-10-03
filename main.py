@@ -1097,9 +1097,11 @@ async def index(token: str = ""):
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1" and not SWARM.running:
+        SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.50",
+        "versao": "0.27.51",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
