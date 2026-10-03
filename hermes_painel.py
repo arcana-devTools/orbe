@@ -62,10 +62,25 @@ def instalar_skills() -> int:
     return n
 
 
+def _idioma() -> None:
+    """O painel lê hermes-locale no navegador. O processo lê HERMES_LANGUAGE e o config."""
+    cfg = HOME / "config.yaml"
+    if not cfg.exists():
+        cfg.write_text("display:\n  language: pt\n", encoding="utf-8")
+    else:
+        texto = cfg.read_text(encoding="utf-8")
+        if "language:" not in texto:
+            cfg.write_text("display:\n  language: pt\n\n" + texto, encoding="utf-8")
+    alma = HOME / "SOUL.md"
+    if not alma.exists():
+        alma.write_text("Responda em português.\n", encoding="utf-8")
+
+
 def _preparar() -> None:
     HOME.mkdir(parents=True, exist_ok=True)
     (HOME / "logs").mkdir(parents=True, exist_ok=True)
     instalar_skills()
+    _idioma()
     groq = os.environ.get("ORBE_GROQ_API_KEY", "").strip()
     if not groq:
         return
@@ -109,6 +124,7 @@ async def garantir() -> str | None:
         log = open(HOME / "logs" / "painel.log", "ab")
         env = os.environ.copy()
         env["HERMES_HOME"] = str(HOME)
+        env["HERMES_LANGUAGE"] = "pt"
         # a página de arquivos não passeia em /root — isso o Cloudflare trata como ataque
         env["HERMES_DASHBOARD_FILES_ROOT"] = str(HOME)
         env.pop("ORBE_TG_TOKEN", None)
@@ -184,7 +200,19 @@ async def encaminhar(request: Request, caminho: str) -> Response:
         chave = next(k for k in saida if k.lower() == "location")
         saida[chave] = _destino(saida[chave])
     _sujar("/" + alvo, request.method, r.status_code)
-    return Response(content=r.content, status_code=r.status_code, headers=saida)
+    tipo = r.headers.get("content-type", "")
+    corpo = r.content
+    if "text/html" in tipo:
+        texto = corpo.decode("utf-8", "replace")
+        texto = texto.replace('<html lang="en">', '<html lang="pt">', 1)
+        texto = texto.replace(
+            "<head>",
+            "<head><script>try{var k='hermes-locale';var c=localStorage.getItem(k);"
+            "if(!c||c==='en')localStorage.setItem(k,'pt')}catch(e){}</script>",
+            1,
+        )
+        corpo = texto.encode("utf-8")
+    return Response(content=corpo, status_code=r.status_code, headers=saida)
 
 
 async def ponte(ws: WebSocket, caminho: str) -> None:
