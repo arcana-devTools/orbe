@@ -244,15 +244,17 @@ async def pesquisar() -> dict:
         "Renda real nas plataformas que uma pessoa já logada alcança hoje.",
     )
     blocos = []
+    erros = []
     for pergunta in perguntas:
         try:
             txt, _motor = await llm_pool.chat(sistema, pergunta, max_tokens=700, temperature=0.4, web=True)
-        except Exception:
+        except Exception as exc:
+            erros.append(str(exc)[:180])
             txt = ""
         if txt and len(txt) > 40:
             blocos.append(txt.strip())
     if not blocos:
-        return {"ok": False, "motivo": "pesquisa vazia"}
+        return {"ok": False, "motivo": (erros[0] if erros else "pesquisa vazia")[:300]}
     salvar("renda pesquisada", "\n\n".join(blocos)[:8000])
     try:
         import conciencia

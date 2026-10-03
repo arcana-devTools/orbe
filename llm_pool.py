@@ -175,6 +175,50 @@ async def _uma_chamada(cx: httpx.AsyncClient, prov: str, modelo: str, system: st
     return "", "429"
 
 
+async def buscar_publico(consulta: str) -> str:
+    """Busca pública. Não depende da cota do Groq."""
+    import re
+
+    q = (consulta or "").strip()[:180]
+    if not q:
+        return ""
+    trechos: list[str] = []
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; Orbe/1.0)"}
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as cx:
+        try:
+            r = await cx.get("https://html.duckduckgo.com/html/", params={"q": q})
+            if r.status_code == 200:
+                for titulo, snip in re.findall(
+                    r'class="result__a"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</',
+                    r.text,
+                    re.S,
+                ):
+                    limpo = re.sub(r"<[^>]+>", " ", f"{titulo}: {snip}")
+                    limpo = re.sub(r"\s+", " ", limpo).strip()
+                    if len(limpo) > 20:
+                        trechos.append(limpo[:300])
+                    if len(trechos) >= 6:
+                        break
+        except Exception:
+            pass
+        if not trechos:
+            try:
+                r = await cx.get(
+                    "https://pt.wikipedia.org/w/api.php",
+                    params={"action": "opensearch", "search": q, "limit": 5, "format": "json"},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    nomes = data[1] if len(data) > 1 else []
+                    desc = data[2] if len(data) > 2 else []
+                    for i, nome in enumerate(nomes):
+                        extra = desc[i] if i < len(desc) else ""
+                        trechos.append(f"{nome}: {extra}"[:300])
+            except Exception:
+                pass
+    return "\n".join(trechos)[:2500]
+
+
 async def chat(system: str, user: str, max_tokens: int = 3500,
                temperature: float = 0.7, web: bool = False) -> tuple[str, str]:
     """Devolve (texto, "provedor:modelo"). Levanta RuntimeError se nenhum respondeu.
@@ -212,6 +256,17 @@ async def chat(system: str, user: str, max_tokens: int = 3500,
                 erros.append(f"{prov}/{modelo}: {motivo}")
                 if motivo == "chave":
                     break
+    if web:
+        trechos = await buscar_publico(user)
+        if trechos:
+            return await chat(
+                system,
+                user + "\n\nTrechos públicos:\n" + trechos,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                web=False,
+            )
+        erros.append("busca pública vazia")
     raise RuntimeError("; ".join(erros) or ("pesquisa web precisa da chave Groq" if web
                                              else "nenhuma chave de IA configurada"))
 
