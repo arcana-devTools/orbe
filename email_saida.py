@@ -20,6 +20,7 @@ HOME = Path(os.environ.get("ORBE_HERMES_HOME", "data/hermes")).resolve()
 PORTA = 1587
 HOST = "127.0.0.1"
 _CHAVE = HOME / "saida.key"
+_LOGIN = HOME / "saida.login"
 _CERT = HOME / "saida"
 _trava = threading.Lock()
 _servidor: socket.socket | None = None
@@ -33,8 +34,20 @@ def tem_chave() -> bool:
     return bool(_ler_chave())
 
 
+def tem_login() -> bool:
+    return bool(_ler_login())
+
+
+def eh_smtp() -> bool:
+    return _ler_chave().lower().startswith("xsmtpsib-")
+
+
 def pronta() -> bool:
-    return tem_chave() and remetente_confirmado()
+    if not tem_chave():
+        return False
+    if eh_smtp():
+        return tem_login() and smtp_aceito()
+    return remetente_confirmado()
 
 
 def _ler_chave() -> str:
@@ -66,22 +79,45 @@ def _gmail() -> str:
     return ""
 
 
+def _ler_login() -> str:
+    try:
+        return _LOGIN.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def salvar_login(valor: str) -> str:
+    valor = (valor or "").strip()
+    if "@" not in valor or any(c.isspace() for c in valor) or len(valor) > 120:
+        return "o login não é o que aparece em Suas configurações SMTP"
+    HOME.mkdir(parents=True, exist_ok=True)
+    _LOGIN.write_text(valor + "\n", encoding="utf-8")
+    try:
+        os.chmod(_LOGIN, 0o600)
+    except Exception:
+        pass
+    global _smtp_ate
+    _smtp_ate = 0.0
+    return ""
+
+
 def salvar_chave(valor: str) -> str:
     """Grava a chave. Devolve o erro, ou vazio se aceitou."""
     valor = (valor or "").strip()
     if len(valor) < 20 or any(c.isspace() for c in valor):
         return "a chave não veio inteira"
-    if valor.lower().startswith("xsmtpsib-"):
-        return "essa é a chave de SMTP. Na mesma página do Brevo, cria a chave de API."
-    erro = _brevo_ok(valor)
-    if erro:
-        return erro
+    if not valor.lower().startswith("xsmtpsib-"):
+        erro = _brevo_ok(valor)
+        if erro:
+            return erro
     HOME.mkdir(parents=True, exist_ok=True)
     _CHAVE.write_text(valor + "\n", encoding="utf-8")
     try:
         os.chmod(_CHAVE, 0o600)
     except Exception:
         pass
+    global _smtp_ate
+    _smtp_ate = 0.0
     try:
         import state_backup
         state_backup.sujo()
@@ -109,8 +145,33 @@ def _brevo_ok(chave: str) -> str:
     return ""
 
 
-_remetente_ate = 0.0
-_remetente_ok = False
+_smtp_ate = 0.0
+_smtp_ok = False
+
+
+def smtp_aceito(forcar: bool = False) -> bool:
+    global _smtp_ate, _smtp_ok
+    import time
+
+    if not forcar and time.time() < _smtp_ate:
+        return _smtp_ok
+    ok = False
+    chave, login = _ler_chave(), _ler_login()
+    if chave and login:
+        import smtplib
+
+        try:
+            with smtplib.SMTP("smtp-relay.brevo.com", 2525, timeout=20) as s:
+                s.ehlo()
+                s.starttls()
+                s.ehlo()
+                s.login(login, chave)
+            ok = True
+        except Exception:
+            ok = False
+    _smtp_ok = ok
+    _smtp_ate = time.time() + (300 if ok else 15)
+    return ok
 
 
 def remetente_confirmado(forcar: bool = False) -> bool:
@@ -384,6 +445,8 @@ def _brevo(de: str, para: str, assunto: str, corpo: str, msg) -> tuple[bool, str
     chave = _ler_chave()
     if not chave:
         return False, "falta a chave"
+    if eh_smtp():
+        return _brevo_smtp(de, para, assunto, corpo, chave)
     import json
     import urllib.request
 
@@ -408,6 +471,30 @@ def _brevo(de: str, para: str, assunto: str, corpo: str, msg) -> tuple[bool, str
         codigo = getattr(exc, "code", None)
         if codigo == 400:
             return False, "o Brevo ainda nao confirmou esse remetente"
+        return False, "o Brevo nao aceitou a mensagem"
+
+
+def _brevo_smtp(de: str, para: str, assunto: str, corpo: str, chave: str) -> tuple[bool, str]:
+    login = _ler_login()
+    if not login:
+        return False, "falta o login"
+    import smtplib
+    from email.message import EmailMessage
+
+    mensagem = EmailMessage()
+    mensagem["From"] = de
+    mensagem["To"] = para
+    mensagem["Subject"] = assunto[:180]
+    mensagem.set_content(corpo or "(sem texto)")
+    try:
+        with smtplib.SMTP("smtp-relay.brevo.com", 2525, timeout=25) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
+            s.login(login, chave)
+            s.send_message(mensagem)
+        return True, ""
+    except Exception:
         return False, "o Brevo nao aceitou a mensagem"
 
 
@@ -480,31 +567,36 @@ def _ler_data(sock: socket.socket) -> str:
 
 
 def pagina(aviso: str = "", ok: bool = False) -> str:
-    estado = "chave salva" if tem_chave() else "ainda sem chave"
-    if tem_chave() and remetente_confirmado():
-        estado = "Gmail confirmado no Brevo. A resposta já pode sair."
+    if pronta():
+        estado = "Saída ligada. O teste do e-mail já pode passar."
+    elif tem_chave() and not tem_login():
+        estado = "Chave salva. Falta o login de Suas configurações SMTP."
     elif tem_chave():
-        estado = "chave salva. Falta confirmar o Gmail na lista de remetentes do Brevo."
-    cor = "#1f7a4d" if ok or (tem_chave() and remetente_confirmado()) else "#8a5a00"
+        estado = "Ainda não entrou no Brevo. Confere o login e se o Gmail está em Remetentes."
+    else:
+        estado = "Ainda sem chave."
+    cor = "#1f7a4d" if ok or pronta() else "#8a5a00"
     aviso_html = f"<p style='color:{cor}'>{aviso}</p>" if aviso else ""
     return f"""<!doctype html>
 <html lang="pt"><head><meta charset="utf-8"><title>Saída de e-mail</title></head>
 <body style="font:16px/1.45 system-ui,sans-serif;max-width:38rem;margin:2rem auto;padding:0 1rem;color:#1c1917">
 <h1 style="font-size:1.3rem">Saída de e-mail</h1>
-<p>O Gmail entra. A resposta não sai pela porta do Gmail neste plano. Ela sai pelo Brevo, na porta que continua aberta.</p>
+<p>Não autoriza endereço de IP no Brevo. Se autorizar, ele trava o servidor.</p>
 <p><b>{estado}</b></p>
 {aviso_html}
 <ol>
-<li>Cria a conta grátis em <a href="https://app.brevo.com">app.brevo.com</a>.</li>
-<li>Em Remetentes, adiciona o mesmo Gmail e confirma o e-mail que chegar.</li>
-<li>Em SMTP e API, cria uma chave de API. Não é a chave de SMTP.</li>
-<li>Cola aqui.</li>
+<li>Fecha o aviso de IP. Não coloca IP nenhum.</li>
+<li>Em Remetentes, o Gmail tem que estar confirmado.</li>
+<li>Em SMTP e API, copia o Login de Suas configurações SMTP. Não é o e-mail do Gmail.</li>
+<li>Cola aqui o login e a chave SMTP que apareceu uma vez só.</li>
 </ol>
 <form method="post">
-<label>Chave de API do Brevo<br>
+<label>Login do SMTP<br>
+<input name="login" autocomplete="off" style="width:100%;padding:.5rem;margin:.4rem 0 1rem">
+</label>
+<label>Chave SMTP<br>
 <input name="chave" type="password" autocomplete="off" style="width:100%;padding:.5rem;margin:.4rem 0 1rem">
 </label><br>
 <button type="submit" style="padding:.5rem 1rem">Salvar</button>
 </form>
-<p style="color:#57534e">O computador fica de reserva. Se a mão do PC for atualizada e estiver ligada, a resposta também pode sair por ele quando o Brevo falhar.</p>
 </body></html>"""

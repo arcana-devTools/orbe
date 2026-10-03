@@ -1162,12 +1162,23 @@ async def email_saida_salvar(request: Request) -> HTMLResponse:
 
     form = await request.form()
     chave = str(form.get("chave") or "")
-    erro = email_saida.salvar_chave(chave) if chave.strip() else ""
-    if erro:
-        return HTMLResponse(email_saida.pagina(erro), status_code=400)
+    login = str(form.get("login") or "")
+    if chave.strip():
+        erro = email_saida.salvar_chave(chave)
+        if erro:
+            return HTMLResponse(email_saida.pagina(erro), status_code=400)
+    if login.strip():
+        erro = email_saida.salvar_login(login)
+        if erro:
+            return HTMLResponse(email_saida.pagina(erro), status_code=400)
     if not email_saida.tem_chave():
-        return HTMLResponse(email_saida.pagina("cola a chave de API"), status_code=400)
-    if not email_saida.remetente_confirmado(forcar=True):
+        return HTMLResponse(email_saida.pagina("cola a chave SMTP"), status_code=400)
+    if email_saida.eh_smtp() and not email_saida.tem_login():
+        return HTMLResponse(email_saida.pagina("cola o login de Suas configurações SMTP"))
+    if email_saida.eh_smtp():
+        if not email_saida.smtp_aceito(forcar=True):
+            return HTMLResponse(email_saida.pagina("o Brevo não aceitou esse login com essa chave"), status_code=400)
+    elif not email_saida.remetente_confirmado(forcar=True):
         return HTMLResponse(email_saida.pagina(
             "A chave entrou. Falta confirmar o Gmail em Remetentes, no Brevo, e voltar aqui."
         ))
@@ -1209,7 +1220,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.84",
+        "versao": "0.27.85",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,
