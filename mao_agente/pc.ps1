@@ -13,9 +13,14 @@ if (-not $Token) {
   if (Test-Path $tf) { $Token = (Get-Content $tf -Raw).Trim() }
 }
 if (-not $Token) { throw "falta o token" }
-$criado = $false
-$mutex = New-Object System.Threading.Mutex($true, "OrbeMaoPc", [ref]$criado)
-if (-not $criado) { exit 0 }
+$mutex = New-Object System.Threading.Mutex($false, "OrbeMaoPc")
+$dono = $false
+try {
+  $dono = $mutex.WaitOne(8000)
+} catch [System.Threading.AbandonedMutexException] {
+  $dono = $true
+}
+if (-not $dono) { exit 0 }
 $Base = $Base.TrimEnd("/")
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing

