@@ -24,4 +24,9 @@ for ($i = 0; $i -lt 3; $i++) {
   }
   if ($vivo) { break }
 }
-Write-Output "atualizei"
+if (-not $vivo) {
+  Write-Output "nao subiu escondida, abrindo na janela"
+  powershell -NoProfile -ExecutionPolicy Bypass -File $dest
+} else {
+  Write-Output "atualizei"
+}

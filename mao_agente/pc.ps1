@@ -4,7 +4,7 @@ param(
   [string]$Base = "https://orbe-xfzn.onrender.com",
   [string]$Apelido = "pc"
 )
-$Versao = 2
+$Versao = 3
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {}
 $ProgressPreference = "SilentlyContinue"
@@ -16,8 +16,9 @@ if (-not $Token) { throw "falta o token" }
 $mutex = New-Object System.Threading.Mutex($false, "OrbeMaoPc")
 $dono = $false
 try {
-  $dono = $mutex.WaitOne(8000)
-} catch [System.Threading.AbandonedMutexException] {
+  $dono = $mutex.WaitOne(1500)
+} catch {
+  # o processo anterior morreu e deixou o cadeado. esta copia fica com ele.
   $dono = $true
 }
 if (-not $dono) { exit 0 }
