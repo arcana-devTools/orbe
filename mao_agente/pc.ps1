@@ -1,10 +1,10 @@
-# Mao do Orbe no PC Windows. Abre, clica e termina. Nao deixa pagina parada.
+﻿# Mao do Orbe no PC Windows. Abre, clica e termina. Nao deixa pagina parada.
 param(
   [string]$Token = "",
   [string]$Base = "https://orbe-xfzn.onrender.com",
   [string]$Apelido = "pc"
 )
-$Versao = 3
+$Versao = 4
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {}
 $ProgressPreference = "SilentlyContinue"
@@ -95,7 +95,6 @@ function Publicar-Uiclap {
     Start-Sleep -Seconds 1
   }
   $ok = Clicar-Nome "Publicar Orbe"
-  if (-not $ok) { $ok = Clicar-Nome "📚 Publicar Orbe" }
   if (-not $ok) {
     $p = Ponto-Tela 705 100
     Clicar-Ponto $p[0] $p[1]

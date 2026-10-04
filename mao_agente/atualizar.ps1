@@ -1,4 +1,4 @@
-# Troca a mao do PC pela versao do servidor e sobe de novo. Sem abrir pagina.
+﻿# Troca a mao do PC pela versao do servidor e sobe de novo. Sem abrir pagina.
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {}
 $ProgressPreference = "SilentlyContinue"
