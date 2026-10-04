@@ -1,4 +1,4 @@
-﻿# Mao do Orbe no PC Windows. Abre, clica e termina. Nao deixa pagina parada.
+# Mao do Orbe no PC Windows. Abre, clica e termina. Nao deixa pagina parada.
 param(
   [string]$Token = "",
   [string]$Base = "https://orbe-xfzn.onrender.com",
