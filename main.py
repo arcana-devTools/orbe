@@ -225,7 +225,8 @@ app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 # abertos na muralha de senha: cada um se autentica do seu jeito (chave própria)
 _ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades", "/api/habilidades/aplicar", "/api/habilidades/pacote",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
-             "/mao/instalar-pc.ps1", "/mao/orbe-mao.apk"}
+             "/mao/instalar-pc.ps1", "/mao/atualizar.ps1", "/mao/versao.txt", "/mao/orbe-mao.apk",
+             "/vitrine"}
 
 
 @app.middleware("http")
@@ -748,6 +749,51 @@ async def mao_pc_ps1() -> FileResponse:
                         headers={"Cache-Control": "no-store"})
 
 
+@app.get("/mao/atualizar.ps1")
+async def mao_atualizar_ps1() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "atualizar.ps1", media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/mao/versao.txt")
+async def mao_versao_txt() -> FileResponse:
+    return FileResponse(ROOT / "mao_agente" / "versao.txt", media_type="text/plain; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/vitrine", include_in_schema=False)
+async def vitrine() -> HTMLResponse:
+    """Site público dos livros já publicados. Sem senha e sem dado interno."""
+    import html
+    import uiclap
+
+    livros = []
+    for k in uiclap.kits():
+        if k.get("teste") or k.get("status") != "publicado":
+            continue
+        info = k.get("info") if isinstance(k.get("info"), dict) else {}
+        titulo = str(info.get("titulo") or k.get("titulo") or "").strip()
+        if titulo:
+            livros.append(html.escape(titulo))
+    itens = "".join(f"<li>{t}</li>" for t in livros) or "<li>Nenhum livro publicado ainda.</li>"
+    pagina = f"""<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orbe — livros</title>
+<style>
+body{{margin:0;font:18px/1.45 Georgia,serif;background:#f6f1e7;color:#1c1915}}
+main{{max-width:40rem;margin:0 auto;padding:2.5rem 1.2rem}}
+h1{{font-size:2rem;margin:0 0 .4rem}}
+p{{color:#5c5348}}
+ul{{padding-left:1.2rem}}
+li{{margin:.6rem 0}}
+</style></head><body><main>
+<h1>Livros da casa</h1>
+<p>Publicados no UICLAP. O dinheiro só conta quando alguém compra.</p>
+<ul>{itens}</ul>
+</main></body></html>"""
+    return HTMLResponse(pagina, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/mao/instalar-pc.ps1")
 async def mao_instalar_pc() -> FileResponse:
     return FileResponse(ROOT / "mao_agente" / "instalar-pc.ps1", media_type="text/plain; charset=utf-8",
@@ -1252,7 +1298,7 @@ async def health() -> dict[str, Any]:
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
     return {
         "ok": True,
-        "versao": "0.27.94",
+        "versao": "0.27.95",
         "browser": MANAGER.enabled,
         "browser_error": MANAGER.disabled_reason,
         "headless": _s.headless,

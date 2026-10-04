@@ -81,10 +81,12 @@ def perceber() -> dict[str, Any]:
             p["aprovados_sem_kit"] = sum(
                 1 for m in metas if m.get("status") == "aprovado" and str(m.get("id")) not in prontos
             and str(m.get("titulo", "")).strip().lower() not in titulos)
+            p["kits_prontos"] = sum(1 for k in ks if k.get("status") == "pronto" and not k.get("teste"))
         except Exception:
             p["aprovados_sem_kit"] = 0
+            p["kits_prontos"] = 0
     except Exception:
-        p.update(produtos=0, aguardando_dono=0, aguardando_sem_aviso=0, aprovados=0, reprovados=0, aprovados_sem_kit=0)
+        p.update(produtos=0, aguardando_dono=0, aguardando_sem_aviso=0, aprovados=0, reprovados=0, aprovados_sem_kit=0, kits_prontos=0)
     # pesquisa de mercado
     try:
         import mercado
@@ -139,6 +141,12 @@ def perceber() -> dict[str, Any]:
         p["habilidades_txt"] = ""
     p["humano_aqui"] = humano_no_desktop()
     try:
+        import mao
+
+        p["pc_online"] = mao.online("pc")
+    except Exception:
+        p["pc_online"] = False
+    try:
         dicas = Path("dicas_canais.md").read_text(encoding="utf-8")
         p["dicas_canais"] = dicas[:1800]
     except Exception:
@@ -180,6 +188,8 @@ def decidir(p: dict[str, Any]) -> dict[str, Any]:
         return d("configurar_webhook", "Kiwify conectada sem webhook: registrar o aviso de venda")
     if p.get("aprovados_sem_kit", 0) > 0:
         return d("embalar", f"{p['aprovados_sem_kit']} produto(s) aprovado(s) ainda não virou livro: embalar")
+    if p.get("kits_prontos", 0) > 0 and p.get("pc_online"):
+        return d("publicar_uiclap", f"{p['kits_prontos']} livro(s) na fila: publicar no portal, sem deixar a página parada")
     sem_aviso = p.get("aguardando_sem_aviso")
     if sem_aviso is None:
         sem_aviso = p.get("aguardando_dono", 0)
@@ -240,6 +250,29 @@ async def agir(dec: dict[str, Any]) -> dict[str, Any]:
 
             r = await kiwify_painel.criar_api_key()
             return {"feito": bool(r.get("ok")), "resumo": r.get("motivo") or "API Key criada e guardada no cofre"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "publicar_uiclap":
+        try:
+            import mao
+
+            if not mao.online("pc"):
+                return {"feito": False, "resumo": "PC offline — não abro o portal para ficar parado"}
+            if mao.estado().get("fila"):
+                return {"feito": False, "resumo": "a mão já tem ordem, não abro outra página"}
+            mao.pedir("pc", "publicar", origem="conciencia")
+            return {"feito": True, "resumo": "a mão abre o UICLAP, clica em Publicar Orbe e fecha o aviso"}
+        except Exception as exc:
+            return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if acao == "criar_canal":
+        try:
+            import mao
+
+            qual = str(dec.get("alvo") or "youtube")
+            if not mao.online("pc"):
+                return {"feito": False, "resumo": "PC offline — canal fica para quando a tela estiver ligada"}
+            mao.pedir("pc", "criar", qual, origem="conciencia")
+            return {"feito": True, "resumo": f"comecei {qual}. Paro em senha, captcha ou termo."}
         except Exception as exc:
             return {"feito": False, "resumo": f"{type(exc).__name__}: {str(exc)[:120]}"}
     if acao == "embalar":

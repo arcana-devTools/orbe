@@ -21,7 +21,7 @@ from typing import Any
 FILA = Path("data/mao.json")
 PRINTS = Path("data/mao_prints")
 APARELHOS = ("celular", "pc")
-ACOES = ("abrir_url", "abrir_app", "print", "clicar", "digitar", "tecla")
+ACOES = ("abrir_url", "abrir_app", "print", "clicar", "digitar", "tecla", "publicar", "criar")
 TECLAS = ("enter", "tab", "esc", "backspace", "space", "up", "down", "left", "right")
 ONLINE_S = 40
 EXPIRA_S = 15 * 60
@@ -148,8 +148,13 @@ def _alvo_limpo(acao: str, alvo: str) -> str:
         if t not in TECLAS:
             raise ValueError("tecla não permitida")
         return t
-    if acao == "print":
+    if acao in ("print", "publicar"):
         return ""
+    if acao == "criar":
+        nome = (alvo or "").lower().strip()
+        if nome not in ("youtube", "tiktok"):
+            raise ValueError("canal tem que ser youtube ou tiktok")
+        return nome
     if acao == "clicar":
         return alvo  # "x,y" validado em pedir
     raise ValueError("ação inválida")
