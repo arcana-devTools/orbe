@@ -1046,6 +1046,33 @@ async def ml_tela():
     return Response(await afiliados_ml.tela(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+@app.post("/api/aprovacoes")
+async def aprovar_pendentes() -> dict[str, Any]:
+    """O dono liberou o que estava esperando a decisão dele."""
+    import acabamento
+    import freelas
+    import telegram_sim
+
+    produtos = []
+    for m in acabamento._metas():
+        if m.get("status") != "aguardando_dono":
+            continue
+        texto = telegram_sim._decidir_produto(str(m.get("id") or "")[:48], True)
+        produtos.append({"id": m.get("id"), "titulo": m.get("titulo"), "resultado": texto})
+    freelas_r = []
+    for v in freelas.ler():
+        if v.get("status") != "aguardando_dono":
+            continue
+        texto = await telegram_sim._decidir_freela(str(v.get("slug") or "")[:48], True)
+        freelas_r.append({"titulo": v.get("titulo"), "resultado": str(texto)[:300]})
+    try:
+        import state_backup
+        await state_backup.salvar(forcar=True)
+    except Exception:
+        pass
+    return {"ok": True, "produtos": produtos, "freelas": freelas_r}
+
+
 @app.post("/api/produtos/agora")
 async def produto_agora() -> dict[str, Any]:
     """Dispara o acabador já (respeita os limites/dia e a fila do dono)."""
