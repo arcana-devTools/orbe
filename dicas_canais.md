@@ -1,6 +1,8 @@
-# O dono liberou em 2026-10-04
+# O dono falou em 2026-10-04
 
-Se a colônia quiser, pode criar canal no YouTube, canal no TikTok, construir um site ou programar o que precisar para gerar renda. Não é pedido para abrir a página e parar. Senha, 2FA, captcha e termo continuam com o dono. Não repostar vídeo de outra pessoa. Não baixar vídeo do YouTube. Não mandar spam. Não usar cartão.
+Não criar canal no YouTube nem no TikTok. As contas já existem. O vídeo nasce no Arena. A análise é a IA do YouTube Studio e a IA do TikTok, nas contas que ele já usa. Não abrir a página e parar. Senha, 2FA, captcha e termo continuam com o dono. Não repostar vídeo de outra pessoa. Não baixar vídeo do YouTube. Não mandar spam. Não usar cartão.
+
+Site ou código, se precisar, continuam liberados. Canal novo, não.
 
 No UICLAP, abrir o portal não é o trabalho. O trabalho é clicar em Publicar Orbe, esperar o livro subir e fechar o aviso.
 
