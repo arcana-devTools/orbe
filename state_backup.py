@@ -32,7 +32,7 @@ ARQUIVOS = ["uiclap_login.json", "autonomous.json", "autonomo_jobs.json", "renda
             "autopilot.json", "tg_offset.txt", "prefs.json", "briefs.json",
             "ml_sessao.json", "afiliados_ml.json", "vendas.json", "aprendizado.json",
             "tg_resumo.json", "workana_sessao.txt", "freelas.json", "workana_perfil.json", "workana_estado.json", "99_sessao.txt",
-            "mao.json"]
+            "mao.json", "canais_24h.json", "canais_sessoes.json"]
 MAX_RESULTADOS = 60           # últimas entregas (.md) que viajam junto
 BRANCH = "orbe-estado"
 CAMINHO = "estado/orbe-state.enc"
