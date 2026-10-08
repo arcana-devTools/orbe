@@ -1,12 +1,14 @@
-"""Oito agentes dos canais. Rodam no servidor, 24h, sem PC.
+"""Dez agentes dos canais. Rodam no servidor, 24h, sem PC.
 
 bilibili-cria / bilibili-analisa
 youtube-cria / youtube-analisa
 tiktok-cria / tiktok-analisa
 cookies-renova / cookies-vigia
+arena-acorda / telegram-informa
 
 Não imprime cookie. Não pede cookie. Não inventa view.
 Não republica peça recusada. Não edita o Short 13. Não publica sem sessão.
+Cria, publica e só julga view depois de 24h. Não copia vídeo em alta.
 """
 from __future__ import annotations
 
@@ -42,6 +44,8 @@ AGENTES = (
     "tiktok-analisa",
     "cookies-renova",
     "cookies-vigia",
+    "arena-acorda",
+    "telegram-informa",
 )
 
 
@@ -125,7 +129,7 @@ def estado_publico() -> dict:
         "vivo": doc.get("vivo") or 0,
         "sem_pc": True,
         "agentes": doc.get("agentes") or {},
-        "canais": {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies")},
+        "canais": {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao")},
     }
     return saida
 
@@ -168,6 +172,19 @@ def _bilibili_arquivo(cookie: str) -> dict:
     arc = item.get("Archive") or {}
     stat = item.get("stat") or {}
     estado = arc.get("state_desc") or ""
+    lista = []
+    for bruto in audits:
+        um = bruto.get("Archive") or {}
+        st = bruto.get("stat") or {}
+        lista.append({
+            "bvid": um.get("bvid") or "",
+            "titulo": um.get("title") or "",
+            "estado": um.get("state_desc") or "",
+            "publico": um.get("state") == 0,
+            "views": st.get("view") if "view" in st else None,
+            "likes": st.get("like") if "like" in st else None,
+            "ptime": um.get("ptime") or 0,
+        })
     return {
         "ok": True,
         "bvid": arc.get("bvid") or "",
@@ -175,10 +192,12 @@ def _bilibili_arquivo(cookie: str) -> dict:
         "titulo": arc.get("title") or "",
         "estado": estado,
         "publico": arc.get("state") == 0,
-        "views": stat.get("view") or 0,
-        "likes": stat.get("like") or 0,
+        "views": stat.get("view") if "view" in stat else None,
+        "likes": stat.get("like") if "like" in stat else None,
         "replies": stat.get("reply") or 0,
+        "ptime": arc.get("ptime") or 0,
         "mid": (arc.get("author") or {}).get("mid") or 0,
+        "lista": lista,
     }
 
 
@@ -476,13 +495,18 @@ def ciclo_bilibili_analisa() -> None:
         "quando": _agora(),
     }
     _gravar(ESTADO, doc)
+    import canais_oficio as oficio
+    juizos = [oficio.juizo(int(item.get("ptime") or 0), item.get("views")) for item in (arq.get("lista") or [])]
+    doc["bilibili"]["juizo_24h"] = juizos
+    _gravar(ESTADO, doc)
     _marcar(
         "bilibili-analisa",
-        f"views {arq.get('views')} likes {arq.get('likes')} comentarios {len(comentarios)} respostas {novos}",
+        f"views {arq.get('views')} likes {arq.get('likes')} comentarios {len(comentarios)} respostas {novos}. " + " | ".join(juizos[:3]),
     )
 
 
 def ciclo_bilibili_cria() -> None:
+    import canais_oficio as oficio
     cookie = _sessoes().get("bilibili", "")
     nav = _bilibili_nav(cookie)
     if not nav.get("ok"):
@@ -492,30 +516,69 @@ def ciclo_bilibili_cria() -> None:
     if arq.get("ok") and not arq.get("publico") and not arq.get("vazio"):
         _marcar("bilibili-cria", "uma peca ainda nao publica, nao posto outra", estado=arq.get("estado"), proxima=_agora() + CHECAGEM_S)
         return
-    _marcar("bilibili-cria", "sem peca nova pronta, nao invento post", proxima=_agora() + INSPIRA_POS_POST_S)
+    if arq.get("ptime") and _agora() - int(arq.get("ptime") or 0) < oficio.DIA:
+        _marcar("bilibili-cria", "ultima peca ainda nao fez 24h, nao posto outra", proxima=_agora() + CHECAGEM_S)
+        return
+    doc = _estado()
+    if int((doc.get("bilibili_post") or {}).get("tentativa") or 0) > _agora() - oficio.DIA:
+        _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio", proxima=_agora() + CHECAGEM_S)
+        return
+    notas = (doc.get("inspiracao") or {}).get("bilibili") or {}
+    if _agora() - int(notas.get("quando") or 0) > 8 * 3600:
+        notas = oficio.inspirar("bilibili")
+        doc = _estado()
+        doc.setdefault("inspiracao", {})["bilibili"] = notas
+        _gravar(ESTADO, doc)
+    usados = {str(item.get("titulo") or "") for item in (arq.get("lista") or [])}
+    peca = oficio.roteiro("bilibili", notas, usados)
+    destino = oficio.PECAS / "bili-proxima.mp4"
+    erro = oficio.render_mp4(destino, peca["titulo"], peca["fala"])
+    if erro:
+        _marcar("bilibili-cria", erro, proxima=_agora() + CHECAGEM_S)
+        return
+    doc = _estado()
+    doc["bilibili_post"] = {"tentativa": _agora(), "titulo": peca["titulo"]}
+    _gravar(ESTADO, doc)
+    resultado = oficio.bili_publicar(cookie, destino, peca["titulo"], peca["descricao"])
+    if resultado.get("ok"):
+        _marcar("bilibili-cria", f"publiquei {resultado.get('bvid')} {peca['titulo']}", bvid=resultado.get("bvid"))
+        return
+    _marcar("bilibili-cria", f"nao publiquei, {resultado.get('motivo')}", proxima=_agora() + oficio.DIA)
 
 
 def ciclo_youtube_analisa() -> None:
+    import canais_oficio as oficio
     cookie = _sessoes().get("youtube", "")
     pub = _youtube_publico(cookie)
     doc = _estado()
     doc["youtube"] = {**pub, "quando": _agora(), "editou_short_13": False}
     _gravar(ESTADO, doc)
     if not pub.get("ok"):
-        _marcar("youtube-analisa", "sem leitura, nao inventei numero")
+        _marcar("youtube-analisa", "sem leitura, nao inventei numero, nao julguei 24h")
         return
     _marcar(
         "youtube-analisa",
-        f"views {pub.get('views')} likes {pub.get('likes')} comentarios {pub.get('comentarios')}",
+        f"views {pub.get('views')} likes {pub.get('likes')} comentarios {pub.get('comentarios')}. sem hora de publicacao desta peca, nao julguei 24h",
     )
 
 
 def ciclo_youtube_cria() -> None:
+    import canais_oficio as oficio
+    doc = _estado()
+    pacote = ((doc.get("inspiracao") or {}).get("youtube_pacote") or {})
+    if _agora() - int(pacote.get("quando") or 0) > oficio.DIA:
+        notas = oficio.inspirar("youtube")
+        peca = oficio.roteiro("youtube", notas, set(oficio.TITULOS_BLOQUEADOS))
+        doc = _estado()
+        doc.setdefault("inspiracao", {})["youtube"] = notas
+        doc["inspiracao"]["youtube_pacote"] = {**peca, "quando": _agora(), "publicou": False}
+        _gravar(ESTADO, doc)
+        pacote = doc["inspiracao"]["youtube_pacote"]
     st, _ = _youtube(_sessoes().get("youtube", ""))
     if st != "ok":
-        _marcar("youtube-cria", "cookie morto, nao publico e nao edito o Short 13", proxima=_agora() + COOKIE_MORTO_S)
+        _marcar("youtube-cria", f"titulo pronto: {pacote.get('titulo') or 'sem titulo'}. sessao morta, nao publico, nao edito o Short 13 e nao peco cookie", proxima=_agora() + COOKIE_MORTO_S)
         return
-    _marcar("youtube-cria", "sem pacote de video titulo descricao e hora, nao publico", proxima=_agora() + INSPIRA_POS_POST_S)
+    _marcar("youtube-cria", "sessao viva, mas o envio do Studio ja foi recusado. nao publico antes de um caminho aceito", proxima=_agora() + INSPIRA_POS_POST_S)
 
 
 def ciclo_tiktok_analisa() -> None:
@@ -530,7 +593,7 @@ def ciclo_tiktok_analisa() -> None:
     if st != "ok":
         _marcar("tiktok-analisa", "sem sessao, nao invento view nem like")
         return
-    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}")
+    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. sem view por video, nao julguei 24h e nao inventei")
 
 
 def ciclo_tiktok_cria() -> None:
@@ -538,7 +601,67 @@ def ciclo_tiktok_cria() -> None:
     if st != "ok":
         _marcar("tiktok-cria", "sem sessao, nao republico e nao posto", proxima=_agora() + COOKIE_MORTO_S)
         return
-    _marcar("tiktok-cria", "nao republico o que ja foi agendado", proxima=_agora() + INSPIRA_POS_POST_S)
+    _marcar("tiktok-cria", "A LÂMPADA DA COZINHA ja foi aceita para 08/10 21:00. nao posto outra antes de 24h depois disso", proxima=_agora() + INSPIRA_POS_POST_S)
+
+
+def ciclo_arena_acorda() -> None:
+    import canais_oficio as oficio
+    hora, dia = oficio.hora_local()
+    doc = _estado()
+    mon = doc.get("monitor") or {}
+    if not (8 <= hora < 10):
+        _marcar("arena-acorda", "espera a janela das 8h, uma vez ao dia")
+        return
+    if mon.get("dia") == dia and mon.get("tentou"):
+        _marcar("arena-acorda", mon.get("resumo") or "ja tentei acordar hoje")
+        return
+    pacote = oficio.pacote(doc)
+    resultado = oficio.tentar_acordar(_sessoes().get("arena", ""), pacote)
+    ordem, motivo = oficio.em_ordem(doc, bool(resultado.get("aceitou")), bool(resultado.get("monitorei")))
+    resumo = "Arena aceitou o chamado" if resultado.get("aceitou") else f"nao acordei, {resultado.get('motivo')}"
+    doc = _estado()
+    doc["monitor"] = {
+        "dia": dia,
+        "tentou": True,
+        "acordou": bool(resultado.get("aceitou")),
+        "monitorei": bool(resultado.get("monitorei")),
+        "em_ordem": ordem,
+        "motivo": motivo,
+        "resumo": resumo,
+        "telegram": False,
+        "quando": _agora(),
+    }
+    _gravar(ESTADO, doc)
+    _marcar("arena-acorda", resumo)
+
+
+def ciclo_telegram_informa() -> None:
+    import canais_oficio as oficio
+    hora, dia = oficio.hora_local()
+    doc = _estado()
+    mon = doc.get("monitor") or {}
+    if not (8 <= hora < 10):
+        _marcar("telegram-informa", "espera a janela das 8h, uma vez ao dia")
+        return
+    if mon.get("dia") != dia or not mon.get("tentou"):
+        _marcar("telegram-informa", "ainda sem tentativa de acordar hoje")
+        return
+    if mon.get("telegram"):
+        _marcar("telegram-informa", "aviso de hoje ja foi enviado")
+        return
+    texto = oficio.texto_telegram(
+        dia,
+        bool(mon.get("acordou")),
+        bool(mon.get("monitorei")),
+        bool(mon.get("em_ordem")),
+        str(mon.get("motivo") or ""),
+        doc,
+    )
+    ok = oficio.informar(texto)
+    doc = _estado()
+    doc["monitor"]["telegram"] = ok
+    _gravar(ESTADO, doc)
+    _marcar("telegram-informa", "avisei no Telegram" if ok else "nao consegui avisar no Telegram")
 
 
 CICLOS = (
@@ -550,6 +673,8 @@ CICLOS = (
     ("youtube-cria", ciclo_youtube_cria),
     ("tiktok-analisa", ciclo_tiktok_analisa),
     ("tiktok-cria", ciclo_tiktok_cria),
+    ("arena-acorda", ciclo_arena_acorda),
+    ("telegram-informa", ciclo_telegram_informa),
 )
 
 
