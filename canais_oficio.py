@@ -444,13 +444,36 @@ def pacote(doc: dict) -> dict:
 def em_ordem(doc: dict) -> tuple[bool, str]:
     cookies = doc.get("cookies") or {}
     motivos = []
-    if not youtube_token_configurado():
-        motivos.append("YouTube sem token vitalicio, nao publica e nao edita o Short 13")
+    from canais_24h import AGENTES
+    faltam = set(AGENTES)-set(doc.get("agentes") or {})
+    if faltam:
+        motivos.append("agentes sem estado: "+", ".join(sorted(faltam)))
+    if not youtube_token_configurado() or cookies.get("youtube") != "ok":
+        motivos.append("YouTube sem OAuth valido; nao publica nem edita o Short 13")
+    leitura = doc.get("youtube") or {}
+    if not leitura.get("ok") or leitura.get("views") is None or agora()-int(leitura.get("quando") or 0)>3600:
+        motivos.append("YouTube sem contagens oficiais recentes")
     if cookies.get("bilibili") != "ok":
         motivos.append("Bilibili sem sessao")
+    bili = doc.get("bilibili") or {}
+    if bili.get("views") is None or agora()-int(bili.get("quando") or 0)>3600:
+        motivos.append("Bilibili sem contagem recente")
     if cookies.get("tiktok") != "ok":
         motivos.append("TikTok sem sessao")
-    return (not motivos), "; ".join(motivos)
+    tt = doc.get("tiktok") or {}
+    if any(tt.get(k) is None for k in ("seguidores", "curtidas", "videos")) or agora()-int(tt.get("quando") or 0)>3600:
+        motivos.append("TikTok sem contagens recentes")
+    if not (tt.get("views_por_video") or tt.get("videos_metricas")):
+        motivos.append("TikTok ainda sem contagem por video para avaliar 24h")
+    for nome, item in (doc.get("agentes") or {}).items():
+        if item.get("saude") == "falha" or str(item.get("ultimo") or "").startswith("falhou o ciclo"):
+            motivos.append(nome+": "+str(item.get("motivo") or "ciclo com pendencia"))
+        elif agora()-int(item.get("quando") or 0)>7200:
+            motivos.append(nome+": sem sinal recente")
+    tt_analista = ((doc.get("agentes") or {}).get("tiktok-analisa") or {}).get("ultimo") or ""
+    if "sem view por video" in tt_analista:
+        motivos.append("TikTok ainda sem contagem por video para avaliar 24h")
+    return (not motivos), "; ".join(dict.fromkeys(motivos))
 
 
 def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
@@ -463,8 +486,8 @@ def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
         "Quem monitorou: o servidor, com o numero que os agentes leram.",
         f"Esta tudo em ordem: {'sim' if ordem else 'nao'}.",
         f"Motivo: {motivo or 'os ciclos lidos nao mostraram falha'}.",
-        f"Bilibili: {bili.get('bvid') or 'sem peca'} {bili.get('estado') or ''} views {bili.get('views')}.",
-        f"YouTube: views {yt.get('views')} likes {yt.get('likes')}.",
+        f"Bilibili: {bili.get('bvid') or 'sem peca'} {bili.get('estado') or ''} views {bili.get('views') if bili.get('views') is not None else 'nao lido'}.",
+        f"YouTube: views {yt.get('views') if yt.get('views') is not None else 'nao lido'} likes {yt.get('likes') if yt.get('likes') is not None else 'nao lido'}.",
         f"TikTok: videos {tt.get('videos')} seguidores {tt.get('seguidores')}.",
         "Numero so entra se o agente leu. Nao publiquei nada neste aviso.",
     ]
@@ -472,4 +495,8 @@ def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
 
 
 def youtube_token_configurado() -> bool:
-    return all(os.environ.get(nome, "").strip() for nome in ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"))
+    try:
+        import youtube_api
+        return youtube_api.configurado()
+    except Exception:
+        return False

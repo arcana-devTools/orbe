@@ -408,17 +408,15 @@ def _arena(cookie: str) -> tuple[str, str]:
 def ciclo_cookies() -> None:
     pares = _sessoes()
     nav = _bilibili_nav(pares.get("bilibili", ""))
-    yt, yt_cookie = _youtube(pares.get("youtube", ""))
-    if yt != "ok":
-        fresco = os.environ.get("YOUTUBE_STUDIO_COOKIE", "").strip()
-        if fresco and fresco != pares.get("youtube", ""):
-            yt, yt_cookie = _youtube(fresco)
+    # OAuth no servidor substitui definitivamente o cookie morto do Studio.
+    import youtube_api
+    yt_estado = youtube_api.probe()
+    yt = "ok" if yt_estado.get("ok") else str(yt_estado.get("motivo") or "oauth_ausente")
     tt, tt_cookie, tt_stats = _tiktok(pares.get("tiktok", ""))
-    arena_estado, arena_cookie = _arena(pares.get("arena", "") or pares.get("arena_yt", ""))
+    # O monitor e do servidor; nao repetir os chamados bloqueados da Arena.
+    arena_estado, arena_cookie = "nao_utilizado_no_monitor", pares.get("arena", "")
     if tt == "ok" and tt_cookie:
         pares["tiktok"] = tt_cookie
-    if yt == "ok" and yt_cookie:
-        pares["youtube"] = yt_cookie
     if arena_estado == "ok" and arena_cookie:
         pares["arena"] = arena_cookie
     _guardar_sessoes(pares, {"ultimo_probe": _agora(), "tiktok_stats": tt_stats if tt == "ok" else {}})
@@ -435,6 +433,8 @@ def ciclo_cookies() -> None:
     doc["cookies"] = {
         "bilibili": "ok" if nav.get("ok") else nav.get("motivo"),
         "youtube": yt,
+        "youtube_modo": "oauth_oficial",
+        "youtube_renovado_em": yt_estado.get("renovado_em"),
         "tiktok": tt,
         "arena": arena_estado,
         "quando": _agora(),
@@ -547,38 +547,18 @@ def ciclo_bilibili_cria() -> None:
 
 
 def ciclo_youtube_analisa() -> None:
-    import canais_oficio as oficio
-    cookie = _sessoes().get("youtube", "")
-    pub = _youtube_publico(cookie)
+    import youtube_rotina
+    mensagem, campos, leitura = youtube_rotina.analisa()
     doc = _estado()
-    doc["youtube"] = {**pub, "quando": _agora(), "editou_short_13": False}
+    doc["youtube"] = leitura
     _gravar(ESTADO, doc)
-    if not pub.get("ok"):
-        _marcar("youtube-analisa", "sem leitura, nao inventei numero, nao julguei 24h")
-        return
-    _marcar(
-        "youtube-analisa",
-        f"views {pub.get('views')} likes {pub.get('likes')} comentarios {pub.get('comentarios')}. sem hora de publicacao desta peca, nao julguei 24h",
-    )
+    _marcar("youtube-analisa", mensagem, **campos)
 
 
 def ciclo_youtube_cria() -> None:
-    import canais_oficio as oficio
-    doc = _estado()
-    pacote = ((doc.get("inspiracao") or {}).get("youtube_pacote") or {})
-    if _agora() - int(pacote.get("quando") or 0) > oficio.DIA:
-        notas = oficio.inspirar("youtube")
-        peca = oficio.roteiro("youtube", notas, set(oficio.TITULOS_BLOQUEADOS))
-        doc = _estado()
-        doc.setdefault("inspiracao", {})["youtube"] = notas
-        doc["inspiracao"]["youtube_pacote"] = {**peca, "quando": _agora(), "publicou": False}
-        _gravar(ESTADO, doc)
-        pacote = doc["inspiracao"]["youtube_pacote"]
-    st, _ = _youtube(_sessoes().get("youtube", ""))
-    if st != "ok":
-        _marcar("youtube-cria", f"titulo pronto: {pacote.get('titulo') or 'sem titulo'}. cookie nao e vitalicio, nao publico, nao edito o Short 13 e nao peco cookie", proxima=_agora() + COOKIE_MORTO_S)
-        return
-    _marcar("youtube-cria", "sessao viva, mas o envio do Studio ja foi recusado. nao publico antes de um caminho aceito", proxima=_agora() + INSPIRA_POS_POST_S)
+    import youtube_rotina
+    mensagem, campos = youtube_rotina.cria()
+    _marcar("youtube-cria", mensagem, **campos)
 
 
 def ciclo_tiktok_analisa() -> None:
@@ -643,7 +623,7 @@ def ciclo_telegram_informa() -> None:
         _marcar("telegram-informa", "espera a janela das 8h, uma vez ao dia")
         return
     if mon.get("dia") != dia or not mon.get("tentou"):
-        _marcar("telegram-informa", "ainda sem tentativa de acordar hoje")
+        _marcar("telegram-informa", "ainda sem monitoramento do servidor hoje")
         return
     if mon.get("telegram"):
         _marcar("telegram-informa", "aviso de hoje ja foi enviado")
