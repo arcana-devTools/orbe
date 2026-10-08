@@ -2247,6 +2247,12 @@ async def vnc_bridge(ws: WebSocket) -> None:
     await asyncio.gather(ws_to_tcp(), tcp_to_ws())
 
 
+try:
+    from youtube_oauth import registrar as _yt_oauth
+    _yt_oauth(app)
+except Exception:
+    pass
+
 # IMPORTANTE: o mount do /vnc vem DEPOIS da rota WebSocket /vnc/ws —
 # StaticFiles engoliria o WebSocket se fosse registrado antes.
 if NOVNC_DIR.exists():
