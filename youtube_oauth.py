@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import time
 import urllib.parse
@@ -19,8 +20,9 @@ import youtube_api as yt
 REDIRECT = "https://orbe-xfzn.onrender.com/api/youtube/oauth/callback"
 TOKEN_URL = yt.TOKEN_URL
 ESCOPO = yt.SCOPE
-VERSAO = "oauth-renovavel-20261008b"
+VERSAO = "oauth-renovavel-20261008c"
 FLUXO = "youtube_oauth_fluxo"
+CONFIG_FLUXO = "youtube_oauth_config"
 
 
 def _html(text: str, status: int = 200) -> HTMLResponse:
@@ -58,6 +60,25 @@ def _consumir_fluxo(state: str) -> dict | None:
     return d
 
 
+def _setup_valid(ticket: str) -> bool:
+    from secrets_vault import VAULT
+    d = (VAULT.get(CONFIG_FLUXO) or {}).get("extra") or {}
+    return bool(ticket and d.get("ticket") and hmac.compare_digest(ticket, str(d["ticket"])) and int(d.get("expira") or 0)>=int(time.time()))
+
+
+def _setup_form(ticket: str) -> HTMLResponse:
+    # Campos vazios e mascarados. O navegador copia diretamente do Cloud para HTTPS.
+    return _html("Configuracao privada do cliente Google. Valores nao aparecem na resposta. "
+        "Deixe em branco o campo que nao precisa trocar.</p>"
+        "<form method='post' action='"+REDIRECT+"' autocomplete='off'>"
+        "<input type='hidden' name='ticket' value='"+ticket+"'>"
+        "<label>ID do cliente<br><input type='password' name='client_id' autocomplete='new-password' "
+        "style='width:95%;padding:12px;font:18px sans-serif'></label><br><br>"
+        "<label>Secret do cliente<br><input type='password' name='client_secret' autocomplete='new-password' "
+        "style='width:95%;padding:12px;font:18px sans-serif'></label><br><br>"
+        "<button type='submit' style='padding:12px 24px;font:18px sans-serif'>Guardar no servidor</button></form><p>")
+
+
 def registrar(app: FastAPI) -> None:
     @app.middleware("http")
     async def _ocultar_codigo_do_access_log(request: Request, call_next):
@@ -86,6 +107,48 @@ def registrar(app: FastAPI) -> None:
         except yt.YouTubeError as exc:
             return JSONResponse({"ok": False, "motivo": exc.reason}, status_code=400)
 
+    @app.post("/api/youtube/oauth/configurar")
+    async def setup_inicio() -> JSONResponse:
+        from secrets_vault import VAULT
+        ticket = secrets.token_urlsafe(32)
+        VAULT.put(CONFIG_FLUXO, extra={"ticket": ticket, "expira": int(time.time())+20*60})
+        return JSONResponse({"pc_url": REDIRECT+"?configurar="+urllib.parse.quote(ticket, safe="")}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/youtube/oauth/callback", response_class=HTMLResponse)
+    async def setup_guardar(request: Request) -> HTMLResponse:
+        from secrets_vault import VAULT
+        body = await request.body()
+        if len(body)>2048:
+            return _html("Formulario invalido.", 400)
+        form = urllib.parse.parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        val = lambda name: str((form.get(name) or [""])[0]).strip()
+        ticket = val("ticket")
+        if not _setup_valid(ticket):
+            return _html("O formulario privado expirou ou nao foi iniciado pelo painel.", 403)
+        cid, sec = val("client_id"), val("client_secret")
+        if cid and not re.fullmatch(r"546156084273-[a-z0-9]+\.apps\.googleusercontent\.com", cid):
+            return _html("ID recusado: copie o ID inteiro do projeto orbe-youtube.", 400)
+        if sec and not re.fullmatch(r"GO[A-Za-z0-9_-]{20,100}", sec):
+            return _html("Secret recusado: copie a chave completa diretamente do Cloud.", 400)
+        if not (cid or sec):
+            return _html("Nenhum valor foi recebido.", 400)
+        c = yt.credenciais()
+        if cid and cid != c["YOUTUBE_CLIENT_ID"]:
+            c["YOUTUBE_REFRESH_TOKEN"] = ""
+        if cid: c["YOUTUBE_CLIENT_ID"] = cid
+        if sec: c["YOUTUBE_CLIENT_SECRET"] = sec
+        try:
+            from render_admin import aplicar_env
+            await asyncio.to_thread(aplicar_env, c)
+            VAULT.put("youtube_oauth", extra={**c, "canal": yt.CHANNEL, "configurado_em": int(time.time())})
+            for key, value in c.items(): os.environ[key] = value
+            yt._ACCESS.update(token="", expira=0)
+            yt._IDENTITY.update(doc=None, quando=0)
+            VAULT.delete(CONFIG_FLUXO)
+        except Exception:
+            return _html("Nao confirmei o salvamento no servidor. Nenhum valor foi mostrado ou publicado.", 502)
+        return _html("Cliente guardado no cofre cifrado e nas variaveis privadas do servidor. Pode fechar esta aba.")
+
     @app.get("/api/youtube/oauth/estado")
     async def estado(validar: bool = False) -> JSONResponse:
         c = yt.credenciais()
@@ -105,6 +168,11 @@ def registrar(app: FastAPI) -> None:
     @app.get("/api/youtube/oauth/callback", response_class=HTMLResponse)
     async def callback(request: Request) -> HTMLResponse:
         query = getattr(request.state, "youtube_query", dict(request.query_params))
+        if query.get("configurar"):
+            ticket = str(query["configurar"])
+            if not _setup_valid(ticket):
+                return _html("O formulario privado expirou.", 403)
+            return _setup_form(ticket)
         if query.get("iniciar"):
             from secrets_vault import VAULT
             flow = (VAULT.get(FLUXO) or {}).get("extra") or {}

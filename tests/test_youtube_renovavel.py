@@ -249,3 +249,20 @@ def test_link_curto_preserva_pkce_sem_abertura_arbitraria():
     assert r.status_code==302
     assert r.headers['location']==url
     assert denied.status_code==400
+
+
+def test_config_sem_ticket_nao_aceita_credenciais():
+    app=FastAPI();oauth.registrar(app)
+    with TestClient(app) as cx:
+        r=cx.post('/api/youtube/oauth/callback',data={'ticket':'wrong','client_id':'unit'})
+    assert r.status_code==403
+
+
+def test_formulario_config_tem_campos_mascarados(isolated):
+    isolated.put(oauth.CONFIG_FLUXO,extra={'ticket':'unit-ticket','expira':int(time.time())+60})
+    app=FastAPI();oauth.registrar(app)
+    with TestClient(app) as cx:
+        r=cx.get('/api/youtube/oauth/callback?configurar=unit-ticket')
+    assert r.status_code==200
+    assert r.text.count("type='password'")==2
+    assert 'unit-test-only' not in r.text
