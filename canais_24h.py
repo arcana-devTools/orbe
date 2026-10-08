@@ -576,7 +576,7 @@ def ciclo_youtube_cria() -> None:
         pacote = doc["inspiracao"]["youtube_pacote"]
     st, _ = _youtube(_sessoes().get("youtube", ""))
     if st != "ok":
-        _marcar("youtube-cria", f"titulo pronto: {pacote.get('titulo') or 'sem titulo'}. sessao morta, nao publico, nao edito o Short 13 e nao peco cookie", proxima=_agora() + COOKIE_MORTO_S)
+        _marcar("youtube-cria", f"titulo pronto: {pacote.get('titulo') or 'sem titulo'}. cookie nao e vitalicio, nao publico, nao edito o Short 13 e nao peco cookie", proxima=_agora() + COOKIE_MORTO_S)
         return
     _marcar("youtube-cria", "sessao viva, mas o envio do Studio ja foi recusado. nao publico antes de um caminho aceito", proxima=_agora() + INSPIRA_POS_POST_S)
 
@@ -610,21 +610,20 @@ def ciclo_arena_acorda() -> None:
     doc = _estado()
     mon = doc.get("monitor") or {}
     if not (8 <= hora < 10):
-        _marcar("arena-acorda", "espera a janela das 8h, uma vez ao dia")
+        _marcar("arena-acorda", "monitor do servidor as 8h, sem Chrome e sem fingir que abriu o chat")
         return
     if mon.get("dia") == dia and mon.get("tentou"):
-        _marcar("arena-acorda", mon.get("resumo") or "ja tentei acordar hoje")
+        _marcar("arena-acorda", mon.get("resumo") or "ja monitorei hoje")
         return
-    pacote = oficio.pacote(doc)
-    resultado = oficio.tentar_acordar(_sessoes().get("arena", ""), pacote)
-    ordem, motivo = oficio.em_ordem(doc, bool(resultado.get("aceitou")), bool(resultado.get("monitorei")))
-    resumo = "Arena aceitou o chamado" if resultado.get("aceitou") else f"nao acordei, {resultado.get('motivo')}"
+    ordem, motivo = oficio.em_ordem(doc)
+    resumo = "servidor monitorou" if ordem else "servidor monitorou, nao esta em ordem"
     doc = _estado()
     doc["monitor"] = {
         "dia": dia,
         "tentou": True,
-        "acordou": bool(resultado.get("aceitou")),
-        "monitorei": bool(resultado.get("monitorei")),
+        "acordou": False,
+        "monitorei": True,
+        "quem": "servidor",
         "em_ordem": ordem,
         "motivo": motivo,
         "resumo": resumo,
@@ -651,8 +650,6 @@ def ciclo_telegram_informa() -> None:
         return
     texto = oficio.texto_telegram(
         dia,
-        bool(mon.get("acordou")),
-        bool(mon.get("monitorei")),
         bool(mon.get("em_ordem")),
         str(mon.get("motivo") or ""),
         doc,
