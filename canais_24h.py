@@ -11,6 +11,7 @@ Não republica peça recusada. Não edita o Short 13. Não publica sem sessão.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -243,15 +244,36 @@ def _youtube_publico() -> dict:
     }
 
 
-def _youtube_cookie(cookie: str) -> str:
+def _youtube(cookie: str) -> tuple[str, str]:
     if not cookie:
-        return "ausente"
-    code, final, corpo = _http("https://studio.youtube.com/", cookie)
-    if "accounts.google.com" in final or "ServiceLogin" in corpo:
-        return "morto"
-    if code == 200 and "studio.youtube.com" in final:
-        return "ok"
-    return f"http_{code or 'rede'}"
+        return "ausente", cookie
+    jar = {}
+    for parte in cookie.split(";"):
+        if "=" in parte:
+            nome, valor = parte.strip().split("=", 1)
+            if valor:
+                jar[nome] = valor
+    sap = jar.get("SAPISID") or ""
+    if not sap or "SID" not in jar:
+        return "morto", cookie
+    origin = "https://studio.youtube.com"
+    ts = str(int(time.time()))
+    auth = "SAPISIDHASH " + ts + "_" + hashlib.sha1(f"{ts} {sap} {origin}".encode()).hexdigest()
+    code, final, headers, corpo = _abrir(
+        "https://studio.youtube.com/youtubei/v1/account/account_menu?prettyPrint=false",
+        cookie,
+        data=json.dumps({"context": {"client": {"clientName": "WEB_CREATOR", "clientVersion": "1.20241001.00.00"}}}).encode(),
+        headers={
+            "Authorization": auth,
+            "Content-Type": "application/json",
+            "Origin": origin,
+            "Referer": origin + "/",
+        },
+    )
+    if code != 200 or "must be signed in" in corpo.lower() or "accounts.google.com" in final:
+        return "morto", cookie
+    novo, _ = _juntar(cookie, headers)
+    return "ok", novo
 
 
 def _tiktok(cookie: str) -> tuple[str, str, dict]:
@@ -342,15 +364,21 @@ def _arena(cookie: str) -> tuple[str, str]:
 def ciclo_cookies() -> None:
     pares = _sessoes()
     nav = _bilibili_nav(pares.get("bilibili", ""))
-    yt = _youtube_cookie(pares.get("youtube", ""))
+    yt, yt_cookie = _youtube(pares.get("youtube", ""))
+    if yt != "ok":
+        fresco = os.environ.get("YOUTUBE_STUDIO_COOKIE", "").strip()
+        if fresco and fresco != pares.get("youtube", ""):
+            yt, yt_cookie = _youtube(fresco)
     tt, tt_cookie, tt_stats = _tiktok(pares.get("tiktok", ""))
     arena_estado, arena_cookie = _arena(pares.get("arena", "") or pares.get("arena_yt", ""))
     if tt == "ok" and tt_cookie:
         pares["tiktok"] = tt_cookie
+    if yt == "ok" and yt_cookie:
+        pares["youtube"] = yt_cookie
     if arena_estado == "ok" and arena_cookie:
         pares["arena"] = arena_cookie
     _guardar_sessoes(pares, {"ultimo_probe": _agora(), "tiktok_stats": tt_stats if tt == "ok" else {}})
-    vivos = [nome for nome, st in (("bilibili", "ok" if nav.get("ok") else ""), ("tiktok", tt), ("arena", arena_estado)) if st == "ok"]
+    vivos = [nome for nome, st in (("bilibili", "ok" if nav.get("ok") else ""), ("youtube", yt), ("tiktok", tt), ("arena", arena_estado)) if st == "ok"]
     _marcar(
         "cookies-renova",
         "guardou renovacao de " + ",".join(vivos) if vivos else "nenhuma sessao renovou",
@@ -454,7 +482,7 @@ def ciclo_youtube_analisa() -> None:
 
 
 def ciclo_youtube_cria() -> None:
-    st = _youtube_cookie(_sessoes().get("youtube", ""))
+    st, _ = _youtube(_sessoes().get("youtube", ""))
     if st != "ok":
         _marcar("youtube-cria", "cookie morto, nao publico e nao edito o Short 13", proxima=_agora() + COOKIE_MORTO_S)
         return
