@@ -441,15 +441,11 @@ def pacote(doc: dict) -> dict:
     }
 
 
-def em_ordem(doc: dict, acordou: bool, monitorei: bool) -> tuple[bool, str]:
+def em_ordem(doc: dict) -> tuple[bool, str]:
     cookies = doc.get("cookies") or {}
     motivos = []
-    if not acordou:
-        motivos.append("a Arena nao abriu o chat")
-    if not monitorei:
-        motivos.append("o agente da Arena ainda nao devolveu o monitoramento")
-    if cookies.get("youtube") != "ok":
-        motivos.append("YouTube sem sessao, nao publica e nao edita o Short 13")
+    if not youtube_token_configurado():
+        motivos.append("YouTube sem token vitalicio, nao publica e nao edita o Short 13")
     if cookies.get("bilibili") != "ok":
         motivos.append("Bilibili sem sessao")
     if cookies.get("tiktok") != "ok":
@@ -457,18 +453,23 @@ def em_ordem(doc: dict, acordou: bool, monitorei: bool) -> tuple[bool, str]:
     return (not motivos), "; ".join(motivos)
 
 
-def texto_telegram(dia: str, acordou: bool, monitorei: bool, ordem: bool, motivo: str, doc: dict) -> str:
+def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
     bili = doc.get("bilibili") or {}
     yt = doc.get("youtube") or {}
     tt = doc.get("tiktok") or {}
-    return (
-        f"Canais {dia}.\n"
-        f"O mini-agente acordou o agente da Arena: {'sim' if acordou else 'nao'}.\n"
-        f"O agente da Arena monitorou o dia: {'sim' if monitorei else 'nao'}.\n"
-        f"Esta tudo em ordem: {'sim' if ordem else 'nao'}.\n"
-        f"Motivo: {motivo or 'os ciclos lidos nao mostraram falha'}.\n"
-        f"Bilibili: {bili.get('bvid') or 'sem peca'} {bili.get('estado') or ''} views {bili.get('views')}.\n"
-        f"YouTube: views {yt.get('views')} likes {yt.get('likes')}.\n"
-        f"TikTok: videos {tt.get('videos')} seguidores {tt.get('seguidores')}.\n"
-        "Numero so entra se o agente leu. Nao publiquei nada neste aviso."
-    )
+    linhas = [
+        f"Canais {dia}.",
+        "O chat da Arena nao foi aberto. A Arena recusa esse chamado, e o Chrome no servidor derrubaria os outros agentes.",
+        "Quem monitorou: o servidor, com o numero que os agentes leram.",
+        f"Esta tudo em ordem: {'sim' if ordem else 'nao'}.",
+        f"Motivo: {motivo or 'os ciclos lidos nao mostraram falha'}.",
+        f"Bilibili: {bili.get('bvid') or 'sem peca'} {bili.get('estado') or ''} views {bili.get('views')}.",
+        f"YouTube: views {yt.get('views')} likes {yt.get('likes')}.",
+        f"TikTok: videos {tt.get('videos')} seguidores {tt.get('seguidores')}.",
+        "Numero so entra se o agente leu. Nao publiquei nada neste aviso.",
+    ]
+    return "\n".join(linhas)
+
+
+def youtube_token_configurado() -> bool:
+    return all(os.environ.get(nome, "").strip() for nome in ("YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"))
