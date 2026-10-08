@@ -682,8 +682,11 @@ def ciclo() -> None:
     for nome, fn in CICLOS:
         try:
             fn()
-        except Exception:
-            _marcar(nome, "falhou o ciclo, tenta de novo")
+        except Exception as exc:
+            msg = str(exc).replace("\n", " ")[:80]
+            if any(s in msg.lower() for s in ("cookie", "token", "sess", "bearer")):
+                msg = "erro interno"
+            _marcar(nome, f"falhou o ciclo, {type(exc).__name__}: {msg}")
 
 
 async def laco() -> None:
