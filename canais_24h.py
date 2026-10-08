@@ -53,7 +53,7 @@ def _http(url: str, cookie: str = "", data: bytes | None = None, method: str | N
     headers = {"User-Agent": UA, "Accept": "application/json,text/html", **(headers or {})}
     if cookie:
         headers["Cookie"] = cookie
-    if data is not None:
+    if data is not None and "Content-Type" not in headers:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
@@ -227,26 +227,38 @@ def _bilibili_responder(cookie: str, aid: int, rpid: int, texto: str) -> str:
 
 
 def _youtube_publico(cookie: str = "") -> dict:
-    code, final, html = _http(
-        f"https://www.youtube.com/watch?v={YT_VIDEO}",
+    corpo = json.dumps({
+        "context": {"client": {"clientName": "WEB", "clientVersion": "2.20241010.00.00", "hl": "pt", "gl": "BR"}},
+        "videoId": YT_VIDEO,
+    }).encode()
+    code, final, raw = _http(
+        "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
         cookie,
-        headers={"Accept-Language": "pt-BR", "Referer": "https://studio.youtube.com/"},
+        data=corpo,
+        method="POST",
+        headers={"Content-Type": "application/json", "Origin": "https://www.youtube.com", "Referer": f"https://www.youtube.com/watch?v={YT_VIDEO}"},
     )
-    if "accounts.google.com" in final or code != 200 or not html:
+    if "accounts.google.com" in final or code != 200 or not raw:
         return {"ok": False, "motivo": f"http_{code or 'rede'}"}
-    views = re.search(r'"viewCount":"(\d+)"', html)
-    likes = re.search(r'"likeCount":"(\d+)"', html)
-    titulo = re.search(r"<title>([^<]+)</title>", html)
-    comentarios = re.search(r'"commentCount":"(\d+)"', html)
+    try:
+        doc = json.loads(raw)
+    except Exception:
+        return {"ok": False, "motivo": "json_invalido"}
+    det = doc.get("videoDetails") or {}
+    views = det.get("viewCount")
+    micro = ((doc.get("microformat") or {}).get("playerMicroformatRenderer") or {})
+    likes = micro.get("likeCount")
+    if views is None:
+        return {"ok": False, "motivo": "sem_viewcount", "video": YT_VIDEO}
     return {
         "ok": True,
         "video": YT_VIDEO,
-        "titulo": (titulo.group(1).replace(" - YouTube", "") if titulo else "")[:120],
-        "views": int(views.group(1)) if views else None,
-        "likes": int(likes.group(1)) if likes else None,
-        "comentarios": int(comentarios.group(1)) if comentarios else 0,
+        "titulo": str(det.get("title") or "")[:120],
+        "views": int(views),
+        "likes": int(likes) if likes is not None else None,
+        "comentarios": None,
         "comentarios_respondidos": False,
-        "motivo_comentario": "sem comentario novo para responder" if not comentarios else "comentario lido, sem resposta automatica nesta peca",
+        "motivo_comentario": "a pagina nao trouxe comentario novo",
     }
 
 
