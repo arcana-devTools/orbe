@@ -226,40 +226,47 @@ def _bilibili_responder(cookie: str, aid: int, rpid: int, texto: str) -> str:
         return f"http_{code or 'rede'}"
 
 
-def _youtube_publico(cookie: str = "") -> dict:
-    corpo = json.dumps({
-        "context": {"client": {"clientName": "WEB", "clientVersion": "2.20241010.00.00", "hl": "pt", "gl": "BR"}},
-        "videoId": YT_VIDEO,
-    }).encode()
-    code, final, raw = _http(
-        "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-        cookie,
-        data=corpo,
-        method="POST",
-        headers={"Content-Type": "application/json", "Origin": "https://www.youtube.com", "Referer": f"https://www.youtube.com/watch?v={YT_VIDEO}"},
-    )
-    if "accounts.google.com" in final or code != 200 or not raw:
-        return {"ok": False, "motivo": f"http_{code or 'rede'}"}
-    try:
-        doc = json.loads(raw)
-    except Exception:
-        return {"ok": False, "motivo": "json_invalido"}
-    det = doc.get("videoDetails") or {}
-    views = det.get("viewCount")
-    micro = ((doc.get("microformat") or {}).get("playerMicroformatRenderer") or {})
-    likes = micro.get("likeCount")
-    if views is None:
-        return {"ok": False, "motivo": "sem_viewcount", "video": YT_VIDEO}
+def _youtube_do_html(html: str) -> dict | None:
+    views = re.search(r'"viewCount":"(\d+)"', html)
+    if not views:
+        return None
+    likes = re.search(r'"likeCount":"(\d+)"', html)
+    titulo = re.search(r"<title>([^<]+)</title>", html)
     return {
         "ok": True,
         "video": YT_VIDEO,
-        "titulo": str(det.get("title") or "")[:120],
-        "views": int(views),
-        "likes": int(likes) if likes is not None else None,
+        "titulo": (titulo.group(1).replace(" - YouTube", "") if titulo else "")[:120],
+        "views": int(views.group(1)),
+        "likes": int(likes.group(1)) if likes else None,
         "comentarios": None,
         "comentarios_respondidos": False,
         "motivo_comentario": "a pagina nao trouxe comentario novo",
     }
+
+
+def _youtube_publico(cookie: str = "") -> dict:
+    code, final, html = _http(
+        f"https://www.youtube.com/watch?v={YT_VIDEO}",
+        cookie,
+        headers={"Accept-Language": "pt-BR", "Referer": "https://www.youtube.com/"},
+    )
+    if "accounts.google.com" in final or code != 200 or not html:
+        return {"ok": False, "motivo": f"http_{code or 'rede'}"}
+    achado = _youtube_do_html(html)
+    if achado:
+        return achado
+    # A contagem fica depois dos primeiros 400 mil bytes. Lê o resto sem guardar cookie.
+    req = urllib.request.Request(
+        f"https://www.youtube.com/watch?v={YT_VIDEO}",
+        headers={"User-Agent": UA, "Cookie": cookie, "Accept-Language": "pt-BR"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            bruto = r.read(1_400_000).decode("utf-8", "replace")
+    except Exception:
+        return {"ok": False, "motivo": "pagina_sem_viewcount"}
+    achado = _youtube_do_html(bruto)
+    return achado or {"ok": False, "motivo": "pagina_sem_viewcount", "video": YT_VIDEO}
 
 
 def _youtube(cookie: str) -> tuple[str, str]:
