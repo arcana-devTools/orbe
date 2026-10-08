@@ -87,6 +87,7 @@ def _sessoes() -> dict[str, str]:
         ("bilibili", "BILIBILI_COOKIE"),
         ("youtube", "YOUTUBE_STUDIO_COOKIE"),
         ("tiktok", "TIKTOK_STUDIO_COOKIE"),
+        ("arena", "ARENA_COOKIE"),
         ("arena_yt", "ARENA_YT_COOKIE"),
     ):
         valor = os.environ.get(env, "").strip()
@@ -253,67 +254,122 @@ def _youtube_cookie(cookie: str) -> str:
     return f"http_{code or 'rede'}"
 
 
-def _tiktok_cookie(cookie: str) -> str:
+def _tiktok(cookie: str) -> tuple[str, str, dict]:
     if not cookie:
-        return "ausente"
-    code, _, corpo = _http("https://www.tiktok.com/tiktokstudio/api/web/user/info", cookie)
-    if code == 200 and '"user"' in corpo and "<html" not in corpo[:40].lower():
-        return "ok"
-    return "morto" if code in (200, 401, 403) else f"http_{code or 'rede'}"
+        return "ausente", cookie, {}
+    code, _, headers, corpo = _abrir(
+        "https://www.tiktok.com/api/user/detail/self/?aid=1988",
+        cookie,
+        headers={"Referer": "https://www.tiktok.com/tiktokstudio", "Accept": "application/json"},
+    )
+    novo, _ = _juntar(cookie, headers)
+    if "<html" in corpo[:40].lower():
+        return "morto", cookie, {}
+    try:
+        doc = json.loads(corpo)
+    except Exception:
+        return (f"http_{code or 'rede'}", cookie, {})
+    if doc.get("status_code") not in (0, None) and not doc.get("userInfo"):
+        return "morto", cookie, {}
+    info = doc.get("userInfo") or {}
+    stats = info.get("stats") or {}
+    user = info.get("user") or {}
+    return "ok", novo, {
+        "conta": user.get("uniqueId") or "",
+        "seguidores": stats.get("followerCount"),
+        "curtidas": stats.get("heartCount"),
+        "videos": stats.get("videoCount"),
+    }
+
+
+def _juntar(cookie: str, headers) -> tuple[str, bool]:
+    jar: dict[str, str] = {}
+    for parte in (cookie or "").split(";"):
+        if "=" in parte:
+            nome, valor = parte.strip().split("=", 1)
+            if valor:
+                jar[nome] = valor
+    mudou = False
+    bruto = headers.get_all("Set-Cookie") if headers is not None and hasattr(headers, "get_all") else []
+    for linha in bruto or []:
+        par = linha.split(";", 1)[0]
+        if "=" not in par:
+            continue
+        nome, valor = par.split("=", 1)
+        if not valor or nome.startswith("__Host-"):
+            continue
+        if jar.get(nome) != valor:
+            jar[nome] = valor
+            mudou = True
+    header = "; ".join(f"{nome}={valor}" for nome, valor in jar.items())
+    return header, mudou
+
+
+def _abrir(url: str, cookie: str, data: bytes | None = None, headers: dict | None = None) -> tuple[int, str, object, str]:
+    h = {"User-Agent": UA, "Accept": "application/json,text/html", "Referer": url}
+    if cookie:
+        h["Cookie"] = cookie
+    if headers:
+        h.update(headers)
+    req = urllib.request.Request(url, data=data, headers=h, method="POST" if data is not None else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return r.status, r.geturl(), r.headers, r.read(80_000).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, "", e.headers, e.read(8_000).decode("utf-8", "replace")
+    except Exception:
+        return 0, url, None, ""
 
 
 def _arena(cookie: str) -> tuple[str, str]:
     if not cookie:
         return "ausente", cookie
-    headers_cookie = cookie
-    req = urllib.request.Request(
+    code, _, headers, corpo = _abrir(
         "https://arena.ai/api/me",
-        headers={"User-Agent": UA, "Cookie": headers_cookie, "Accept": "application/json"},
+        cookie,
+        headers={"Accept": "application/json", "Referer": "https://arena.ai/"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            corpo = r.read(4000).decode("utf-8", "replace")
-            novos = []
-            bruto = r.headers.get_all("Set-Cookie") if hasattr(r.headers, "get_all") else []
-            for linha in bruto or []:
-                if linha.startswith("arena-auth-prod-v1."):
-                    novos.append(linha.split(";", 1)[0])
-            if novos:
-                headers_cookie = "; ".join(novos)
-            ok = r.status == 200 and bool(re.search(r'"email"\s*:\s*"[^"]+@', corpo))
-            return ("ok" if ok else "sem_email"), headers_cookie
-    except urllib.error.HTTPError as e:
-        return f"http_{e.code}", cookie
-    except Exception:
-        return "rede", cookie
+    novo, _ = _juntar(cookie, headers)
+    if code == 200 and re.search(r'"email"\s*:\s*"[^"]+@', corpo):
+        return "ok", novo
+    if "User not found" in corpo:
+        return "sem_usuario", cookie
+    if code:
+        return f"http_{code}", cookie
+    return "rede", cookie
 
 
 def ciclo_cookies() -> None:
     pares = _sessoes()
     nav = _bilibili_nav(pares.get("bilibili", ""))
     yt = _youtube_cookie(pares.get("youtube", ""))
-    tt = _tiktok_cookie(pares.get("tiktok", ""))
-    arena_estado, arena_novo = _arena(pares.get("arena_yt", ""))
-    if arena_novo and arena_novo != pares.get("arena_yt"):
-        pares["arena_yt"] = arena_novo
-    _guardar_sessoes(pares, {"ultimo_probe": _agora()})
-    mortos = [nome for nome, st in (("youtube", yt), ("tiktok", tt), ("arena_yt", arena_estado)) if st != "ok"]
+    tt, tt_cookie, tt_stats = _tiktok(pares.get("tiktok", ""))
+    arena_estado, arena_cookie = _arena(pares.get("arena", "") or pares.get("arena_yt", ""))
+    if tt == "ok" and tt_cookie:
+        pares["tiktok"] = tt_cookie
+    if arena_estado == "ok" and arena_cookie:
+        pares["arena"] = arena_cookie
+    _guardar_sessoes(pares, {"ultimo_probe": _agora(), "tiktok_stats": tt_stats if tt == "ok" else {}})
+    vivos = [nome for nome, st in (("bilibili", "ok" if nav.get("ok") else ""), ("tiktok", tt), ("arena", arena_estado)) if st == "ok"]
     _marcar(
         "cookies-renova",
-        "renovou o que o servidor ainda aceita" if not mortos else "sem renovacao de servidor para " + ",".join(mortos),
+        "guardou renovacao de " + ",".join(vivos) if vivos else "nenhuma sessao renovou",
         bilibili="ok" if nav.get("ok") else nav.get("motivo"),
         youtube=yt,
         tiktok=tt,
-        arena_yt=arena_estado,
+        arena=arena_estado,
     )
     doc = _estado()
     doc["cookies"] = {
         "bilibili": "ok" if nav.get("ok") else nav.get("motivo"),
         "youtube": yt,
         "tiktok": tt,
-        "arena_yt": arena_estado,
+        "arena": arena_estado,
         "quando": _agora(),
+        "renova_sozinho": vivos,
     }
+    if tt == "ok":
+        doc["tiktok"] = {**tt_stats, "cookie": "ok", "quando": _agora(), "republicou": False}
     _gravar(ESTADO, doc)
 
 
@@ -406,18 +462,22 @@ def ciclo_youtube_cria() -> None:
 
 
 def ciclo_tiktok_analisa() -> None:
-    st = _tiktok_cookie(_sessoes().get("tiktok", ""))
+    st, cookie, stats = _tiktok(_sessoes().get("tiktok", ""))
+    if st == "ok" and cookie:
+        pares = _sessoes()
+        pares["tiktok"] = cookie
+        _guardar_sessoes(pares)
     doc = _estado()
-    doc["tiktok"] = {"cookie": st, "quando": _agora(), "republicou": False, "views": None if st != "ok" else 0}
+    doc["tiktok"] = {**stats, "cookie": st, "quando": _agora(), "republicou": False}
     _gravar(ESTADO, doc)
     if st != "ok":
         _marcar("tiktok-analisa", "sem sessao, nao invento view nem like")
         return
-    _marcar("tiktok-analisa", "sessao entrou, leitura fina no proximo ciclo")
+    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}")
 
 
 def ciclo_tiktok_cria() -> None:
-    st = _tiktok_cookie(_sessoes().get("tiktok", ""))
+    st, _, _ = _tiktok(_sessoes().get("tiktok", ""))
     if st != "ok":
         _marcar("tiktok-cria", "sem sessao, nao republico e nao posto", proxima=_agora() + COOKIE_MORTO_S)
         return
