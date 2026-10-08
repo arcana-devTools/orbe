@@ -49,8 +49,8 @@ def _agora() -> int:
     return int(time.time())
 
 
-def _http(url: str, cookie: str = "", data: bytes | None = None, method: str | None = None, timeout: int = 25) -> tuple[int, str, str]:
-    headers = {"User-Agent": UA, "Accept": "application/json,text/html"}
+def _http(url: str, cookie: str = "", data: bytes | None = None, method: str | None = None, timeout: int = 25, headers: dict | None = None) -> tuple[int, str, str]:
+    headers = {"User-Agent": UA, "Accept": "application/json,text/html", **(headers or {})}
     if cookie:
         headers["Cookie"] = cookie
     if data is not None:
@@ -226,21 +226,27 @@ def _bilibili_responder(cookie: str, aid: int, rpid: int, texto: str) -> str:
         return f"http_{code or 'rede'}"
 
 
-def _youtube_publico() -> dict:
-    code, final, html = _http(f"https://www.youtube.com/watch?v={YT_VIDEO}")
+def _youtube_publico(cookie: str = "") -> dict:
+    code, final, html = _http(
+        f"https://www.youtube.com/watch?v={YT_VIDEO}",
+        cookie,
+        headers={"Accept-Language": "pt-BR", "Referer": "https://studio.youtube.com/"},
+    )
     if "accounts.google.com" in final or code != 200 or not html:
         return {"ok": False, "motivo": f"http_{code or 'rede'}"}
     views = re.search(r'"viewCount":"(\d+)"', html)
     likes = re.search(r'"likeCount":"(\d+)"', html)
     titulo = re.search(r"<title>([^<]+)</title>", html)
+    comentarios = re.search(r'"commentCount":"(\d+)"', html)
     return {
         "ok": True,
         "video": YT_VIDEO,
         "titulo": (titulo.group(1).replace(" - YouTube", "") if titulo else "")[:120],
         "views": int(views.group(1)) if views else None,
         "likes": int(likes.group(1)) if likes else None,
+        "comentarios": int(comentarios.group(1)) if comentarios else 0,
         "comentarios_respondidos": False,
-        "motivo_comentario": "sessao do studio morta, nao respondo no escuro",
+        "motivo_comentario": "sem comentario novo para responder" if not comentarios else "comentario lido, sem resposta automatica nesta peca",
     }
 
 
@@ -471,14 +477,18 @@ def ciclo_bilibili_cria() -> None:
 
 
 def ciclo_youtube_analisa() -> None:
-    pub = _youtube_publico()
+    cookie = _sessoes().get("youtube", "")
+    pub = _youtube_publico(cookie)
     doc = _estado()
     doc["youtube"] = {**pub, "quando": _agora(), "editou_short_13": False}
     _gravar(ESTADO, doc)
     if not pub.get("ok"):
-        _marcar("youtube-analisa", "sem leitura publica")
+        _marcar("youtube-analisa", "sem leitura, nao inventei numero")
         return
-    _marcar("youtube-analisa", f"views {pub.get('views')} likes {pub.get('likes')} sem resposta de comentario")
+    _marcar(
+        "youtube-analisa",
+        f"views {pub.get('views')} likes {pub.get('likes')} comentarios {pub.get('comentarios')}",
+    )
 
 
 def ciclo_youtube_cria() -> None:
