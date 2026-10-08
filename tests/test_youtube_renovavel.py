@@ -237,3 +237,15 @@ def test_titulo_copiado_e_recusado(monkeypatch):
     monkeypatch.setattr(routine,'_llm',lambda *a:json.dumps(data,ensure_ascii=False))
     with pytest.raises(yt.YouTubeError,match='titulo_repetido'):
         routine.planejar({'amostras':[{'titulo':'Título copiado'}]},set())
+
+
+def test_link_curto_preserva_pkce_sem_abertura_arbitraria():
+    url=oauth.iniciar()
+    state=urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['state'][0]
+    app=FastAPI();oauth.registrar(app)
+    with TestClient(app) as cx:
+        r=cx.get('/api/youtube/oauth/callback?iniciar='+state,follow_redirects=False)
+        denied=cx.get('/api/youtube/oauth/callback?iniciar=wrong',follow_redirects=False)
+    assert r.status_code==302
+    assert r.headers['location']==url
+    assert denied.status_code==400

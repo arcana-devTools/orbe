@@ -12,14 +12,14 @@ import urllib.parse
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import youtube_api as yt
 
 REDIRECT = "https://orbe-xfzn.onrender.com/api/youtube/oauth/callback"
 TOKEN_URL = yt.TOKEN_URL
 ESCOPO = yt.SCOPE
-VERSAO = "oauth-renovavel-20261008"
+VERSAO = "oauth-renovavel-20261008b"
 FLUXO = "youtube_oauth_fluxo"
 
 
@@ -79,7 +79,10 @@ def registrar(app: FastAPI) -> None:
         # Protegido pela senha do painel no middleware principal.
         try:
             url = await asyncio.to_thread(iniciar)
-            return JSONResponse({"url": url, "versao": VERSAO}, headers={"Cache-Control": "no-store"})
+            state = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["state"][0]
+            # A mao permite URLs de ate 400 caracteres; relay curto preserva state+PKCE.
+            pc_url = REDIRECT+"?iniciar="+urllib.parse.quote(state, safe="")
+            return JSONResponse({"url": url, "pc_url": pc_url, "versao": VERSAO}, headers={"Cache-Control": "no-store"})
         except yt.YouTubeError as exc:
             return JSONResponse({"ok": False, "motivo": exc.reason}, status_code=400)
 
@@ -102,6 +105,19 @@ def registrar(app: FastAPI) -> None:
     @app.get("/api/youtube/oauth/callback", response_class=HTMLResponse)
     async def callback(request: Request) -> HTMLResponse:
         query = getattr(request.state, "youtube_query", dict(request.query_params))
+        if query.get("iniciar"):
+            from secrets_vault import VAULT
+            flow = (VAULT.get(FLUXO) or {}).get("extra") or {}
+            ticket = str(query["iniciar"])
+            if not flow.get("state") or not hmac.compare_digest(ticket, str(flow["state"])) or int(flow.get("expira") or 0)<int(time.time()):
+                return _html("O link de autorizacao expirou. Inicie novamente pelo painel.", 400)
+            challenge = base64.urlsafe_b64encode(hashlib.sha256(flow["verifier"].encode()).digest()).rstrip(b"=").decode()
+            c = yt.credenciais()
+            q = urllib.parse.urlencode({"client_id": c["YOUTUBE_CLIENT_ID"], "redirect_uri": REDIRECT,
+                "response_type": "code", "scope": ESCOPO, "access_type": "offline", "prompt": "consent",
+                "state": flow["state"], "code_challenge": challenge, "code_challenge_method": "S256"})
+            return RedirectResponse("https://accounts.google.com/o/oauth2/v2/auth?"+q, status_code=302,
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
         if query.get("error"):
             return _html("O Google nao autorizou. Nenhum video foi enviado por esta tela.", 400)
         code = (query.get("code") or "").strip()
