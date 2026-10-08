@@ -211,6 +211,14 @@ async def lifespan(app: FastAPI):
     if os.environ.get("ORBE_COLONIA_AUTOSTART", "0") == "1":
         SWARM.start(float(os.environ.get("ORBE_COLONIA_INTERVALO", "60") or 60))
         await BUS.ok("colônia ligada sozinha (ORBE_COLONIA_AUTOSTART=1)")
+    if os.environ.get("CANAIS_24H", "1") == "1":
+        try:
+            import canais_24h
+
+            asyncio.create_task(canais_24h.laco())
+            await BUS.ok("canais 24h ligados, sem PC")
+        except Exception:
+            pass
     yield
     try:  # Render dá ~30s no desligamento: salva a memória antes de morrer
         SWARM._save()
@@ -907,6 +915,14 @@ async def mao_estado() -> dict[str, Any]:
 
     _touch()
     return mao.estado()
+
+
+@app.get("/api/canais/estado")
+async def canais_estado() -> dict[str, Any]:
+    import canais_24h
+
+    _touch()
+    return canais_24h.estado_publico()
 
 
 @app.post("/api/mao/pedir")
