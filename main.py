@@ -234,6 +234,7 @@ app = FastAPI(title="Orbe", version="0.1.0", lifespan=lifespan)
 _ABERTOS = {"/health", "/favicon.ico", "/kiwify/webhook", "/api/hermes/resultado", "/api/hermes/pensar", "/api/hermes/aprender", "/api/habilidades", "/api/habilidades/aplicar", "/api/habilidades/pacote",
              "/api/mao/fila", "/api/mao/resultado", "/mao/agente.py", "/mao/pc.ps1",
              "/mao/instalar-pc.ps1", "/mao/atualizar.ps1", "/mao/versao.txt", "/mao/orbe-mao.apk",
+             "/api/youtube/oauth/callback", "/privacidade",
              "/vitrine"}
 
 
