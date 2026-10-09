@@ -129,7 +129,7 @@ def estado_publico() -> dict:
         "vivo": doc.get("vivo") or 0,
         "sem_pc": True,
         "agentes": doc.get("agentes") or {},
-        "canais": {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao")},
+        "canais": {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao", "estudo")},
     }
     return saida
 
@@ -460,6 +460,63 @@ def ciclo_vigia() -> None:
     )
 
 
+def _guardar_estudo(plataforma: str, estudo: dict) -> None:
+    doc = _estado()
+    doc.setdefault("estudo", {})[plataforma] = {
+        "quando": estudo.get("quando"),
+        "leu": bool(estudo.get("leu")),
+        "modelos": estudo.get("modelos") or [],
+        "vistos": len(estudo.get("titulos_vistos") or []),
+        "licao": estudo.get("licao") or "",
+        "nota": estudo.get("nota") or "",
+    }
+    _gravar(ESTADO, doc)
+
+
+def _licao_bili(lista: list[dict]) -> str:
+    import canais_oficio as oficio
+    julgados = []
+    for item in lista or []:
+        texto = oficio.juizo(int(item.get("ptime") or 0), item.get("views"))
+        if "gerou view sim" in texto:
+            return "o ultimo original gerou view; mantenha a estrutura curta e invente outra historia"
+        if "gerou view nao" in texto:
+            julgados.append(texto)
+    if julgados:
+        return "o ultimo original nao gerou view em 24h; troque o gancho, historia nova"
+    return "ainda sem julgamento de 24h do proprio canal"
+
+
+def _tiktok_itens(cookie: str) -> list[dict]:
+    if not cookie:
+        return []
+    urls = (
+        "https://www.tiktok.com/api/recommend/item_list/?aid=1988&count=8",
+        "https://www.tiktok.com/api/explore/item_list/?aid=1988&count=8&cursor=0",
+    )
+    for url in urls:
+        _, _, corpo = _http(url, cookie, headers={"Referer": "https://www.tiktok.com/", "Accept": "application/json"})
+        if not corpo or corpo[:1] not in "{[":
+            continue
+        try:
+            doc = json.loads(corpo)
+        except Exception:
+            continue
+        lista = doc.get("itemList") or doc.get("item_list") or []
+        itens = []
+        for item in lista[:8]:
+            video = item.get("video") or {}
+            stats = item.get("stats") or {}
+            itens.append({
+                "titulo": str(item.get("desc") or "")[:80],
+                "views": stats.get("playCount"),
+                "duracao_s": video.get("duration"),
+            })
+        if itens:
+            return itens
+    return []
+
+
 def ciclo_bilibili_analisa() -> None:
     cookie = _sessoes().get("bilibili", "")
     arq = _bilibili_arquivo(cookie)
@@ -499,9 +556,13 @@ def ciclo_bilibili_analisa() -> None:
     juizos = [oficio.juizo(int(item.get("ptime") or 0), item.get("views")) for item in (arq.get("lista") or [])]
     doc["bilibili"]["juizo_24h"] = juizos
     _gravar(ESTADO, doc)
+    estudo = oficio.inspirar("bilibili", licao=_licao_bili(arq.get("lista") or []))
+    _guardar_estudo("bilibili", estudo)
     _marcar(
         "bilibili-analisa",
-        f"views {arq.get('views')} likes {arq.get('likes')} comentarios {len(comentarios)} respostas {novos}. " + " | ".join(juizos[:3]),
+        f"views {arq.get('views')} likes {arq.get('likes')} comentarios {len(comentarios)} respostas {novos}. "
+        + " | ".join(juizos[:3])
+        + f". Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no Bilibili, sem copiar titulo.",
     )
 
 
@@ -523,12 +584,8 @@ def ciclo_bilibili_cria() -> None:
     if int((doc.get("bilibili_post") or {}).get("tentativa") or 0) > _agora() - oficio.DIA:
         _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio", proxima=_agora() + CHECAGEM_S)
         return
-    notas = (doc.get("inspiracao") or {}).get("bilibili") or {}
-    if _agora() - int(notas.get("quando") or 0) > 8 * 3600:
-        notas = oficio.inspirar("bilibili")
-        doc = _estado()
-        doc.setdefault("inspiracao", {})["bilibili"] = notas
-        _gravar(ESTADO, doc)
+    notas = oficio.inspirar("bilibili", licao=_licao_bili(arq.get("lista") or []))
+    _guardar_estudo("bilibili", notas)
     usados = {str(item.get("titulo") or "") for item in (arq.get("lista") or [])}
     peca = oficio.roteiro("bilibili", notas, usados)
     destino = oficio.PECAS / "bili-proxima.mp4"
@@ -551,6 +608,8 @@ def ciclo_youtube_analisa() -> None:
     mensagem, campos, leitura = youtube_rotina.analisa()
     doc = _estado()
     doc["youtube"] = leitura
+    if leitura.get("estudo"):
+        doc.setdefault("estudo", {})["youtube"] = leitura["estudo"]
     _gravar(ESTADO, doc)
     _marcar("youtube-analisa", mensagem, **campos)
 
@@ -562,6 +621,7 @@ def ciclo_youtube_cria() -> None:
 
 
 def ciclo_tiktok_analisa() -> None:
+    import canais_oficio as oficio
     st, cookie, stats = _tiktok(_sessoes().get("tiktok", ""))
     if st == "ok" and cookie:
         pares = _sessoes()
@@ -573,15 +633,22 @@ def ciclo_tiktok_analisa() -> None:
     if st != "ok":
         _marcar("tiktok-analisa", "sem sessao, nao invento view nem like")
         return
-    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. sem view por video, nao julguei 24h e nao inventei")
+    estudo = oficio.estudo_de("tiktok", _tiktok_itens(cookie), "ainda sem view por video; use so o exemplo de estrutura")
+    _guardar_estudo("tiktok", estudo)
+    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. sem view por video, nao julguei 24h e nao inventei. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no TikTok, sem copiar titulo.")
 
 
 def ciclo_tiktok_cria() -> None:
+    import canais_oficio as oficio
     st, _, _ = _tiktok(_sessoes().get("tiktok", ""))
     if st != "ok":
         _marcar("tiktok-cria", "sem sessao, nao republico e nao posto", proxima=_agora() + COOKIE_MORTO_S)
         return
-    _marcar("tiktok-cria", "A LÂMPADA DA COZINHA ja foi aceita para 08/10 21:00. nao posto outra antes de 24h depois disso", proxima=_agora() + INSPIRA_POS_POST_S)
+    estudo = ( _estado().get("estudo") or {}).get("tiktok") or {}
+    if not estudo.get("leu"):
+        estudo = oficio.estudo_de("tiktok", _tiktok_itens(_sessoes().get("tiktok", "")), "ainda sem view por video; use so o exemplo de estrutura")
+        _guardar_estudo("tiktok", estudo)
+    _marcar("tiktok-cria", f"A LÂMPADA DA COZINHA ja foi aceita para 08/10 21:00. nao posto outra antes de 24h depois disso. Estudei {len(estudo.get('modelos') or [])} modelos do TikTok para o proximo, sem copiar titulo.", proxima=_agora() + INSPIRA_POS_POST_S, estudo=len(estudo.get("modelos") or []))
 
 
 def ciclo_arena_acorda() -> None:

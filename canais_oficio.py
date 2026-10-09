@@ -77,41 +77,110 @@ def _get(url: str, timeout: int = 15) -> str:
         return ""
 
 
-def inspirar(plataforma: str) -> dict:
-    titulos: list[str] = []
-    if plataforma == "bilibili":
-        bruto = _get("https://api.bilibili.com/x/web-interface/popular?ps=8&pn=1")
-        try:
-            doc = json.loads(bruto)
-            for item in ((doc.get("data") or {}).get("list") or [])[:8]:
-                nome = str(item.get("title") or "").strip()
-                if nome:
-                    titulos.append(nome[:80])
-        except Exception:
-            titulos = []
-    elif plataforma == "youtube":
-        bruto = _get("https://www.youtube.com/feed/trending")
-        if "viewCount" in bruto or "<title>" in bruto:
-            import re
-            titulos = [t[:80] for t in re.findall(r'"title":\{"simpleText":"([^"]{4,80})"', bruto)[:8]]
-    else:
-        bruto = _get("https://www.tiktok.com/api/recommend/item_list/?aid=1988&count=5")
-        if bruto.startswith("{"):
-            try:
-                doc = json.loads(bruto)
-                for item in (doc.get("itemList") or [])[:5]:
-                    nome = str(item.get("desc") or "").strip()
-                    if nome:
-                        titulos.append(nome[:80])
-            except Exception:
-                titulos = []
+def _numero(valor) -> int | None:
+    try:
+        if valor is None or valor == "":
+            return None
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def forma_duracao(segundos) -> str:
+    n = _numero(segundos)
+    if n is None:
+        return "duracao_nao_lida"
+    if n <= 60:
+        return "curto_ate_60s"
+    if n <= 180:
+        return "medio_ate_3min"
+    return "longo"
+
+
+def faixa_views(views) -> str:
+    n = _numero(views)
+    if n is None:
+        return "sem_contagem"
+    if n >= 1_000_000:
+        return "muito_alta"
+    if n >= 100_000:
+        return "alta"
+    if n >= 10_000:
+        return "media"
+    return "baixa"
+
+
+def exemplo_criacao(segundos) -> str:
+    forma = forma_duracao(segundos)
+    if forma == "curto_ate_60s":
+        return "gancho falado nos 2 primeiros segundos, um conflito, reviravolta antes do fim"
+    if forma == "medio_ate_3min":
+        return "abertura curta, tres momentos, reviravolta no ultimo"
+    if forma == "longo":
+        return "promessa clara no inicio e desfecho proprio"
+    return "gancho cedo e desfecho proprio"
+
+
+def estudo_de(plataforma: str, itens: list[dict], licao: str = "") -> dict:
+    modelos = []
+    vistos = []
+    for item in itens[:8]:
+        titulo = str(item.get("titulo") or "").strip()
+        if titulo:
+            vistos.append(titulo[:80])
+        segundos = item.get("duracao_s")
+        if not any(modelo["forma"] == forma_duracao(segundos) and modelo["faixa_views"] == faixa_views(item.get("views")) for modelo in modelos):
+            modelos.append({
+                "forma": forma_duracao(segundos),
+                "faixa_views": faixa_views(item.get("views")),
+                "exemplo_de_criacao": exemplo_criacao(segundos),
+            })
+    leu = bool(modelos)
     return {
         "plataforma": plataforma,
         "quando": agora(),
-        "leu": bool(titulos),
-        "formatos": titulos[:5],
-        "nota": "li titulos publicos, nao copio" if titulos else "nao li tendencia, nao inventei formato",
+        "leu": leu,
+        "modelos": modelos[:6],
+        "titulos_vistos": vistos[:8],
+        "licao": licao or "ainda sem julgamento de 24h do proprio canal",
+        "nota": "estudei metadados do proprio app; o exemplo e so a estrutura, nao copio titulo nem video" if leu else "nao li o que funciona no app, nao inventei modelo",
     }
+
+
+def estudo_publico(estudo: dict | None) -> dict:
+    estudo = estudo or {}
+    return {
+        "plataforma": estudo.get("plataforma"),
+        "quando": estudo.get("quando") or 0,
+        "leu": bool(estudo.get("leu")),
+        "modelos": estudo.get("modelos") or [],
+        "vistos": len(estudo.get("titulos_vistos") or []),
+        "licao": estudo.get("licao") or "",
+        "nota": estudo.get("nota") or "",
+    }
+
+
+def _bilibili_itens() -> list[dict]:
+    bruto = _get("https://api.bilibili.com/x/web-interface/popular?ps=8&pn=1")
+    try:
+        doc = json.loads(bruto)
+    except Exception:
+        return []
+    itens = []
+    for item in ((doc.get("data") or {}).get("list") or [])[:8]:
+        stat = item.get("stat") or {}
+        itens.append({
+            "titulo": str(item.get("title") or "")[:80],
+            "views": stat.get("view"),
+            "duracao_s": item.get("duration"),
+        })
+    return itens
+
+
+def inspirar(plataforma: str, itens: list[dict] | None = None, licao: str = "") -> dict:
+    if itens is None and plataforma == "bilibili":
+        itens = _bilibili_itens()
+    return estudo_de(plataforma, itens or [], licao)
 
 
 def _groq(system: str, user: str) -> str:
@@ -138,15 +207,17 @@ def _groq(system: str, user: str) -> str:
 
 
 def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
-    formatos = notas.get("formatos") or []
+    modelos = notas.get("modelos") or []
+    exemplos = [str(item.get("exemplo_de_criacao") or "") for item in modelos if item.get("exemplo_de_criacao")]
     system = (
         "Escreva uma peca original curta de historia noturna. "
-        "Nao copie titulo, frase ou video de outra pessoa. "
+        "Siga o exemplo de criacao apenas como molde de estrutura. "
+        "Nao copie titulo, frase, nome, historia ou video. "
         "Devolva so JSON com titulo, descricao e fala. "
         "Bilibili em chines. YouTube e TikTok em portugues. "
         "Titulo com no maximo 60 caracteres. Fala com no maximo 180 caracteres."
     )
-    user = "Formato visto, so como ideia, nao copiar: " + " | ".join(formatos[:4])
+    user = "Exemplo de criacao, so estrutura: " + " | ".join(exemplos[:4]) + ". Licao do proprio canal: " + str(notas.get("licao") or "ainda sem julgamento de 24h")
     texto = _groq(system, user)
     titulo, descricao, fala = "", "", ""
     if texto:
@@ -159,7 +230,8 @@ def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
             fala = str(doc.get("fala") or "").strip()[:180]
         except Exception:
             titulo = ""
-    copiou = any(titulo and titulo in item for item in formatos) or titulo in TITULOS_BLOQUEADOS or titulo in usados
+    vistos = notas.get("titulos_vistos") or []
+    copiou = any(titulo and (titulo in item or item in titulo) for item in vistos) or titulo in TITULOS_BLOQUEADOS or titulo in usados
     if not titulo or not descricao or copiou:
         banco = ORIGINAIS[plataforma]
         escolha = banco[int(time.strftime("%j")) % len(banco)]
