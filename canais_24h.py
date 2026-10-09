@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import json
 import os
 import re
@@ -125,13 +126,23 @@ def _marcar(nome: str, texto: str, **campos) -> None:
 
 def estado_publico() -> dict:
     doc = _estado()
-    saida = {
+    canais = {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao", "estudo", "leitura_agora")}
+    estudo = canais.get("estudo") or {}
+    inspiracao = canais.get("inspiracao")
+    if isinstance(inspiracao, dict) and (estudo.get("youtube") or {}).get("leu"):
+        antiga = dict(inspiracao.get("youtube") or {})
+        if antiga.get("leu") is False:
+            antiga["nota"] = "nota antiga, substituida pelo estudo do proprio app"
+            antiga["leu"] = None
+            inspiracao = dict(inspiracao)
+            inspiracao["youtube"] = antiga
+            canais["inspiracao"] = inspiracao
+    return {
         "vivo": doc.get("vivo") or 0,
         "sem_pc": True,
         "agentes": doc.get("agentes") or {},
-        "canais": {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao", "estudo")},
+        "canais": canais,
     }
-    return saida
 
 
 def _csrf(cookie: str) -> str:
@@ -487,6 +498,80 @@ def _licao_bili(lista: list[dict]) -> str:
     return "ainda sem julgamento de 24h do proprio canal"
 
 
+def _num(valor):
+    if valor is None or valor == "":
+        return None
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tiktok_lista_html(corpo: str) -> list[dict]:
+    if not corpo:
+        return []
+    marca = ""
+    inicio = -1
+    for candidato in ("&quot;item_list&quot;:", '"item_list":'):
+        inicio = corpo.find(candidato)
+        if inicio >= 0:
+            marca = candidato
+            break
+    if inicio < 0:
+        return []
+    try:
+        bruto = html.unescape(corpo[inicio + len(marca):])
+        itens, _ = json.JSONDecoder().raw_decode(bruto)
+    except Exception:
+        return []
+    agora = _agora()
+    saida = []
+    for item in itens[:12]:
+        post_time = int(item.get("post_time") or 0)
+        visibilidade = item.get("visibility")
+        publico = visibilidade == 1 and not item.get("in_review") and bool(post_time) and post_time <= agora
+        duracao = item.get("duration")
+        saida.append({
+            "id": str(item.get("item_id") or ""),
+            "titulo": str(item.get("desc") or "").split("\n")[0][:80],
+            "views": _num(item.get("play_count")),
+            "likes": _num(item.get("like_count")),
+            "comentarios": _num(item.get("comment_count")),
+            "post_time": post_time,
+            "create_time": int(item.get("create_time") or 0),
+            "status": item.get("status"),
+            "visibility": visibilidade,
+            "publico": publico,
+            "duracao_s": round(int(duracao) / 1000, 1) if duracao else None,
+        })
+    return saida
+
+
+def _tiktok_studio(cookie: str) -> list[dict]:
+    if not cookie:
+        return []
+    _, _, corpo = _http(
+        "https://www.tiktok.com/tiktokstudio/content",
+        cookie,
+        timeout=40,
+        headers={"Referer": "https://www.tiktok.com/tiktokstudio/content", "Accept": "text/html"},
+    )
+    return _tiktok_lista_html(corpo)
+
+
+def _licao_tiktok(lista: list[dict]) -> str:
+    import canais_oficio as oficio
+    for item in lista or []:
+        if not item.get("publico"):
+            continue
+        texto = oficio.juizo(int(item.get("post_time") or 0), item.get("views"))
+        if "gerou view sim" in texto:
+            return "o ultimo original julgado gerou view; mantenha a estrutura curta e invente outra historia"
+        if "gerou view nao" in texto:
+            return "o ultimo original julgado nao gerou view em 24h; troque o gancho, historia nova, nao copie titulo"
+    return "ainda sem julgamento de 24h do proprio TikTok; use so o exemplo de estrutura"
+
+
 def _tiktok_itens(cookie: str) -> list[dict]:
     if not cookie:
         return []
@@ -627,37 +712,97 @@ def ciclo_tiktok_analisa() -> None:
         pares = _sessoes()
         pares["tiktok"] = cookie
         _guardar_sessoes(pares)
+    lista = _tiktok_studio(cookie) if st == "ok" else []
+    juizos = []
+    if lista:
+        for item in lista:
+            if item.get("publico"):
+                juizos.append(oficio.juizo(int(item.get("post_time") or 0), item.get("views")))
     doc = _estado()
-    doc["tiktok"] = {**stats, "cookie": st, "quando": _agora(), "republicou": False}
+    doc["tiktok"] = {
+        **stats,
+        "cookie": st,
+        "quando": _agora(),
+        "republicou": False,
+        "videos_metricas": lista,
+        "lidos_studio": len(lista),
+        "lista_parcial": True,
+        "juizo_24h": juizos,
+    }
     _gravar(ESTADO, doc)
     if st != "ok":
         _marcar("tiktok-analisa", "sem sessao, nao invento view nem like")
         return
-    estudo = oficio.estudo_de("tiktok", _tiktok_itens(cookie), "ainda sem view por video; use so o exemplo de estrutura")
+    licao = _licao_tiktok(lista)
+    estudo = oficio.estudo_de("tiktok", _tiktok_itens(cookie), licao)
     _guardar_estudo("tiktok", estudo)
-    _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. sem view por video, nao julguei 24h e nao inventei. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no TikTok, sem copiar titulo.")
+    if not lista:
+        _marcar("tiktok-analisa", f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. lista do studio nao lida, nao inventei view por video. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo.")
+        return
+    novo = lista[0]
+    ar = "no ar" if novo.get("publico") else "nao confirmei no ar"
+    _marcar(
+        "tiktok-analisa",
+        f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. "
+        f"li {len(lista)} da lista do studio, nao a conta inteira. ultimo {novo.get('titulo')} {ar}, views {novo.get('views')} likes {novo.get('likes')}. "
+        + " | ".join(juizos[:3])
+        + f". Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no TikTok, sem copiar titulo.",
+    )
 
 
 def ciclo_tiktok_cria() -> None:
     import canais_oficio as oficio
-    st, _, _ = _tiktok(_sessoes().get("tiktok", ""))
+    st, cookie, _ = _tiktok(_sessoes().get("tiktok", ""))
     if st != "ok":
         _marcar("tiktok-cria", "sem sessao, nao republico e nao posto", proxima=_agora() + COOKIE_MORTO_S)
         return
-    estudo = ( _estado().get("estudo") or {}).get("tiktok") or {}
+    lista = _tiktok_studio(cookie)
+    estudo = (_estado().get("estudo") or {}).get("tiktok") or {}
     if not estudo.get("leu"):
-        estudo = oficio.estudo_de("tiktok", _tiktok_itens(_sessoes().get("tiktok", "")), "ainda sem view por video; use so o exemplo de estrutura")
+        estudo = oficio.estudo_de("tiktok", _tiktok_itens(cookie), _licao_tiktok(lista))
         _guardar_estudo("tiktok", estudo)
-    _marcar("tiktok-cria", f"A LÂMPADA DA COZINHA ja foi aceita para 08/10 21:00. nao posto outra antes de 24h depois disso. Estudei {len(estudo.get('modelos') or [])} modelos do TikTok para o proximo, sem copiar titulo.", proxima=_agora() + INSPIRA_POS_POST_S, estudo=len(estudo.get("modelos") or []))
+    n = len(estudo.get("modelos") or [])
+    if not lista:
+        _marcar("tiktok-cria", f"nao li a lista do studio, nao inventei post nem agendei. Estudei {n} modelos, sem copiar titulo.", proxima=_agora() + CHECAGEM_S)
+        return
+    novo = lista[0]
+    hora = int(novo.get("post_time") or 0)
+    if not novo.get("publico") or not hora:
+        _marcar("tiktok-cria", f"ultimo lido {novo.get('titulo')} nao confirmei no ar, views {novo.get('views')}. nao posto outra e nao agendei.", proxima=_agora() + CHECAGEM_S, estudo=n)
+        return
+    idade = _agora() - hora
+    if idade < oficio.DIA:
+        _marcar(
+            "tiktok-cria",
+            f"{novo.get('titulo')} esta no ar, views {novo.get('views')}, ainda nao fez 24h ({idade // 3600}h). nao posto outra e nao agendei de novo. Estudei {n} modelos, sem copiar titulo.",
+            proxima=_agora() + min(CHECAGEM_S, oficio.DIA - idade),
+            estudo=n,
+        )
+        return
+    _marcar(
+        "tiktok-cria",
+        f"passou 24h de {novo.get('titulo')}, views {novo.get('views')}. este servidor nao envia arquivo ao TikTok; nao inventei post nem agendei. Estudei {n} modelos, sem copiar titulo.",
+        proxima=_agora() + CHECAGEM_S,
+        estudo=n,
+    )
 
 
 def ciclo_arena_acorda() -> None:
     import canais_oficio as oficio
     hora, dia = oficio.hora_local()
+    ordem, motivo = oficio.em_ordem(_estado())
     doc = _estado()
+    doc["leitura_agora"] = {
+        "em_ordem": ordem,
+        "motivo": motivo,
+        "quando": _agora(),
+        "quem": "servidor",
+        "telegram": False,
+    }
+    _gravar(ESTADO, doc)
     mon = doc.get("monitor") or {}
     if not (8 <= hora < 10):
-        _marcar("arena-acorda", "monitor do servidor as 8h, sem Chrome e sem fingir que abriu o chat")
+        _marcar("arena-acorda", "leitura atual no servidor, sem Chrome. aviso so as 8h, nao reenvio")
         return
     if mon.get("dia") == dia and mon.get("tentou"):
         _marcar("arena-acorda", mon.get("resumo") or "ja monitorei hoje")

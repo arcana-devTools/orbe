@@ -128,6 +128,7 @@ def planejar(notes: dict, used: set[str]) -> dict:
         "exemplo_de_criacao": [item.get("exemplo_de_criacao") for item in (notes.get("modelos") or [])[:6]],
         "formas_que_funcionam": [item.get("forma") for item in (notes.get("modelos") or [])[:6]],
         "licao_do_proprio_canal": notes.get("licao") or "",
+        "nota_do_estudo": notes.get("nota") or "",
     }, ensure_ascii=False)
     raw = _llm(system, user)
     try:
@@ -356,6 +357,37 @@ def _reply_text(observed: dict) -> str:
     return text
 
 
+def _e_original(video: dict) -> bool:
+    return any(str(tag).startswith("orbe-original-") for tag in (video.get("tags") or []))
+
+
+def _adotar_originais(d: dict, records: list[dict], now: int) -> None:
+    mudou = False
+    conhecidos = {j.get("video") for j in d["jobs"] if j.get("video")}
+    for video in records:
+        vid = video.get("video")
+        if not vid or not _e_original(video):
+            continue
+        if vid not in conhecidos:
+            d["jobs"].append({
+                "id": "canal-" + str(vid),
+                "video": vid,
+                "estado": "publico" if video.get("privacidade") == "public" and video.get("processamento") == "succeeded" else "visto_no_canal",
+                "peca": {"titulo": video.get("titulo") or ""},
+                "criado_em": epoch(video.get("publicado_em")) or now,
+                "adotado_da_api": True,
+                "copia_apagada": True,
+            })
+            conhecidos.add(vid)
+            mudou = True
+        publicado = epoch(video.get("publicado_em"))
+        if publicado and int(d.get("ultimo_publicado") or 0) < publicado:
+            d["ultimo_publicado"] = publicado
+            mudou = True
+    if mudou:
+        save(d)
+
+
 def analisa() -> tuple[str,dict,dict]:
     with _LOCK:
         status=yt.probe()
@@ -368,6 +400,7 @@ def analisa() -> tuple[str,dict,dict]:
             public.sort(key=lambda v:epoch(v.get("publicado_em")),reverse=True)
             latest=public[0] if public else (records[0] if records else {})
             from canais_oficio import juizo
+            _adotar_originais(d, records, now)
             jobs={j.get("video"):j for j in d["jobs"] if j.get("video")}
             for v in records:
                 ptime=epoch(v.get("publicado_em"))

@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import time
+from datetime import datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -121,29 +122,60 @@ def exemplo_criacao(segundos) -> str:
     return "gancho cedo e desfecho proprio"
 
 
+def _epoch_iso(value) -> int:
+    try:
+        return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp())
+    except Exception:
+        return 0
+
+
+def _aproveitaveis(itens: list[dict]) -> tuple[list[dict], int]:
+    """Este canal publica peca curta. Video longo do chart nao vira molde."""
+    curtos = []
+    longos = 0
+    for item in itens[:12]:
+        segundos = _numero(item.get("duracao_s"))
+        if segundos is not None and segundos > 180:
+            longos += 1
+            continue
+        curtos.append(item)
+    return curtos, longos
+
+
 def estudo_de(plataforma: str, itens: list[dict], licao: str = "") -> dict:
+    base, longos = _aproveitaveis(itens or [])
     modelos = []
     vistos = []
-    for item in itens[:8]:
+    for item in base[:8]:
         titulo = str(item.get("titulo") or "").strip()
         if titulo:
             vistos.append(titulo[:80])
         segundos = item.get("duracao_s")
-        if not any(modelo["forma"] == forma_duracao(segundos) and modelo["faixa_views"] == faixa_views(item.get("views")) for modelo in modelos):
-            modelos.append({
-                "forma": forma_duracao(segundos),
-                "faixa_views": faixa_views(item.get("views")),
-                "exemplo_de_criacao": exemplo_criacao(segundos),
-            })
-    leu = bool(modelos)
+        forma = forma_duracao(segundos)
+        faixa = faixa_views(item.get("views"))
+        if any(modelo["forma"] == forma and modelo["faixa_views"] == faixa for modelo in modelos):
+            continue
+        modelos.append({
+            "forma": forma,
+            "faixa_views": faixa,
+            "exemplo_de_criacao": exemplo_criacao(segundos),
+        })
+    if modelos:
+        nota = "estudei metadados do proprio app; o exemplo e so a estrutura curta, nao copio titulo nem video"
+        if longos:
+            nota += f"; ignorei {longos} longo(s), nao vou alongar a peca"
+    elif itens:
+        nota = "li o app, mas o que tinha view era longo; nao alongo esta peca e nao copio titulo"
+    else:
+        nota = "nao li o que funciona no app, nao inventei modelo"
     return {
         "plataforma": plataforma,
         "quando": agora(),
-        "leu": leu,
+        "leu": bool(itens),
         "modelos": modelos[:6],
         "titulos_vistos": vistos[:8],
         "licao": licao or "ainda sem julgamento de 24h do proprio canal",
-        "nota": "estudei metadados do proprio app; o exemplo e so a estrutura, nao copio titulo nem video" if leu else "nao li o que funciona no app, nao inventei modelo",
+        "nota": nota,
     }
 
 
@@ -217,7 +249,7 @@ def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
         "Bilibili em chines. YouTube e TikTok em portugues. "
         "Titulo com no maximo 60 caracteres. Fala com no maximo 180 caracteres."
     )
-    user = "Exemplo de criacao, so estrutura: " + " | ".join(exemplos[:4]) + ". Licao do proprio canal: " + str(notas.get("licao") or "ainda sem julgamento de 24h")
+    user = "Exemplo de criacao, so estrutura: " + " | ".join(exemplos[:4]) + ". Licao do proprio canal: " + str(notas.get("licao") or "ainda sem julgamento de 24h") + ". Nota do estudo: " + str(notas.get("nota") or "")
     texto = _groq(system, user)
     titulo, descricao, fala = "", "", ""
     if texto:
@@ -521,10 +553,22 @@ def em_ordem(doc: dict) -> tuple[bool, str]:
     if faltam:
         motivos.append("agentes sem estado: "+", ".join(sorted(faltam)))
     if not youtube_token_configurado() or cookies.get("youtube") != "ok":
-        motivos.append("YouTube sem OAuth valido; nao publica nem edita o Short 13")
+        motivos.append("YouTube sem OAuth valido; nao publica")
     leitura = doc.get("youtube") or {}
-    if not leitura.get("ok") or leitura.get("views") is None or agora()-int(leitura.get("quando") or 0)>3600:
+    videos = leitura.get("videos") or []
+    views_ok = leitura.get("views") is not None or any(v.get("views") is not None for v in videos)
+    if not leitura.get("ok") or not views_ok or agora()-int(leitura.get("quando") or 0)>3600:
         motivos.append("YouTube sem contagens oficiais recentes")
+    recentes = []
+    for video in videos:
+        tags = video.get("tags") or []
+        if not any(str(tag).startswith("orbe-original-") for tag in tags):
+            continue
+        publicado = _epoch_iso(video.get("publicado_em"))
+        if publicado and agora() - publicado < DIA:
+            recentes.append(video)
+    if len(recentes) >= 2:
+        motivos.append("YouTube tem dois originais no mesmo dia; nao posto outro antes de 24h do ultimo")
     if cookies.get("bilibili") != "ok":
         motivos.append("Bilibili sem sessao")
     bili = doc.get("bilibili") or {}
@@ -535,17 +579,39 @@ def em_ordem(doc: dict) -> tuple[bool, str]:
     tt = doc.get("tiktok") or {}
     if any(tt.get(k) is None for k in ("seguidores", "curtidas", "videos")) or agora()-int(tt.get("quando") or 0)>3600:
         motivos.append("TikTok sem contagens recentes")
-    if not (tt.get("views_por_video") or tt.get("videos_metricas")):
+    metricas = tt.get("videos_metricas") or []
+    if not metricas or any(item.get("views") is None for item in metricas):
         motivos.append("TikTok ainda sem contagem por video para avaliar 24h")
     for nome, item in (doc.get("agentes") or {}).items():
         if item.get("saude") == "falha" or str(item.get("ultimo") or "").startswith("falhou o ciclo"):
             motivos.append(nome+": "+str(item.get("motivo") or "ciclo com pendencia"))
         elif agora()-int(item.get("quando") or 0)>7200:
             motivos.append(nome+": sem sinal recente")
-    tt_analista = ((doc.get("agentes") or {}).get("tiktok-analisa") or {}).get("ultimo") or ""
-    if "sem view por video" in tt_analista:
-        motivos.append("TikTok ainda sem contagem por video para avaliar 24h")
     return (not motivos), "; ".join(dict.fromkeys(motivos))
+
+
+def _linha_youtube(yt: dict) -> str:
+    originais = []
+    for video in yt.get("videos") or []:
+        tags = video.get("tags") or []
+        if any(str(tag).startswith("orbe-original-") for tag in tags):
+            views = video.get("views")
+            originais.append(f"{video.get('titulo') or 'sem titulo'} views {views if views is not None else 'nao lido'}")
+    if originais:
+        return "YouTube originais: " + "; ".join(originais[:3]) + "."
+    views = yt.get("views")
+    likes = yt.get("likes")
+    return f"YouTube: views {views if views is not None else 'nao lido'} likes {likes if likes is not None else 'nao lido'}."
+
+
+def _linha_tiktok(tt: dict) -> str:
+    base = f"TikTok: videos {tt.get('videos')} seguidores {tt.get('seguidores')}."
+    metricas = tt.get("videos_metricas") or []
+    if not metricas:
+        return base + " View por video nao lida."
+    novo = metricas[0]
+    ar = "no ar" if novo.get("publico") else "nao confirmei no ar"
+    return base + f" Ultimo lido {novo.get('titulo') or 'sem titulo'} {ar}, views {novo.get('views')}."
 
 
 def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
@@ -559,8 +625,8 @@ def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
         f"Esta tudo em ordem: {'sim' if ordem else 'nao'}.",
         f"Motivo: {motivo or 'os ciclos lidos nao mostraram falha'}.",
         f"Bilibili: {bili.get('bvid') or 'sem peca'} {bili.get('estado') or ''} views {bili.get('views') if bili.get('views') is not None else 'nao lido'}.",
-        f"YouTube: views {yt.get('views') if yt.get('views') is not None else 'nao lido'} likes {yt.get('likes') if yt.get('likes') is not None else 'nao lido'}.",
-        f"TikTok: videos {tt.get('videos')} seguidores {tt.get('seguidores')}.",
+        _linha_youtube(yt),
+        _linha_tiktok(tt),
         "Numero so entra se o agente leu. Nao publiquei nada neste aviso.",
     ]
     return "\n".join(linhas)

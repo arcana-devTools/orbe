@@ -182,16 +182,31 @@ def recentes() -> list[dict]:
     return videos([i for i in ids if i])
 
 
-def tendencias() -> dict:
-    identidade()
-    doc = request("GET", "videos", params={"part": "snippet,statistics,contentDetails", "chart": "mostPopular", "regionCode": "BR", "maxResults": 15})
-    items = doc.get("items") or []
+def _chart(categoria: str | None = None) -> list[dict]:
+    params = {"part": "snippet,statistics,contentDetails", "chart": "mostPopular", "regionCode": "BR", "maxResults": 15}
+    if categoria:
+        params["videoCategoryId"] = categoria
+    doc = request("GET", "videos", params=params)
     records = []
-    for i in items:
+    for i in doc.get("items") or []:
         s, st = i.get("snippet") or {}, i.get("statistics") or {}
         records.append({"id": i.get("id"), "titulo": str(s.get("title") or "")[:120],
             "descricao": str(s.get("description") or "")[:220], "duracao": (i.get("contentDetails") or {}).get("duration"),
             "views": _number(st, "viewCount"), "likes": _number(st, "likeCount")})
+    return records
+
+
+def tendencias() -> dict:
+    identidade()
+    records = _chart()
+    vistos = {item.get("id") for item in records}
+    try:
+        for item in _chart("24"):
+            if item.get("id") not in vistos:
+                records.append(item)
+                vistos.add(item.get("id"))
+    except YouTubeError:
+        pass
     if not records:
         raise YouTubeError("sem_tendencia_lida")
     return {"plataforma": "youtube", "quando": int(time.time()), "leu": True, "amostras": records,
