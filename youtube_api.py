@@ -253,6 +253,22 @@ def _filehash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def capa(video_id: str, path: Path) -> bool:
+    if not video_id or video_id in PROTECTED or not path.is_file():
+        return False
+    token = access_token()
+    r = httpx.post(
+        "https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
+        params={"videoId": video_id, "uploadType": "media"},
+        headers={"Authorization": "Bearer " + token, "Content-Type": "image/png"},
+        content=path.read_bytes(),
+        timeout=40,
+    )
+    if r.status_code >= 400:
+        raise YouTubeError("capa_nao_aceita", r.status_code)
+    return True
+
+
 def publicar(path: Path, metadata: dict, job_id: str) -> dict:
     """Uma sessao por job; nunca inicia de novo se ja enviou bytes.
     A URL de upload fica no cofre cifrado, nao no estado publico.

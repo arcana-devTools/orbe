@@ -239,42 +239,48 @@ def _groq(system: str, user: str) -> str:
 
 
 def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
+    import canais_papel as papel
     modelos = notas.get("modelos") or []
     exemplos = [str(item.get("exemplo_de_criacao") or "") for item in modelos if item.get("exemplo_de_criacao")]
+    semana = papel.hipotese(notas)
     system = (
-        "Escreva uma peca original curta de historia noturna. "
-        "Siga o exemplo de criacao apenas como molde de estrutura. "
-        "Nao copie titulo, frase, nome, historia ou video. "
-        "Devolva so JSON com titulo, descricao e fala. "
-        "Bilibili em chines. YouTube e TikTok em portugues. "
-        "Titulo com no maximo 60 caracteres. Fala com no maximo 180 caracteres."
+        "Escreva uma regra noturna original, nao um objeto com nome. "
+        "O lugar e a escola vazia a noite. O titulo e uma proibicao ou uma ausencia. "
+        "O titulo nao pode nomear lampada, corredor, relogio, cadeira, elevador, torneira, janela, cozinha ou chamada. "
+        "Nao copie titulo, frase, nome ou video. "
+        "A descricao e somente a frase da regra, sem dizer que foi feita por agente ou narracao sintetica. "
+        "Devolva so JSON com titulo, fala e objeto. "
+        "Bilibili em chines. TikTok em portugues. "
+        "Titulo com no maximo 60 caracteres. Fala com no maximo 80 caracteres."
     )
-    user = "Exemplo de criacao, so estrutura: " + " | ".join(exemplos[:4]) + ". Licao do proprio canal: " + str(notas.get("licao") or "ainda sem julgamento de 24h") + ". Nota do estudo: " + str(notas.get("nota") or "")
+    user = (
+        "Hipotese da semana: " + semana["forma"]
+        + ". Papel visual de hoje: " + semana["papel"]
+        + ". Exemplo de estrutura, sem copiar: " + " | ".join(exemplos[:3])
+        + ". Licao: " + str(notas.get("licao") or "troque o gancho, historia nova")
+    )
     texto = _groq(system, user)
-    titulo, descricao, fala = "", "", ""
+    peca = {}
     if texto:
         try:
             ini = texto.find("{")
             fim = texto.rfind("}")
             doc = json.loads(texto[ini:fim + 1]) if ini >= 0 else {}
-            titulo = str(doc.get("titulo") or "").strip()[:60]
-            descricao = str(doc.get("descricao") or "").strip()[:300]
-            fala = str(doc.get("fala") or "").strip()[:180]
+            peca = {
+                "titulo": str(doc.get("titulo") or "").strip()[:60],
+                "fala": str(doc.get("fala") or "").strip()[:80],
+                "objeto": str(doc.get("objeto") or "marca")[:24],
+                "origem": "regra pela ia, assunto escondido, sem copiar titulo",
+            }
         except Exception:
-            titulo = ""
-    vistos = notas.get("titulos_vistos") or []
-    copiou = any(titulo and (titulo in item or item in titulo) for item in vistos) or titulo in TITULOS_BLOQUEADOS or titulo in usados
-    if not titulo or not descricao or copiou:
-        banco = ORIGINAIS[plataforma]
-        escolha = banco[int(time.strftime("%j")) % len(banco)]
-        if escolha[0] in usados:
-            escolha = next((item for item in banco if item[0] not in usados), banco[0])
-        titulo, descricao = escolha
-        fala = descricao
-        origem = "original fixo, nao copiei tendencia"
+            peca = {}
+    vistos = set(usados) | set(notas.get("titulos_vistos") or []) | TITULOS_BLOQUEADOS
+    if not papel.peca_valida(peca, vistos) or any(peca.get("titulo") and (peca["titulo"] in item or item in peca["titulo"]) for item in vistos if item):
+        peca = papel.banco(plataforma, vistos)
     else:
-        origem = "original pela ia, sem copiar titulo lido"
-    return {"titulo": titulo, "descricao": descricao, "fala": fala, "origem": origem}
+        peca = papel.completar(peca, plataforma)
+    peca["papel"] = semana["papel"]
+    return peca
 
 
 def _ffmpeg() -> str:
@@ -290,60 +296,12 @@ def _ffmpeg() -> str:
     return ""
 
 
-def render_mp4(destino: Path, titulo: str, fala: str) -> str:
-    ff = _ffmpeg()
-    if not ff:
-        return "sem ffmpeg, nao gerei video e nao posto"
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except Exception:
-        return "sem pillow, nao gerei video e nao posto"
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    fonte = None
-    for caminho in (
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ):
-        if Path(caminho).exists():
-            fonte = ImageFont.truetype(caminho, 42)
-            break
-    if fonte is None:
-        fonte = ImageFont.load_default()
-    linhas = [titulo[:42], fala[:42], fala[42:84]]
-    frames = []
-    for i in range(6):
-        im = Image.new("RGB", (1280, 720), (10, 14, 28))
-        draw = ImageDraw.Draw(im)
-        cor = (242, 196, 84) if i % 2 == 0 else (150, 110, 40)
-        draw.ellipse((560, 120, 720, 280), fill=cor)
-        y = 340
-        for linha in linhas:
-            if linha.strip():
-                draw.text((80, y), linha, fill=(235, 235, 235), font=fonte)
-                y += 64
-        frame = destino.parent / f"{destino.stem}-{i}.png"
-        im.save(frame)
-        frames.append(frame)
-    cmd = [
-        ff, "-y", "-framerate", "1", "-start_number", "0",
-        "-i", str(destino.parent / f"{destino.stem}-%d.png"),
-        "-f", "lavfi", "-i", "sine=frequency=196:duration=6:sample_rate=44100",
-        "-t", "6", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-        "-shortest", str(destino),
-    ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-    except Exception:
-        cmd = [ff, "-y", "-framerate", "1", "-start_number", "0", "-i", str(destino.parent / f"{destino.stem}-%d.png"), "-t", "6", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(destino)]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=60)
-        except Exception:
-            return "ffmpeg falhou, nao postei"
-    for frame in frames:
-        frame.unlink(missing_ok=True)
-    if not destino.exists() or destino.stat().st_size < 1000:
-        return "video curto demais, nao postei"
-    return ""
+def render_mp4(destino: Path, titulo: str, fala: str, peca: dict | None = None) -> str:
+    import canais_papel as papel
+    pronta = peca or {"titulo": titulo, "fala": fala, "descricao": fala}
+    if not pronta.get("palavra"):
+        pronta = papel.completar(pronta, "bilibili")
+    return papel.render_loop(destino, pronta)
 
 
 def _bili_json(url: str, cookie: str, data: bytes | None = None, method: str | None = None, timeout: int = 60) -> tuple[int, dict, object]:
@@ -443,7 +401,7 @@ def bili_publicar(cookie: str, arquivo: Path, titulo: str, descricao: str) -> di
         "tid": 21,
         "title": titulo[:80],
         "desc": descricao[:300],
-        "tag": "原创,夜晚,细节",
+        "tag": "原创,夜校,规则",
         "desc_format_id": 9999,
         "dynamic": "",
         "interactive": 0,

@@ -205,71 +205,15 @@ def narrar(folder: Path, speech: str) -> tuple[Path, str]:
 
 
 def render(folder: Path, piece: dict) -> tuple[Path, str]:
-    from PIL import Image, ImageDraw
+    import canais_papel as papel
     folder.mkdir(parents=True, exist_ok=True)
-    audio, voice = narrar(folder, piece["fala"])
-    ff = shutil.which("ffmpeg")
-    probe = shutil.which("ffprobe")
-    if not ff or not probe:
-        raise yt.YouTubeError("sem_ffmpeg_nao_envio")
-    try:
-        r = subprocess.run([probe,"-v","error","-show_entries","format=duration","-of","default=noprint_wrappers=1:nokey=1",str(audio)],
-            check=True, capture_output=True, text=True, timeout=15)
-        duration = float(r.stdout.strip())+0.7
-    except Exception:
-        raise yt.YouTubeError("audio_invalido_nao_envio") from None
-    if not 8<duration<65:
-        raise yt.YouTubeError("duracao_inadequada_nao_envio")
-    # Cenario vetorial autoral: corredor, porta, perspectiva e relogio; nao footage alheio.
-    im = Image.new("RGB",(720,1280)); draw = ImageDraw.Draw(im)
-    salt = int(hashlib.sha256(piece["titulo"].encode()).hexdigest()[:4],16)
-    for y in range(1280):
-        light = int(12+14*(1-y/1280)); draw.line((0,y,720,y),fill=(light//2,light,light+15+(salt%12)))
-    draw.polygon([(0,450),(230,500),(230,830),(0,1180)],fill=(14,25,37))
-    draw.polygon([(720,450),(490,500),(490,830),(720,1180)],fill=(11,20,33))
-    draw.polygon([(0,1180),(230,830),(490,830),(720,1180)],fill=(17,23,31))
-    for x in range(-300,1000,110):
-        draw.line((360,825,x,1280),fill=(32,40,48),width=2)
-    draw.rectangle((260,530,460,834),fill=(6,10,17),outline=(67,84,96),width=4)
-    draw.rectangle((272,545,448,820),outline=(27,37,49),width=2)
-    draw.ellipse((420,682,432,694),fill=(180,142,73))
-    draw.ellipse((310,393,410,493),fill=(27,39,52),outline=(162,157,130),width=3)
-    hour=(salt%12)*math.pi/6
-    draw.line((360,443,360+23*math.sin(hour),443-23*math.cos(hour)),fill=(226,216,172),width=4)
-    draw.line((360,443,389,453),fill=(226,216,172),width=3)
-    image=folder/"cenario.png";im.save(image)
-    font="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    if not Path(font).exists():
-        raise yt.YouTubeError("sem_fonte_nao_envio")
-    title=folder/"titulo.txt";title.write_text(textwrap.fill(piece["titulo"],28),encoding="utf-8")
-    # Blocos curtos por palavras para a legenda nunca sair da area segura.
-    beats=[];current=""
-    for word in piece["fala"].split():
-        if len(current)+len(word)+1>150 and current:
-            beats.append(current);current=""
-        current=(current+" "+word).strip()
-    if current:beats.append(current)
-    total_chars=sum(len(b) for b in beats)
-    filters=["zoompan=z='min(zoom+0.00022,1.08)':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=720x1280:fps=24",
-        "drawbox=x=25:y=872:w=670:h=360:color=black@0.66:t=fill",
-        f"drawtext=fontfile={font}:textfile={title}:reload=0:fontcolor=0xe7e1ca:fontsize=40:line_spacing=12:x=52:y=132"]
-    pos=0.0
-    for idx,beat in enumerate(beats):
-        last=duration if idx==len(beats)-1 else pos+duration*len(beat)/total_chars
-        file=folder/f"legenda-{idx}.txt";file.write_text(textwrap.fill(beat,32),encoding="utf-8")
-        filters.append(f"drawtext=fontfile={font}:textfile={file}:reload=0:fontcolor=white:fontsize=34:line_spacing=14:x=50:y=900:enable='between(t,{pos:.3f},{last:.3f})'")
-        pos=last
-    output=folder/"original.mp4"
-    command=[ff,"-y","-loglevel","error","-filter_threads","1","-loop","1","-i",str(image),"-i",str(audio),
-        "-vf",",".join(filters),"-t",f"{duration:.3f}","-r","24","-c:v","libx264","-preset","ultrafast","-crf","27",
-        "-threads","1","-pix_fmt","yuv420p","-c:a","aac","-b:a","96k","-movflags","+faststart",str(output)]
-    try:
-        subprocess.run(command,check=True,capture_output=True,timeout=180)
-    except Exception:
-        raise yt.YouTubeError("render_falhou_nao_envio") from None
-    if not output.is_file() or output.stat().st_size<10000:
-        raise yt.YouTubeError("original_invalido_nao_envio")
-    return output, voice
+    pronta = papel.completar(piece, "youtube")
+    pronta["aviso_antigo"] = True
+    destino = folder / "original.mp4"
+    erro = papel.render_loop(destino, pronta)
+    if erro:
+        raise yt.YouTubeError(erro.replace(" ", "_"))
+    return destino, "clique_sem_narrador"
 
 
 def _confirm(job: dict, d: dict) -> tuple[str,dict]:
@@ -288,12 +232,45 @@ def _confirm(job: dict, d: dict) -> tuple[str,dict]:
         job["estado"]="processando";save(d)
         return f"ID {job['video']} aceito; processamento em andamento. Copia guardada ate confirmar.",{"saude":"aguardando"}
     job["estado"]="publico";job["confirmado_em"]=int(time.time());job["publicado_em"]=info.get("publicado_em")
-    d["ultimo_publicado"]=job["confirmado_em"];save(d)
+    d["ultimo_publicado"]=job["confirmado_em"]
+    if job.get("tiktok_id"):
+        d.setdefault("cruzados", [])
+        if job["tiktok_id"] not in d["cruzados"]:
+            d["cruzados"].append(job["tiktok_id"])
+    save(d)
     folder=ROOT/job["id"]
+    capa=folder/"capa.png"
+    if capa.is_file():
+        try:
+            yt.capa(job["video"], capa)
+            job["capa"]="enviada"
+        except Exception:
+            job["capa"]="nao_aceita"
+        save(d)
     if folder.is_dir():
         shutil.rmtree(folder)
     job["copia_apagada"]=True;save(d)
     return f"Publiquei {job['video']} {job['peca']['titulo']}; confirmei publico/processado e apaguei a copia. Analise apos 24h.",{"saude":"ok","video":job["video"]}
+
+
+
+def _vencedor_tiktok(d: dict) -> dict | None:
+    try:
+        doc = json.loads(Path("data/canais_24h.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    cruzados = set(d.get("cruzados") or [])
+    candidatos = []
+    for item in ((doc.get("tiktok") or {}).get("videos_metricas") or []):
+        if not item.get("publico") or item.get("views") is None or int(item.get("views") or 0) <= 0:
+            continue
+        if str(item.get("id") or "") in cruzados:
+            continue
+        candidatos.append(item)
+    if not candidatos:
+        return None
+    candidatos.sort(key=lambda item: int(item.get("views") or 0), reverse=True)
+    return candidatos[0]
 
 
 def cria() -> tuple[str,dict]:
@@ -317,15 +294,30 @@ def cria() -> tuple[str,dict]:
                 remaining=DAY-(now-int(d["ultimo_publicado"]))
                 estudo=garantir_estudo(d)
                 return f"Aguardo 24h do ultimo original ({remaining//3600}h restantes); nao repito. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo.",{"saude":"aguardando","proxima":now+remaining,"estudo":len(estudo.get("modelos") or [])}
+            import canais_papel as papel
+            if not papel.manha(now):
+                estudo=garantir_estudo(d)
+                return f"Proximo so de manha, entre 9h e 11h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now<int(d.get("proxima_tentativa") or 0):
                 return "Aguardo a janela da proxima tentativa; nenhum reenvio incerto.",{"saude":"aguardando","proxima":d["proxima_tentativa"]}
             if not pending:
                 from canais_oficio import TITULOS_BLOQUEADOS
+                vencedor=_vencedor_tiktok(d)
+                if not vencedor:
+                    estudo=garantir_estudo(d)
+                    return "YouTube so recebe peca do TikTok que ja teve view; nao inventei outra. Estudei "+str(len(estudo.get("modelos") or []))+" modelos.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
+                regra=papel.regra_de_legenda(vencedor.get("titulo") or "")
+                if not regra or regra in TITULOS_BLOQUEADOS:
+                    d.setdefault("cruzados", []).append(str(vencedor.get("id") or ""));save(d)
+                    return "A peca com view nao serve como titulo; nao inventei outra.",{"saude":"aguardando"}
+                piece=papel.completar({"titulo":regra,"fala":regra,"descricao":regra,"origem":"peca do tiktok que ja teve view","tiktok_id":str(vencedor.get("id") or ""),"aviso_antigo":True},"youtube",now)
                 previous=yt.recentes()
-                used=set(TITULOS_BLOQUEADOS)|{str(v.get("titulo") or "") for v in previous}|{j["peca"]["titulo"] for j in d["jobs"]}
-                notes=garantir_estudo(d);piece=planejar(notes,used)
-                key=hashlib.sha256((piece["titulo"]+piece["fala"]+str(now)).encode()).hexdigest()[:16]
-                pending={"id":key,"criado_em":now,"estado":"planejado","peca":piece,"inspiracao":notes}
+                used=set(TITULOS_BLOQUEADOS)|{str(v.get("titulo") or "") for v in previous}
+                if piece["titulo"] in used:
+                    d.setdefault("cruzados", []).append(piece["tiktok_id"]);save(d)
+                    return "Essa peca ja esta no YouTube; nao repito.",{"saude":"aguardando"}
+                key=hashlib.sha256((piece["titulo"]+piece["tiktok_id"]+str(now)).encode()).hexdigest()[:16]
+                pending={"id":key,"criado_em":now,"estado":"planejado","peca":piece,"tiktok_id":piece["tiktok_id"]}
                 d["jobs"].append(pending);save(d)
             if pending.get("estado") in ("aceito_nao_publico","processamento_falhou"):
                 return "Envio anterior aceito, mas ainda nao publico; nao crio nem reenvio outro.",{"saude":"falha","motivo":pending["estado"]}
@@ -334,9 +326,9 @@ def cria() -> tuple[str,dict]:
             if not output.is_file():
                 output,voice=render(folder,pending["peca"])
                 pending["narracao"]=voice;pending["estado"]="pronto";save(d)
-            description=pending["peca"]["descricao"]+"\n\nHistoria de ficcao original criada pelo agente. Narracao sintetica e animacao autoral. #Shorts"
+            description=pending["peca"]["descricao"]
             metadata={"snippet":{"title":pending["peca"]["titulo"],"description":description,"categoryId":"24","defaultLanguage":"pt-BR",
-                "tags":["historia original","ficcao","orbe-original-"+pending["id"]]},
+                "tags":["regra noturna","orbe-original-"+pending["id"]]},
                 "status":{"privacyStatus":"public","selfDeclaredMadeForKids":False}}
             pending["estado"]="enviando";pending["tentou_em"]=now;save(d)
             result=yt.publicar(output,metadata,pending["id"])

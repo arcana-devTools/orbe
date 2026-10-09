@@ -194,6 +194,8 @@ def _bilibili_arquivo(cookie: str) -> dict:
             "publico": um.get("state") == 0,
             "views": st.get("view") if "view" in st else None,
             "likes": st.get("like") if "like" in st else None,
+            "moedas": st.get("coin") if "coin" in st else None,
+            "favoritos": st.get("favorite") if "favorite" in st else st.get("fav") if "fav" in st else None,
             "ptime": um.get("ptime") or 0,
         })
     return {
@@ -205,6 +207,8 @@ def _bilibili_arquivo(cookie: str) -> dict:
         "publico": arc.get("state") == 0,
         "views": stat.get("view") if "view" in stat else None,
         "likes": stat.get("like") if "like" in stat else None,
+        "moedas": stat.get("coin") if "coin" in stat else None,
+        "favoritos": stat.get("favorite") if "favorite" in stat else stat.get("fav") if "fav" in stat else None,
         "replies": stat.get("reply") or 0,
         "ptime": arc.get("ptime") or 0,
         "mid": (arc.get("author") or {}).get("mid") or 0,
@@ -647,7 +651,7 @@ def ciclo_bilibili_analisa() -> None:
         "bilibili-analisa",
         f"views {arq.get('views')} likes {arq.get('likes')} comentarios {len(comentarios)} respostas {novos}. "
         + " | ".join(juizos[:3])
-        + f". Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no Bilibili, sem copiar titulo.",
+        + f". moedas {arq.get('moedas')} favoritos {arq.get('favoritos')}. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no Bilibili, sem copiar titulo.",
     )
 
 
@@ -665,6 +669,13 @@ def ciclo_bilibili_cria() -> None:
     if arq.get("ptime") and _agora() - int(arq.get("ptime") or 0) < oficio.DIA:
         _marcar("bilibili-cria", "ultima peca ainda nao fez 24h, nao posto outra", proxima=_agora() + CHECAGEM_S)
         return
+    import canais_papel as papel
+    if not papel.manha():
+        doc = _estado()
+        doc["hipotese"] = papel.hipotese(doc)
+        _gravar(ESTADO, doc)
+        _marcar("bilibili-cria", f"proximo so de manha, entre 9h e 11h, nao as 21h. papel {doc['hipotese'].get('papel')}. nao postei.", proxima=_agora() + CHECAGEM_S)
+        return
     doc = _estado()
     if int((doc.get("bilibili_post") or {}).get("tentativa") or 0) > _agora() - oficio.DIA:
         _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio", proxima=_agora() + CHECAGEM_S)
@@ -674,7 +685,7 @@ def ciclo_bilibili_cria() -> None:
     usados = {str(item.get("titulo") or "") for item in (arq.get("lista") or [])}
     peca = oficio.roteiro("bilibili", notas, usados)
     destino = oficio.PECAS / "bili-proxima.mp4"
-    erro = oficio.render_mp4(destino, peca["titulo"], peca["fala"])
+    erro = oficio.render_mp4(destino, peca["titulo"], peca["fala"], peca)
     if erro:
         _marcar("bilibili-cria", erro, proxima=_agora() + CHECAGEM_S)
         return
@@ -703,6 +714,83 @@ def ciclo_youtube_cria() -> None:
     import youtube_rotina
     mensagem, campos = youtube_rotina.cria()
     _marcar("youtube-cria", mensagem, **campos)
+
+
+def _vizinhanca(cookie: str) -> str:
+    doc = _estado()
+    viz = doc.get("vizinhanca") or {}
+    if _agora() - int(viz.get("quando") or 0) < 7 * 86400:
+        return str(viz.get("nota") or "ja tentei a vizinhanca esta semana")
+    autores = []
+    for url in (
+        "https://www.tiktok.com/api/recommend/item_list/?aid=1988&count=8",
+        "https://www.tiktok.com/api/explore/item_list/?aid=1988&count=8&cursor=0",
+    ):
+        _, _, corpo = _http(url, cookie, headers={"Referer": "https://www.tiktok.com/", "Accept": "application/json"})
+        if not corpo or corpo[:1] not in "{[":
+            continue
+        try:
+            bruto = json.loads(corpo)
+        except Exception:
+            continue
+        for item in (bruto.get("itemList") or bruto.get("item_list") or [])[:8]:
+            autor = item.get("author") or {}
+            ident = str(autor.get("secUid") or autor.get("id") or "")
+            conta = str(autor.get("uniqueId") or "").lower()
+            if conta == "historias.dameia.noite" or not ident:
+                continue
+            if ident not in {a.get("id") for a in autores}:
+                autores.append({"id": ident, "duracao": (item.get("video") or {}).get("duration"), "aweme": str(item.get("id") or "")})
+        if autores:
+            break
+    seguidos = list(viz.get("seguidos") or [])
+    nota = "sem autor lido, nao segui ninguem"
+    if autores and len(seguidos) < 3:
+        novos = 0
+        for autor in autores:
+            if len(seguidos) >= 3 or novos >= 3:
+                break
+            if autor["id"] in seguidos:
+                continue
+            corpo = urllib.parse.urlencode({"sec_user_id": autor["id"], "type": 1, "aid": 1988}).encode()
+            code, _, resp = _http(
+                "https://www.tiktok.com/api/commit/follow/user/?aid=1988",
+                cookie,
+                data=corpo,
+                headers={"Referer": "https://www.tiktok.com/", "Accept": "application/json"},
+            )
+            if code == 200 and '"status_code":0' in resp.replace(" ", ""):
+                seguidos.append(autor["id"])
+                novos += 1
+            else:
+                nota = "tiktok recusou o follow, nao repito esta semana"
+                break
+        else:
+            nota = f"segui {novos}, parei em 3"
+        if novos and nota.startswith("sem autor"):
+            nota = f"segui {novos}, parei em 3"
+    comentario = "sem comentario"
+    alvo = next((a for a in autores if a.get("duracao") and a.get("aweme")), None)
+    if alvo and nota != "tiktok recusou o follow, nao repito esta semana":
+        try:
+            segundos = int(alvo["duracao"])
+        except (TypeError, ValueError):
+            segundos = 0
+        if segundos > 0:
+            texto = f"A regra cabe em {segundos} segundos e o assunto nao vem no comeco."
+            if "http" not in texto and "segue" not in texto.lower():
+                corpo = urllib.parse.urlencode({"aweme_id": alvo["aweme"], "text": texto, "aid": 1988}).encode()
+                code, _, resp = _http(
+                    "https://www.tiktok.com/api/comment/publish/?aid=1988",
+                    cookie,
+                    data=corpo,
+                    headers={"Referer": "https://www.tiktok.com/", "Accept": "application/json"},
+                )
+                comentario = "comentei um video" if code == 200 and '"status_code":0' in resp.replace(" ", "") else "comentario recusado, nao repito esta semana"
+    doc = _estado()
+    doc["vizinhanca"] = {"quando": _agora(), "seguidos": seguidos[:3], "nota": nota + "; " + comentario}
+    _gravar(ESTADO, doc)
+    return doc["vizinhanca"]["nota"]
 
 
 def ciclo_tiktok_analisa() -> None:
@@ -741,12 +829,13 @@ def ciclo_tiktok_analisa() -> None:
         return
     novo = lista[0]
     ar = "no ar" if novo.get("publico") else "nao confirmei no ar"
+    viz = _vizinhanca(cookie)
     _marcar(
         "tiktok-analisa",
         f"seguidores {stats.get('seguidores')} curtidas {stats.get('curtidas')} videos {stats.get('videos')}. "
         f"li {len(lista)} da lista do studio, nao a conta inteira. ultimo {novo.get('titulo')} {ar}, views {novo.get('views')} likes {novo.get('likes')}. "
         + " | ".join(juizos[:3])
-        + f". Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no TikTok, sem copiar titulo.",
+        + f". Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no TikTok, sem copiar titulo. Vizinhanca: {viz}.",
     )
 
 
@@ -774,7 +863,7 @@ def ciclo_tiktok_cria() -> None:
     if idade < oficio.DIA:
         _marcar(
             "tiktok-cria",
-            f"{novo.get('titulo')} esta no ar, views {novo.get('views')}, ainda nao fez 24h ({idade // 3600}h). nao posto outra e nao agendei de novo. Estudei {n} modelos, sem copiar titulo.",
+            f"{novo.get('titulo')} esta no ar, views {novo.get('views')}, ainda nao fez 24h ({idade // 3600}h). nao posto outra e nao agendei de novo. Proximo papel de manha, titulo sem nomear a coisa. Estudei {n} modelos, sem copiar titulo.",
             proxima=_agora() + min(CHECAGEM_S, oficio.DIA - idade),
             estudo=n,
         )
