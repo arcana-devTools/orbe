@@ -305,6 +305,13 @@ def cria() -> tuple[str,dict]:
         try:
             if pending and pending.get("video"):
                 return _confirm(pending,d)
+            previous=yt.recentes()
+            recentes=[(epoch(v.get("publicado_em")), v) for v in previous if epoch(v.get("publicado_em"))]
+            recentes.sort(key=lambda item: item[0], reverse=True)
+            if recentes and (now-recentes[0][0] < DAY or recentes[0][1].get("processamento") == "processing" or recentes[0][1].get("upload_status") in ("uploaded", "processing")):
+                estudo=garantir_estudo(d)
+                idade=(now-recentes[0][0])//3600
+                return f"Ja ha original recente no canal ({idade}h); nao posto outro antes de 24h. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now-int(d.get("ultimo_publicado") or 0)<DAY:
                 remaining=DAY-(now-int(d["ultimo_publicado"]))
                 estudo=garantir_estudo(d)
