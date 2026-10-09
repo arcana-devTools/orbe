@@ -1,0 +1,36 @@
+name: Ciclo dos canais
+on:
+  schedule:
+    # 8:10 BRT, aviso do Telegram. Janela real do codigo: 8h as 10h.
+    - cron: "10 11 * * *"
+    # 9:10, 9:40, 10:10 e 10:40 BRT. Publica so se a janela e a regra deixarem.
+    - cron: "10,40 12,13 * * *"
+    # 21:20 BRT, leitura. Nao e janela de post.
+    - cron: "20 0 * * *"
+  workflow_dispatch:
+jobs:
+  ciclo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ferramentas
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Pacotes
+        run: pip install httpx cryptography pillow
+      - name: Um ciclo
+        env:
+          ORBE_STATE_KEY: ${{ secrets.ORBE_STATE_KEY }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          ORBE_GITHUB_REPO: arcana-devTools/orbe
+          ORBE_STATE_RESTORE: force
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          ORBE_TG_TOKEN: ${{ secrets.ORBE_TG_TOKEN }}
+          ORBE_TG_CHAT: ${{ secrets.ORBE_TG_CHAT }}
+          ORBE_GROQ_API_KEY: ${{ secrets.ORBE_GROQ_API_KEY }}
+        run: python ciclo_uma_vez.py

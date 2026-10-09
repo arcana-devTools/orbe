@@ -305,7 +305,7 @@ def render_mp4(destino: Path, titulo: str, fala: str, peca: dict | None = None) 
 
 
 def _bili_json(url: str, cookie: str, data: bytes | None = None, method: str | None = None, timeout: int = 60) -> tuple[int, dict, object]:
-    headers = {"User-Agent": UA, "Cookie": cookie, "Referer": "https://member.bilibili.com/platform/upload/video/frame"}
+    headers = {"User-Agent": UA, "Cookie": cookie, "Accept": "application/json", "Referer": "https://member.bilibili.com/platform/upload/video/frame"}
     if data is not None and method != "PUT":
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
