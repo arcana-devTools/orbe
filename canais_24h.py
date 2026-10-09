@@ -126,7 +126,7 @@ def _marcar(nome: str, texto: str, **campos) -> None:
 
 def estado_publico() -> dict:
     doc = _estado()
-    canais = {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao", "estudo", "leitura_agora")}
+    canais = {k: v for k, v in doc.items() if k in ("bilibili", "youtube", "tiktok", "cookies", "monitor", "inspiracao", "estudo", "leitura_agora", "hipotese", "vizinhanca")}
     estudo = canais.get("estudo") or {}
     inspiracao = canais.get("inspiracao")
     if isinstance(inspiracao, dict) and (estudo.get("youtube") or {}).get("leu"):
@@ -636,6 +636,8 @@ def ciclo_bilibili_analisa() -> None:
         "publico": arq.get("publico"),
         "views": arq.get("views"),
         "likes": arq.get("likes"),
+        "moedas": arq.get("moedas"),
+        "favoritos": arq.get("favoritos"),
         "comentarios": len(comentarios),
         "respostas_novas": novos,
         "quando": _agora(),
