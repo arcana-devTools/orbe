@@ -1,4 +1,4 @@
-name: Conversa orbe auto
+name: arena-acorda
 on:
   schedule:
     # 11:20 BRT. Depois da janela da manha. Uma vez.
@@ -40,5 +40,14 @@ jobs:
           ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
           ARENA_THREAD_URL: ${{ secrets.ARENA_THREAD_URL }}
           ARENA_ENVIAR: "1"
-          ARENA_TEXTO: "verifique os agentes. nao publique. nao mande telegram."
+          ARENA_TEXTO: "verifique os mini agentes e os agentes. diga se algum parou. nao publique. nao mande telegram."
         run: python arena_orbe_auto.py
+      - name: Marcar mini agente
+        if: steps.dia.outputs.enviar == 'sim' && success()
+        continue-on-error: true
+        env:
+          ORBE_STATE_KEY: ${{ secrets.ORBE_STATE_KEY }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          ORBE_GITHUB_REPO: arcana-devTools/orbe
+          ORBE_STATE_RESTORE: force
+        run: pip install httpx cryptography && python arena_acorda_marcar.py

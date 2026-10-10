@@ -893,7 +893,14 @@ def ciclo_arena_acorda() -> None:
     _gravar(ESTADO, doc)
     mon = doc.get("monitor") or {}
     if not (8 <= hora < 10):
-        _marcar("arena-acorda", "leitura no ciclo. a chamada na conversa existente e as 11:20, uma vez, sem conversa nova")
+        item = ((doc.get("agentes") or {}).get("arena-acorda") or {})
+        ultimo = str(item.get("ultimo") or "")
+        quando = int(item.get("quando") or 0)
+        dia_marca = time.strftime("%Y-%m-%d", time.gmtime(quando - 3 * 3600)) if quando else ""
+        if dia_marca == dia and "chamei a conversa" in ultimo:
+            _marcar("arena-acorda", "ja chamei a conversa hoje, uma vez. este ciclo so leu.")
+            return
+        _marcar("arena-acorda", "mini agente arena-acorda chama a conversa existente as 11:20, uma vez. este ciclo nao digita.")
         return
     if mon.get("dia") == dia and mon.get("tentou"):
         _marcar("arena-acorda", mon.get("resumo") or "ja monitorei hoje")
