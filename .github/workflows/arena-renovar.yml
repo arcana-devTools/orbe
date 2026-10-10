@@ -1,0 +1,23 @@
+name: Renovar Arena
+on:
+  schedule:
+    # A cada 4 horas. So renova. Nao escreve na conversa.
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+jobs:
+  renovar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pacote
+        run: pip install pynacl
+      - name: Renovar sessao
+        env:
+          ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
+          ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+        run: python arena_renovar.py
