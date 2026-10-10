@@ -22,4 +22,6 @@ jobs:
         env:
           ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
           ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
+          ARENA_THREAD_URL: ${{ secrets.ARENA_THREAD_URL }}
+          ARENA_ENVIAR: "1"
         run: python arena_orbe_auto.py
