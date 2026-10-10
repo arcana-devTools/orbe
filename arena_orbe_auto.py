@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 import time
 
 from playwright.sync_api import sync_playwright
@@ -30,6 +29,13 @@ def _cookies() -> list[dict]:
     } for nome, valor in pares]
 
 
+def _texto() -> str:
+    texto = os.environ.get("ARENA_TEXTO", "").strip() or "."
+    if "\n" in texto or len(texto) > 180:
+        raise ValueError("texto_recusado")
+    return texto
+
+
 def main() -> None:
     cookies = _cookies()
     if not cookies:
@@ -39,6 +45,11 @@ def main() -> None:
     if not destino.startswith("https://arena.ai/agent/"):
         print("sem_conversa")
         raise SystemExit(1)
+    try:
+        texto = _texto()
+    except ValueError:
+        print("texto_recusado")
+        raise SystemExit(5)
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
@@ -68,13 +79,13 @@ def main() -> None:
             return
         caixa = page.locator('div[contenteditable="true"]').first
         caixa.click(timeout=8000)
-        caixa.press_sequentially(".")
+        caixa.press_sequentially(texto)
         try:
             page.locator('button:has-text("Send message")').first.click(timeout=4000)
         except Exception:
             page.keyboard.press("Enter")
         page.wait_for_timeout(2000)
-        print("enviei_ponto", page.url.split("?")[0].rstrip("/") == esperado)
+        print("enviei_ok", page.url.split("?")[0].rstrip("/") == esperado, "chars", len(texto))
         browser.close()
 
 

@@ -893,7 +893,7 @@ def ciclo_arena_acorda() -> None:
     _gravar(ESTADO, doc)
     mon = doc.get("monitor") or {}
     if not (8 <= hora < 10):
-        _marcar("arena-acorda", "leitura atual no servidor, sem Chrome. aviso so as 8h, nao reenvio")
+        _marcar("arena-acorda", "leitura no ciclo. a chamada na conversa existente e as 11:20, uma vez, sem conversa nova")
         return
     if mon.get("dia") == dia and mon.get("tentou"):
         _marcar("arena-acorda", mon.get("resumo") or "ja monitorei hoje")

@@ -578,7 +578,7 @@ def texto_telegram(dia: str, ordem: bool, motivo: str, doc: dict) -> str:
     tt = doc.get("tiktok") or {}
     linhas = [
         f"Canais {dia}.",
-        "O chat da Arena nao foi aberto. A Arena recusa esse chamado, e o Chrome no servidor derrubaria os outros agentes.",
+        "A conversa existente e chamada uma vez por dia, as 11:20, para a verificacao. Este aviso das 8h nao abre o chat.",
         "Quem monitorou: o servidor, com o numero que os agentes leram.",
         f"Esta tudo em ordem: {'sim' if ordem else 'nao'}.",
         f"Motivo: {motivo or 'os ciclos lidos nao mostraram falha'}.",

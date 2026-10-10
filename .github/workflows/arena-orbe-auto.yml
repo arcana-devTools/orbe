@@ -1,6 +1,14 @@
 name: Conversa orbe auto
 on:
+  schedule:
+    # 11:20 BRT. Depois da janela da manha. Uma vez.
+    - cron: "20 14 * * *"
+    # 12:20 BRT. So escreve se a das 11:20 nao conseguiu.
+    - cron: "20 15 * * *"
   workflow_dispatch:
+concurrency:
+  group: arena-conversa-diaria
+  cancel-in-progress: false
 jobs:
   abrir:
     runs-on: ubuntu-latest
@@ -10,18 +18,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Ja chamei hoje
+        id: dia
+        env:
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+        run: python arena_ja_chamei.py
       - name: Pacotes
+        if: steps.dia.outputs.enviar == 'sim'
         run: pip install playwright pynacl && python -m playwright install --with-deps chromium
       - name: Renovar sessao
+        if: steps.dia.outputs.enviar == 'sim'
         env:
           ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
           ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
           ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
         run: python arena_renovar.py
       - name: Abrir conversa existente
+        if: steps.dia.outputs.enviar == 'sim'
         env:
           ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
           ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
           ARENA_THREAD_URL: ${{ secrets.ARENA_THREAD_URL }}
           ARENA_ENVIAR: "1"
+          ARENA_TEXTO: "verifique os agentes. nao publique. nao mande telegram."
         run: python arena_orbe_auto.py
