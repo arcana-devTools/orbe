@@ -51,4 +51,5 @@ check_api:
   # o marcador de login REAL é email não-vazio
   expect_regex: '"email":"[^"]'  
 extra:
+  conversa: "orbe auto"
   dica: "Se quiser outro modo/modelo, clique no seletor ao lado do composer antes de enviar."

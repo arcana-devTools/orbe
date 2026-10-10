@@ -149,6 +149,34 @@ class Registry:
 
 # ============================================================ execução ===
 
+async def _abrir_conversa(page: Page, nome: str) -> bool:
+    """Abre uma conversa já existente pelo nome visível. Não cria outra."""
+    alvo = " ".join(nome.split()).lower()
+    if not alvo:
+        return False
+    loc = page.get_by_text(nome, exact=True)
+    try:
+        total = await loc.count()
+    except Exception:
+        return False
+    for i in range(min(total, 12)):
+        item = loc.nth(i)
+        try:
+            if not await item.is_visible():
+                continue
+            texto = " ".join(((await item.inner_text()) or "").split()).lower()
+            if texto != alvo:
+                continue
+            if any(p in texto for p in ("new chat", "nova conversa", "novo chat")):
+                continue
+            await item.click(timeout=4000)
+            await page.wait_for_timeout(1200)
+            return True
+        except Exception:
+            continue
+    return False
+
+
 async def _find_input(page: Page, spec: AdapterSpec):
     if spec.prompt_selector:
         for sel in spec.prompt_selector.split(","):
@@ -471,6 +499,17 @@ async def run_browser_step(
                     pass
             return result
         state = "ok"
+
+    conversa = str((spec.extra or {}).get("conversa") or "").strip()
+    if conversa:
+        if not await _abrir_conversa(page, conversa):
+            result["error"] = f"nao achei a conversa {conversa}; nao escrevi e nao abri conversa nova"
+            if screenshot_path:
+                try:
+                    await page.screenshot(path=screenshot_path)
+                except Exception:
+                    pass
+            return result
 
     # ações prévias: escolher modo/modelo, fechar popup, etc.
     if spec.pre_actions:
