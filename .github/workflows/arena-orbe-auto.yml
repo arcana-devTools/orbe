@@ -1,0 +1,19 @@
+name: Conversa orbe auto
+on:
+  workflow_dispatch:
+jobs:
+  abrir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Navegador
+        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: Abrir conversa existente
+        env:
+          ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
+          ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
+        run: python arena_orbe_auto.py
