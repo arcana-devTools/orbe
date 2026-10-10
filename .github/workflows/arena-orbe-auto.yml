@@ -10,8 +10,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Navegador
-        run: pip install playwright && python -m playwright install --with-deps chromium
+      - name: Pacotes
+        run: pip install playwright pynacl && python -m playwright install --with-deps chromium
+      - name: Renovar sessao
+        env:
+          ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
+          ARENA_COOKIE_1: ${{ secrets.ARENA_COOKIE_1 }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+        run: python arena_renovar.py
       - name: Abrir conversa existente
         env:
           ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
