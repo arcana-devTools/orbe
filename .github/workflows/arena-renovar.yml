@@ -1,13 +1,18 @@
 name: Renovar Arena
 on:
   schedule:
-    # A cada 4 horas. So renova. Nao escreve na conversa.
-    - cron: "17 */4 * * *"
+    # A cada 30 min. A sessao dura 1h. Nao escreve na conversa.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
+    inputs:
+      esperar:
+        description: esperar a metade da hora
+        required: false
+        default: nao
 jobs:
   renovar:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -15,6 +20,9 @@ jobs:
           python-version: "3.12"
       - name: Pacote
         run: pip install pynacl
+      - name: Esperar a metade da hora
+        if: github.event_name == 'workflow_dispatch' && inputs.esperar == 'sim'
+        run: python -c "import time; time.sleep(15*60)"
       - name: Renovar sessao
         env:
           ARENA_COOKIE_0: ${{ secrets.ARENA_COOKIE_0 }}
