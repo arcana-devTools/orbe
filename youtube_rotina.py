@@ -303,22 +303,28 @@ def cria() -> tuple[str,dict]:
             if not pending:
                 from canais_oficio import TITULOS_BLOQUEADOS
                 vencedor=_vencedor_tiktok(d)
-                if not vencedor:
+                if vencedor:
+                    regra=papel.regra_de_legenda(vencedor.get("titulo") or "")
+                    if not regra or regra in TITULOS_BLOQUEADOS:
+                        d.setdefault("cruzados", []).append(str(vencedor.get("id") or ""));save(d)
+                        return "A peca com view nao serve como titulo; nao inventei outra.",{"saude":"aguardando"}
+                    piece=papel.completar({"titulo":regra,"fala":regra,"descricao":regra,"origem":"peca do tiktok que ja teve view","tiktok_id":str(vencedor.get("id") or ""),"aviso_antigo":True},"youtube",now)
+                    previous=yt.recentes()
+                    used=set(TITULOS_BLOQUEADOS)|{str(v.get("titulo") or "") for v in previous}
+                    if piece["titulo"] in used:
+                        d.setdefault("cruzados", []).append(piece["tiktok_id"]);save(d)
+                        return "Essa peca ja esta no YouTube; nao repito.",{"saude":"aguardando"}
+                    key=hashlib.sha256((piece["titulo"]+piece["tiktok_id"]+str(now)).encode()).hexdigest()[:16]
+                    pending={"id":key,"criado_em":now,"estado":"planejado","peca":piece,"tiktok_id":piece["tiktok_id"]}
+                    d["jobs"].append(pending);save(d)
+                else:
                     estudo=garantir_estudo(d)
-                    return "YouTube so recebe peca do TikTok que ja teve view; nao inventei outra. Estudei "+str(len(estudo.get("modelos") or []))+" modelos.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
-                regra=papel.regra_de_legenda(vencedor.get("titulo") or "")
-                if not regra or regra in TITULOS_BLOQUEADOS:
-                    d.setdefault("cruzados", []).append(str(vencedor.get("id") or ""));save(d)
-                    return "A peca com view nao serve como titulo; nao inventei outra.",{"saude":"aguardando"}
-                piece=papel.completar({"titulo":regra,"fala":regra,"descricao":regra,"origem":"peca do tiktok que ja teve view","tiktok_id":str(vencedor.get("id") or ""),"aviso_antigo":True},"youtube",now)
-                previous=yt.recentes()
-                used=set(TITULOS_BLOQUEADOS)|{str(v.get("titulo") or "") for v in previous}
-                if piece["titulo"] in used:
-                    d.setdefault("cruzados", []).append(piece["tiktok_id"]);save(d)
-                    return "Essa peca ja esta no YouTube; nao repito.",{"saude":"aguardando"}
-                key=hashlib.sha256((piece["titulo"]+piece["tiktok_id"]+str(now)).encode()).hexdigest()[:16]
-                pending={"id":key,"criado_em":now,"estado":"planejado","peca":piece,"tiktok_id":piece["tiktok_id"]}
-                d["jobs"].append(pending);save(d)
+                    previous=yt.recentes()
+                    used=set(TITULOS_BLOQUEADOS)|{str(v.get("titulo") or "") for v in previous}
+                    piece=papel.completar(planejar(estudo, used), "youtube", now)
+                    key=hashlib.sha256((piece["titulo"]+"original"+str(now)).encode()).hexdigest()[:16]
+                    pending={"id":key,"criado_em":now,"estado":"planejado","peca":piece}
+                    d["jobs"].append(pending);save(d)
             if pending.get("estado") in ("aceito_nao_publico","processamento_falhou"):
                 return "Envio anterior aceito, mas ainda nao publico; nao crio nem reenvio outro.",{"saude":"falha","motivo":pending["estado"]}
             folder=ROOT/pending["id"]
