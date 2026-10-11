@@ -3,8 +3,8 @@ on:
   schedule:
     # 8:10 BRT, aviso do Telegram. Janela real do codigo: 8h as 10h.
     - cron: "10 11 * * *"
-    # 9:10, 9:40, 10:10 e 10:40 BRT. Publica so se a janela e a regra deixarem.
-    - cron: "10,40 12,13 * * *"
+    # 9:10 a 17:40 BRT. Publica so se a janela 9h-18h e a regra deixarem.
+    - cron: "10,40 12-20 * * *"
     # 21:20 BRT, leitura. Nao e janela de post.
     - cron: "20 0 * * *"
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
       - name: Ferramentas
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Pacotes
-        run: pip install httpx cryptography pillow
+        run: pip install httpx cryptography pillow pydantic pydantic-settings
       - name: Um ciclo
         env:
           ORBE_STATE_KEY: ${{ secrets.ORBE_STATE_KEY }}
