@@ -676,7 +676,7 @@ def ciclo_bilibili_cria() -> None:
         doc = _estado()
         doc["hipotese"] = papel.hipotese(doc)
         _gravar(ESTADO, doc)
-        _marcar("bilibili-cria", f"proximo so de manha, entre 9h e 11h, nao as 21h. papel {doc['hipotese'].get('papel')}. nao postei.", proxima=_agora() + CHECAGEM_S)
+        _marcar("bilibili-cria", f"proximo so de manha, entre 9h e 18h, nao as 21h. papel {doc['hipotese'].get('papel')}. nao postei.", proxima=_agora() + CHECAGEM_S)
         return
     doc = _estado()
     if int((doc.get("bilibili_post") or {}).get("tentativa") or 0) > _agora() - oficio.DIA:

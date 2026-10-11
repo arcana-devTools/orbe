@@ -297,7 +297,7 @@ def cria() -> tuple[str,dict]:
             import canais_papel as papel
             if not papel.manha(now):
                 estudo=garantir_estudo(d)
-                return f"Proximo so de manha, entre 9h e 11h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
+                return f"Proximo so de manha, entre 9h e 18h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now<int(d.get("proxima_tentativa") or 0):
                 return "Aguardo a janela da proxima tentativa; nenhum reenvio incerto.",{"saude":"aguardando","proxima":d["proxima_tentativa"]}
             if not pending:

@@ -67,7 +67,9 @@ def hora_local(quando: int | None = None) -> int:
 
 
 def manha(quando: int | None = None) -> bool:
-    return 9 <= hora_local(quando) < 11
+    # 9h as 18h. O relogio do GitHub atrasa e a janela das 11h perdia o dia.
+    # 21h continua fora.
+    return 9 <= hora_local(quando) < 18
 
 
 def papel_do_dia(quando: int | None = None) -> str:
