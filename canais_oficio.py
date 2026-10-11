@@ -31,11 +31,11 @@ ORIGINAIS = {
         ("窗上有一只没走的蛾", "原创。蛾停在玻璃上，灯已经关了。"),
     ],
     "youtube": [
-        ("A TORNEIRA QUE NÃO FECHOU", "História original. A torneira continuou pingando."),
-        ("O RELÓGIO DO CORREDOR", "História original. O relógio atrasou um minuto."),
-        ("A CADEIRA QUE MUDOU DE LUGAR", "História original. A cadeira não estava onde ficou."),
-        ("O ELEVADOR PAROU NO DOIS", "História original. O elevador parou sem alguém chamar."),
-        ("A JANELA ABRIU SEM VENTO", "História original. A janela abriu com a casa quieta."),
+        ("A FOLHA QUE VOLTOU EM BRANCO", "História original. A folha amanheceu sem o nome."),
+        ("O QUADRO APAGOU SOZINHO", "História original. A frase sumiu antes do sinal."),
+        ("A FILEIRA DO MEIO FICOU VAZIA", "História original. Ninguém sentou no meio."),
+        ("O ARMÁRIO NÃO FECHOU", "História original. A porta abriu de novo."),
+        ("A TERCEIRA CARTEIRA SUMIU", "História original. Faltava um lugar na fila."),
     ],
     "tiktok": [
         ("A TORNEIRA QUE NÃO FECHOU", "História original. Não é o corredor."),
@@ -248,6 +248,7 @@ def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
         "O lugar e a escola vazia a noite. O titulo e uma proibicao ou uma ausencia. "
         "O titulo nao pode nomear lampada, corredor, relogio, cadeira, elevador, torneira, janela, cozinha ou chamada. "
         "Nao copie titulo, frase, nome ou video. "
+        "A peca e so deste canal. Nao reuse titulo ou frase do TikTok, do YouTube ou do Bilibili. "
         "A descricao e somente a frase da regra, sem dizer que foi feita por agente ou narracao sintetica. "
         "Devolva so JSON com titulo, fala e objeto. "
         "Bilibili em chines. TikTok em portugues. "
@@ -274,7 +275,14 @@ def roteiro(plataforma: str, notas: dict, usados: set[str]) -> dict:
             }
         except Exception:
             peca = {}
-    vistos = set(usados) | set(notas.get("titulos_vistos") or []) | TITULOS_BLOQUEADOS
+    alheios = set()
+    for nome, lista in papel.BANCO.items():
+        if nome != plataforma:
+            alheios.update(titulo for titulo, _ in lista)
+    for nome, lista in ORIGINAIS.items():
+        if nome != plataforma:
+            alheios.update(titulo for titulo, _ in lista)
+    vistos = set(usados) | set(notas.get("titulos_vistos") or []) | TITULOS_BLOQUEADOS | alheios
     if not papel.peca_valida(peca, vistos) or any(peca.get("titulo") and (peca["titulo"] in item or item in peca["titulo"]) for item in vistos if item):
         peca = papel.banco(plataforma, vistos)
     else:

@@ -42,11 +42,11 @@ BANCO = {
         ("Proibido ler a última linha", "marca"),
     ],
     "youtube": [
-        ("Não conta as luzes do fundo", "marca"),
-        ("Falta um nome na lista", "marca"),
-        ("Não responde se chamarem você", "marca"),
-        ("Essa carteira está sem dono", "marca"),
-        ("Proibido ler a última linha", "marca"),
+        ("Não abre o armário do fundo", "marca"),
+        ("Falta a terceira carteira", "marca"),
+        ("Não assina a folha em branco", "marca"),
+        ("Proibido apagar o quadro", "marca"),
+        ("Ninguém senta na fileira do meio", "marca"),
     ],
     "bilibili": [
         ("名单上少了一个名字", "标记"),
