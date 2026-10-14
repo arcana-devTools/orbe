@@ -57,3 +57,20 @@ O dono liberou o uso. Não é caça a máquina nem busca de senha.
 - IntelX: consultar um termo que a colônia já tem. https://intelx.io/
 
 Sem chave no cofre, abrir a página. Com chave, usar `/api/consultas`. Não colar a chave no chat.
+
+
+# 2026-10-14 — continuar o trabalho com o que é grátis
+
+O dono pediu de novo. Orbe, Hermes, Gemini e os mini-agentes continuam o trabalho. Não pedir outra lista de sites.
+
+Usar o que for grátis e rode na máquina. Se existir projeto aberto no GitHub, preferir esse.
+
+- ffmpeg, para cortar, juntar e gravar o mp4.
+- HyperFrames, só com Node 22 ou mais novo. github.com/heygen-com/hyperframes
+- Synfig. synfig.org e github.com/synfig/synfig. syn.by não é programa.
+- OpenCut. opencut.app e github.com/opencut-app/opencut
+- Donkey Cut só como editor local. donkeycut.com e github.com/DonkeyCut/Donkey. A geração na nuvem gasta crédito. Não usar.
+
+Sem a conta e sem o crédito do dono, não abrir Higgsfield, LoreMotion nem ArtCraft. Não mandar arquivo para o 123apps. Não usar GeeLark para postar nem para abrir conta. matchcut.app não entra. GetCraft não corta vídeo.
+
+O Lino fica local. História própria. Não copiar anime, personagem, título ou vídeo de outro. Não publicar o Lino. Não abrir conta nova. Os canais que já existem seguem no ciclo, com peça própria, sem repostar vídeo alheio. Se a ferramenta não estiver instalada, dizer o nome. Não inventar instalação nem chave.
