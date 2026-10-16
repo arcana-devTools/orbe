@@ -1,0 +1,18 @@
+id: codex
+name: Codex
+kind: browser
+category: codigo
+url: "https://chatgpt.com/codex/cloud"
+new_chat_url: "https://chatgpt.com/codex/cloud"
+prompt_selector: 'textarea, div#prompt-textarea, div[contenteditable="true"]'
+submit:
+  key: Enter
+  selector: 'button[aria-label="Enviar"], button[data-testid="send-button"], button[type="submit"]'
+answer_selector: 'div[data-message-author-role="assistant"], article, main'
+answer_index: -1
+settle_ms: 4000
+max_wait_s: 180
+logged_in_selector: 'textarea, div[contenteditable="true"]'
+logged_out_selector: 'a[href*="/auth/login"], button[data-testid="login-button"]'
+extra:
+  dica: "Codex web do ChatGPT. Entre uma vez no desktop do Orbe, na conta que já tem o GitHub ligado. Sem essa sessão, a página fica no login."
