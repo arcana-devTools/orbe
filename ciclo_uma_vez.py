@@ -18,6 +18,11 @@ def main() -> None:
     if not rest.get("ok"):
         raise SystemExit(1)
     canais_24h.ciclo()
+    try:
+        import propostas_leitura
+        print(propostas_leitura.consultar(), flush=True)
+    except Exception as exc:
+        print("propostas", type(exc).__name__, flush=True)
     salvo = asyncio.run(state_backup.salvar(forcar=True))
     print("salvou", bool(salvo.get("ok")), salvo.get("erro") or salvo.get("bytes") or salvo.get("igual"))
     doc = json.loads(Path("data/canais_24h.json").read_text(encoding="utf-8"))
