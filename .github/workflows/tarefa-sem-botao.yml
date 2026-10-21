@@ -1,0 +1,44 @@
+name: Tarefa sem botao
+
+on:
+  workflow_dispatch:
+    inputs:
+      tarefa:
+        description: texto livre, sem senha
+        required: true
+
+jobs:
+  chamar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mandar ao Hermes
+        env:
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          TAREFA: ${{ inputs.tarefa }}
+        run: python - << 'PY'
+import json, os, re, urllib.request
+tarefa = os.environ.get("TAREFA", "").strip()
+if not tarefa:
+    raise SystemExit("tarefa vazia")
+if re.search(r"(github_pat_|ghp_)[A-Za-z0-9_]{12,}", tarefa):
+    raise SystemExit("tarefa recusada")
+if re.search(r"(?i)(cookie|token|password|senha)\s*=\s*\S{12,}", tarefa):
+    raise SystemExit("tarefa recusada")
+corpo = json.dumps({
+    "ref": "main",
+    "inputs": {"tarefa": tarefa[:1800], "voltar": "orbe"},
+}).encode()
+req = urllib.request.Request(
+    "https://api.github.com/repos/arcana-devTools/orbe-uic/actions/workflows/hermes.yml/dispatches",
+    data=corpo,
+    method="POST",
+    headers={
+        "Authorization": "Bearer " + os.environ["ORBE_GITHUB_PAT"],
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "orbe-tarefa",
+    },
+)
+with urllib.request.urlopen(req, timeout=40) as resp:
+    print("hermes", resp.status)
+PY
