@@ -1,0 +1,23 @@
+name: Ler propostas
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pacotes
+        run: pip install httpx cryptography
+      - name: Ler sem enviar
+        env:
+          ORBE_STATE_KEY: ${{ secrets.ORBE_STATE_KEY }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          ORBE_GITHUB_REPO: arcana-devTools/orbe
+          ORBE_STATE_RESTORE: force
+        run: python ler_propostas_uma_vez.py

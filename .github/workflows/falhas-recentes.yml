@@ -1,0 +1,21 @@
+name: Falhas recentes
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pacote
+        run: pip install httpx
+      - name: Listar sem abrir PR
+        env:
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          ORBE_GITHUB_REPO: arcana-devTools/orbe
+        run: python melhorias.py

@@ -351,7 +351,10 @@ def bili_publicar(cookie: str, arquivo: Path, titulo: str, descricao: str) -> di
     })
     code, pre, _ = _bili_json(f"https://member.bilibili.com/preupload?{query}", cookie)
     if pre.get("OK") != 1:
-        return {"ok": False, "motivo": f"preupload_{code or pre.get('code') or 'falhou'}"}
+        aviso = " ".join(str(pre.get("message") or pre.get("msg") or "").split())[:80]
+        if any(p in aviso.lower() for p in ("token", "auth", "cookie")):
+            aviso = ""
+        return {"ok": False, "motivo": f"preupload_{code or pre.get('code') or 'falhou'}" + (f" {aviso}" if aviso else "")}
     auth = pre.get("auth") or ""
     endpoint = pre.get("endpoint") or ""
     if endpoint.startswith("//"):
