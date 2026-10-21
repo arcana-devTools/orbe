@@ -19,7 +19,7 @@ def _pedir() -> tuple[int, dict[str, str]]:
     c0 = os.environ.get("ARENA_COOKIE_0", "").strip()
     c1 = os.environ.get("ARENA_COOKIE_1", "").strip()
     if not c0:
-        print("sem_sessao")
+        print("sem_sessao", flush=True)
         raise SystemExit(1)
     cookie = f"{NOMES[0]}={c0}"
     if c1:
@@ -51,14 +51,14 @@ def _pedir() -> tuple[int, dict[str, str]]:
             continue
         novos[nome] = valor
     logado = status == 200 and bool(re.search(r'"email":"[^"]', corpo))
-    print("login", status, "logado", logado, "cookies_novos", len(novos))
+    print("login", status, "logado", logado, "cookies_novos", len(novos), flush=True)
     return status, novos if logado else {}
 
 
 def _salvar(novos: dict[str, str]) -> None:
     pat = os.environ.get("ORBE_GITHUB_PAT", "").strip()
     if not pat or not novos:
-        print("mantive_a_sessao_anterior")
+        print("mantive_a_sessao_anterior", flush=True)
         return
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/actions/secrets/public-key",
@@ -83,15 +83,16 @@ def _salvar(novos: dict[str, str]) -> None:
             },
         )
         with urllib.request.urlopen(put, timeout=25) as resp:
-            print("salvou", segredo, resp.status, "len", len(valor))
+            print("salvou", segredo, resp.status, "len", len(valor), flush=True)
 
 
 def main() -> None:
     status, novos = _pedir()
     if status != 200:
+        print("nao_renovou", status, flush=True)
         raise SystemExit(2)
     _salvar(novos)
-    print("pronta")
+    print("pronta", flush=True)
 
 
 if __name__ == "__main__":
