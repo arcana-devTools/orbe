@@ -657,6 +657,15 @@ def ciclo_bilibili_analisa() -> None:
     )
 
 
+
+def _preparar_nota(nome: str) -> str:
+    try:
+        from preparar_pecas import preparar
+        return preparar(nome)
+    except Exception as exc:
+        return "preparo falhou " + type(exc).__name__
+
+
 def ciclo_bilibili_cria() -> None:
     import canais_oficio as oficio
     cookie = _sessoes().get("bilibili", "")
@@ -669,36 +678,56 @@ def ciclo_bilibili_cria() -> None:
         _marcar("bilibili-cria", "uma peca ainda nao publica, nao posto outra", estado=arq.get("estado"), proxima=_agora() + CHECAGEM_S)
         return
     if arq.get("ptime") and _agora() - int(arq.get("ptime") or 0) < oficio.DIA:
-        _marcar("bilibili-cria", "ultima peca ainda nao fez 24h, nao posto outra", proxima=_agora() + CHECAGEM_S)
+        _marcar("bilibili-cria", "ultima peca ainda nao fez 24h, nao posto outra. " + _preparar_nota("bilibili"), proxima=_agora() + CHECAGEM_S)
         return
     import canais_papel as papel
     if not papel.manha():
         doc = _estado()
         doc["hipotese"] = papel.hipotese(doc)
         _gravar(ESTADO, doc)
-        _marcar("bilibili-cria", f"proximo so de manha, entre 9h e 18h, nao as 21h. papel {doc['hipotese'].get('papel')}. nao postei.", proxima=_agora() + CHECAGEM_S)
+        _marcar("bilibili-cria", f"proximo so de manha, entre 9h e 18h, nao as 21h. papel {doc['hipotese'].get('papel')}. nao postei. " + _preparar_nota("bilibili"), proxima=_agora() + CHECAGEM_S)
         return
     doc = _estado()
-    if int((doc.get("bilibili_post") or {}).get("tentativa") or 0) > _agora() - oficio.DIA:
-        _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio", proxima=_agora() + CHECAGEM_S)
+    post = doc.get("bilibili_post") or {}
+    tentativa = int(post.get("tentativa") or 0)
+    descanso_ate = int(post.get("descanso_ate") or 0)
+    pode_repetir = bool(descanso_ate) and _agora() >= descanso_ate and int(post.get("repete") or 0) < 2
+    if tentativa > _agora() - oficio.DIA and not pode_repetir:
+        _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio. " + _preparar_nota("bilibili"), proxima=_agora() + CHECAGEM_S)
         return
-    notas = oficio.inspirar("bilibili", licao=_licao_bili(arq.get("lista") or []))
-    _guardar_estudo("bilibili", notas)
-    usados = {str(item.get("titulo") or "") for item in (arq.get("lista") or [])}
-    peca = oficio.roteiro("bilibili", notas, usados)
-    destino = oficio.PECAS / "bili-proxima.mp4"
-    erro = oficio.render_mp4(destino, peca["titulo"], peca["fala"], peca)
-    if erro:
-        _marcar("bilibili-cria", erro, proxima=_agora() + CHECAGEM_S)
-        return
+    from preparar_pecas import caminho, ja_pronta, limpar
+    peca = ja_pronta("bilibili")
+    destino, _meta = caminho("bilibili")
+    if not peca:
+        nota = _preparar_nota("bilibili")
+        peca = ja_pronta("bilibili")
+        if not peca:
+            _marcar("bilibili-cria", nota, proxima=_agora() + CHECAGEM_S)
+            return
     doc = _estado()
-    doc["bilibili_post"] = {"tentativa": _agora(), "titulo": peca["titulo"]}
+    doc["bilibili_post"] = {
+        "tentativa": _agora(),
+        "titulo": peca["titulo"],
+        "repete": int(post.get("repete") or 0) + (1 if pode_repetir else 0),
+    }
     _gravar(ESTADO, doc)
     resultado = oficio.bili_publicar(cookie, destino, peca["titulo"], peca["descricao"])
     if resultado.get("ok"):
+        limpar("bilibili")
         _marcar("bilibili-cria", f"publiquei {resultado.get('bvid')} {peca['titulo']}", bvid=resultado.get("bvid"))
         return
-    _marcar("bilibili-cria", f"nao publiquei, {resultado.get('motivo')}", proxima=_agora() + oficio.DIA)
+    motivo = str(resultado.get("motivo") or "")
+    descanso = any(parte in motivo for parte in ("406", "休息", "过快", "too fast", "rest"))
+    doc = _estado()
+    post = doc.get("bilibili_post") or {}
+    if descanso:
+        post["descanso_ate"] = _agora() + 6 * 3600
+        post["repete"] = int(post.get("repete") or 0) + 1
+        post["motivo"] = motivo[:180]
+        doc["bilibili_post"] = post
+        _gravar(ESTADO, doc)
+    espera = 6 * 3600 if descanso else oficio.DIA
+    _marcar("bilibili-cria", f"nao publiquei, {motivo}. a peca ficou guardada.", proxima=_agora() + espera)
 
 
 def ciclo_youtube_analisa() -> None:
@@ -863,16 +892,18 @@ def ciclo_tiktok_cria() -> None:
         return
     idade = _agora() - hora
     if idade < oficio.DIA:
+        nota = _preparar_nota("tiktok")
         _marcar(
             "tiktok-cria",
-            f"{novo.get('titulo')} esta no ar, views {novo.get('views')}, ainda nao fez 24h ({idade // 3600}h). nao posto outra e nao agendei de novo. Proximo papel de manha, titulo sem nomear a coisa. Estudei {n} modelos, sem copiar titulo.",
+            f"{novo.get('titulo')} esta no ar, views {novo.get('views')}, ainda nao fez 24h ({idade // 3600}h). nao posto outra e nao agendei de novo. {nota} Proximo papel de manha, titulo sem nomear a coisa. Estudei {n} modelos, sem copiar titulo.",
             proxima=_agora() + min(CHECAGEM_S, oficio.DIA - idade),
             estudo=n,
         )
         return
+    nota = _preparar_nota("tiktok")
     _marcar(
         "tiktok-cria",
-        f"passou 24h de {novo.get('titulo')}, views {novo.get('views')}. este servidor nao envia arquivo ao TikTok; nao inventei post nem agendei. Estudei {n} modelos, sem copiar titulo.",
+        f"passou 24h de {novo.get('titulo')}, views {novo.get('views')}. {nota} este ciclo nao envia o arquivo; o agente do TikTok agenda a peca guardada na proxima hora 21h, sem publicar agora. Estudei {n} modelos, sem copiar titulo.",
         proxima=_agora() + CHECAGEM_S,
         estudo=n,
     )

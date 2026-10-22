@@ -102,6 +102,13 @@ def empacotar() -> bytes:
             mds = sorted(res.glob("*.md"), key=lambda x: x.stat().st_mtime)[-MAX_RESULTADOS:]
             for p in mds:
                 tar.add(p, arcname=f"resultados/{p.name}")
+        pecas = DATA / "pecas"
+        if pecas.exists():
+            for p in sorted(pecas.glob("*-pronta.mp4")):
+                if p.stat().st_size <= 8_000_000:
+                    tar.add(p, arcname=f"pecas/{p.name}")
+            for p in sorted(pecas.glob("*-pronta.json")):
+                tar.add(p, arcname=f"pecas/{p.name}")
         # conectores do Hermes: credencial salva, sem log nem sessão enorme
         raiz = DATA / "hermes"
         pular = {"logs", "sessions", "cache", "node_modules", "web_dist", "skills", "__pycache__"}

@@ -276,6 +276,16 @@ def _titulos_alheios() -> set[str]:
     return saida
 
 
+
+def _com_peca(msg: str) -> str:
+    try:
+        from preparar_pecas import preparar
+        extra = preparar("youtube")
+    except Exception as exc:
+        extra = "preparo falhou " + type(exc).__name__
+    return msg + " " + extra
+
+
 def cria() -> tuple[str,dict]:
     with _LOCK:
         status=yt.probe()
@@ -292,17 +302,31 @@ def cria() -> tuple[str,dict]:
             if recentes and (now-recentes[0][0] < DAY or recentes[0][1].get("processamento") == "processing" or recentes[0][1].get("upload_status") in ("uploaded", "processing")):
                 estudo=garantir_estudo(d)
                 idade=(now-recentes[0][0])//3600
-                return f"Ja ha original recente no canal ({idade}h); nao posto outro antes de 24h. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
+                return _com_peca(f"Ja ha original recente no canal ({idade}h); nao posto outro antes de 24h. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo."),{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now-int(d.get("ultimo_publicado") or 0)<DAY:
                 remaining=DAY-(now-int(d["ultimo_publicado"]))
                 estudo=garantir_estudo(d)
-                return f"Aguardo 24h do ultimo original ({remaining//3600}h restantes); nao repito. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo.",{"saude":"aguardando","proxima":now+remaining,"estudo":len(estudo.get("modelos") or [])}
+                return _com_peca(f"Aguardo 24h do ultimo original ({remaining//3600}h restantes); nao repito. Estudei {len(estudo.get('modelos') or [])} modelos do que funciona no YouTube, sem copiar titulo."),{"saude":"aguardando","proxima":now+remaining,"estudo":len(estudo.get("modelos") or [])}
             import canais_papel as papel
             if not papel.manha(now):
                 estudo=garantir_estudo(d)
-                return f"Proximo so de manha, entre 9h e 18h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo.",{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
+                return _com_peca(f"Proximo so de manha, entre 9h e 18h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo."),{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now<int(d.get("proxima_tentativa") or 0):
-                return "Aguardo a janela da proxima tentativa; nenhum reenvio incerto.",{"saude":"aguardando","proxima":d["proxima_tentativa"]}
+                return _com_peca("Aguardo a janela da proxima tentativa; nenhum reenvio incerto."),{"saude":"aguardando","proxima":d["proxima_tentativa"]}
+            from preparar_pecas import caminho, ja_pronta, limpar
+            pronta = ja_pronta("youtube")
+            if pronta and not pending:
+                piece = papel.completar(pronta, "youtube", now)
+                key = hashlib.sha256((piece["titulo"] + "youtube-pronta").encode()).hexdigest()[:16]
+                pending = {"id": key, "criado_em": now, "estado": "pronto", "peca": piece, "narracao": "peca_pronta"}
+                d["jobs"].append(pending)
+                save(d)
+                folder = ROOT / pending["id"]
+                folder.mkdir(parents=True, exist_ok=True)
+                output = folder / "original.mp4"
+                video, _meta = caminho("youtube")
+                if not output.is_file():
+                    shutil.copy(video, output)
             if not pending:
                 from canais_oficio import TITULOS_BLOQUEADOS
                 estudo=garantir_estudo(d)
@@ -328,7 +352,10 @@ def cria() -> tuple[str,dict]:
             pending["estado"]="enviando";pending["tentou_em"]=now;save(d)
             result=yt.publicar(output,metadata,pending["id"])
             pending["video"]=result["id"];pending["estado"]="aceito";pending["aceito_em"]=int(time.time());save(d)
-            return _confirm(pending,d)
+            msg, extra = _confirm(pending, d)
+            if str(msg).startswith("Publiquei"):
+                limpar("youtube")
+            return msg, extra
         except yt.YouTubeError as exc:
             d["proxima_tentativa"]=now+3600;d["ultima_falha"]=exc.reason;save(d)
             return "Nao publiquei outro original: "+exc.reason+"; copia preservada, sem cookie ou repeticao.",{"saude":"falha","motivo":exc.reason,"proxima":now+3600}

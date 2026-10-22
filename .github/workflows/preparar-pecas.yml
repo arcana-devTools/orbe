@@ -1,0 +1,23 @@
+name: Preparar pecas
+on:
+  workflow_dispatch:
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Ferramentas
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-wqy-microhei
+      - name: Pacotes
+        run: pip install httpx cryptography pillow
+      - name: Grava sem publicar
+        env:
+          ORBE_STATE_KEY: ${{ secrets.ORBE_STATE_KEY }}
+          ORBE_GITHUB_PAT: ${{ secrets.ORBE_GITHUB_PAT }}
+          ORBE_GITHUB_REPO: arcana-devTools/orbe
+          ORBE_STATE_RESTORE: force
+        run: python preparar_pecas.py
