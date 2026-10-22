@@ -695,6 +695,8 @@ def ciclo_bilibili_cria() -> None:
     if tentativa > _agora() - oficio.DIA and not pode_repetir:
         _marcar("bilibili-cria", "ja tentei publicar hoje, nao repito o envio. " + _preparar_nota("bilibili"), proxima=_agora() + CHECAGEM_S)
         return
+    _marcar("bilibili-cria", "cartaz de texto recusado, nao posto", proxima=_agora() + CHECAGEM_S)
+    return
     from preparar_pecas import caminho, ja_pronta, limpar
     peca = ja_pronta("bilibili")
     destino, _meta = caminho("bilibili")

@@ -313,6 +313,7 @@ def cria() -> tuple[str,dict]:
                 return _com_peca(f"Proximo so de manha, entre 9h e 18h, nao as 21h. Papel {papel.papel_do_dia(now)}. Estudei {len(estudo.get('modelos') or [])} modelos, sem copiar titulo."),{"saude":"aguardando","estudo":len(estudo.get("modelos") or [])}
             if now<int(d.get("proxima_tentativa") or 0):
                 return _com_peca("Aguardo a janela da proxima tentativa; nenhum reenvio incerto."),{"saude":"aguardando","proxima":d["proxima_tentativa"]}
+            return "Cartaz de texto recusado. Nao posto o slide.",{"saude":"aguardando","motivo":"cartaz_recusado"}
             from preparar_pecas import caminho, ja_pronta, limpar
             pronta = ja_pronta("youtube")
             if pronta and not pending:

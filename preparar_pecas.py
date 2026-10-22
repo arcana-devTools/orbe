@@ -61,6 +61,7 @@ def usados() -> set[str]:
 
 
 def preparar(nome: str, ja_usados: set[str] | None = None) -> str:
+    return "cartaz de texto recusado, nao gerei video e nao postei"
     pronta = ja_pronta(nome)
     if pronta:
         return f"peca pronta {pronta.get('titulo')}, sem publicar"
